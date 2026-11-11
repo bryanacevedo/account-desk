@@ -21,7 +21,8 @@ def headers_for(message: dict, person: dict, play_key: str) -> dict:
     token = outreach.unsubscribe_token(person["id"])
     url = f"{CONFIG.public_url}/u/{person['id']}-{token[:12]}"
     return {
-        "List-Unsubscribe": f"<{url}>, <mailto:unsubscribe@{CONFIG.public_url.split('//')[-1].split('/')[0]}?subject=unsubscribe-{person['id']}>",
+        "List-Unsubscribe": f"<{url}>" + (f", <mailto:{CONFIG.unsubscribe_mailto}?subject=unsubscribe-{person['id']}>"
+                                         if CONFIG.unsubscribe_mailto else ""),
         "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         "Feedback-ID": f"{play_key}:{message['step_index']}:outbound:lumen",
         "X-Outbound-Message": str(message["id"]),
@@ -228,10 +229,14 @@ def record_delivery_event(cur, message_id: int, event: str, detail: dict | None 
     db.run(cur, "insert into deliveries (message_id, mailbox_id, event, at, email_source, detail) "
                 "values (%s,%s,%s,app_now(),%s,%s)", message_id, m["mailbox_id"], event, source, J(detail or {}))
     col = {"bounced_hard": "hard_bounces", "complaint": "complaints"}.get(event)
-    if col:
+    # Only a send that was among the first WATCH_SIZE of its step version counts toward that step's first batch,
+    # however late its bounce arrives.
+    rank = db.val(cur, """select count(*) from messages where template_key = %s and status = 'sent'
+                          and (sent_at, id) <= (%s, %s)""", m["template_key"], m["sent_at"], m["id"]) if m["sent_at"] else None
+    if col and rank is not None and rank <= WATCH_SIZE:
         db.run(cur, f"update play_step_watch set {col} = {col} + 1 where template_key = %s", m["template_key"])
         w = db.one(cur, "select * from play_step_watch where template_key = %s", m["template_key"])
-        if w and w["sends"] <= WATCH_SIZE and not w["paused"] and (w["hard_bounces"] >= 2 or w["complaints"] >= 1):
+        if w and not w["paused"] and (w["hard_bounces"] >= 2 or w["complaints"] >= 1):
             db.run(cur, "update play_step_watch set paused = true, paused_reason = %s where template_key = %s",
                    f"{w['hard_bounces']} hard bounces, {w['complaints']} complaints in the first {w['sends']} sends",
                    m["template_key"])

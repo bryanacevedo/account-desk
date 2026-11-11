@@ -32,10 +32,10 @@ def load_catalog(cur, *, start: datetime) -> dict:
     for (key, name, hyp, trig, personas, maxp, seq, angle, autonomy, urgent, latency) in C.PLAYS:
         db.run(cur, """insert into plays (key, name, hypothesis, trigger, personas, max_people, sequence, angle, autonomy,
                                           status, holdout_pct, owner_id, created_by, launched_by, launched_at, urgent,
-                                          latency_hours, lia_ref)
-                       values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'live',20,%s,%s,%s,%s,%s,%s,'LIA-2026-07')""",
+                                          latency_hours, lia_ref, monthly_cap)
+                       values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'live',20,%s,%s,%s,%s,%s,%s,'LIA-2026-07',%s)""",
                key, name, hyp, J(trig), personas, maxp, J(seq), angle, autonomy, gtm, gtm, manager,
-               start - timedelta(days=21), urgent, latency)
+               start - timedelta(days=21), urgent, latency, J(C.PLAY_CAP))
     for country, day, name in C.HOLIDAYS:
         db.run(cur, "insert into holidays (country, day, name) values (%s,%s,%s)", country, date.fromisoformat(day), name)
     for country, rule in C.REGION_RULES:

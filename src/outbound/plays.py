@@ -61,8 +61,11 @@ def match(cur, account_id: int) -> int | None:
     if not score or acc["fit_tier"] not in ("A", "B"):
         return None
     best = None
+    from . import spend
     for play in db.all(cur, "select * from plays where status = 'live' order by urgent desc, id"):
         trig = play["trigger"]
+        if spend.play_at_cap(cur, play):
+            continue  # its manager's monthly cap is used up: no new accounts until next month
         if acc["fit_tier"] not in trig.get("fit_tiers", ["A", "B"]) or score["priority"] < trig.get("min_priority", 0):
             continue
         if acc["lifecycle"] in trig.get("exclude_lifecycles", []):

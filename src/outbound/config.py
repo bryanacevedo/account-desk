@@ -12,6 +12,9 @@ def _flag(name: str) -> bool:
 
 @dataclass(frozen=True)
 class Config:
+    # A mailbox that really receives mail and forwards it to the reply webhook; without one, only the https
+    # one-click link is offered (RFC 8058 needs only that).
+    unsubscribe_mailto: str = field(default_factory=lambda: os.environ.get("UNSUBSCRIBE_MAILTO", ""))
     database_url: str = field(default_factory=lambda: os.environ.get(
         "DATABASE_URL", "postgres://postgres@127.0.0.1:54329/outbound"))
     mode: str = field(default_factory=lambda: os.environ.get("MODE", "demo"))  # demo | live

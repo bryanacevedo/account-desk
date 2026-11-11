@@ -194,6 +194,10 @@ def run(cur, task: str, payload: dict, *, account_id: int | None = None) -> dict
     source = "sim"
     usage = {"input_tokens": 0, "output_tokens": 0}
     if CONFIG.anthropic_live:
+        # Checked before the call, not after: one typical call's cost against the desk's cap and the play's.
+        est = (spec["max_tokens"] * PRICES.get(spec["model"], (4.0, 20.0))[1]) / 1_000_000 * 100
+        spend.check_budget(cur, "anthropic", est)
+        spend.check_play(cur, "anthropic", est)
         out, usage = _live(task, payload)
         source = "live"
         _record(task, h, payload, out, usage)

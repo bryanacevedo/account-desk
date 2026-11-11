@@ -2,7 +2,7 @@
 (managers and GTM); a rep's read never carries it."""
 from __future__ import annotations
 
-from . import adapters, db, monitors, outreach, stats
+from . import adapters, db, monitors, outreach, spend, stats
 
 OPEN = ("proposed", "accepted", "researching", "approving", "active", "engaged", "meeting")
 
@@ -259,7 +259,7 @@ def signal_performance(cur) -> list[dict]:
           select s.type_key, ap.arm, ap.account_id, ap.proposed_at
           from account_plays ap join signals s on s.id = ap.trigger_signal_id
         ), outcome as (
-          select ap.*, exists (select 1 from meetings m where m.account_id = ap.account_id
+          select ap.*, exists (select 1 from meetings m where m.account_id = ap.account_id and m.status <> 'cancelled'
                                and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days') as met,
                        exists (select 1 from replies r where r.account_id = ap.account_id and r.hot
                                and r.received_at between ap.proposed_at and ap.proposed_at + interval '60 days') as pos
@@ -294,22 +294,27 @@ FUNNEL = """
                      and e.account_play_id = ap.id where r.hot and r.received_at >= ap.proposed_at)) as positive,
     count(*) filter (where arm = 'treated' and exists (select 1 from meetings m where m.account_play_id = ap.id
                      and m.source <> 'inbound' and m.status <> 'cancelled')) as meetings,
-    count(*) filter (where arm = 'holdout') as holdout,
-    -- The comparison counts any meeting or deal at the account, whatever started it, the same way in both arms.
-    count(*) filter (where arm = 'treated' and exists (select 1 from meetings m where m.account_id = ap.account_id
-                     and m.status <> 'cancelled' and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days')) as treated_meetings_any,
-    count(*) filter (where arm = 'holdout' and exists (select 1 from meetings m where m.account_id = ap.account_id
-                     and m.status <> 'cancelled' and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days')) as holdout_meetings,
-    count(*) filter (where arm = 'treated' and exists (select 1 from opportunities o where o.account_id = ap.account_id
-                     and o.created_at between ap.proposed_at and ap.proposed_at + interval '90 days')) as treated_deals,
-    count(*) filter (where arm = 'holdout' and exists (select 1 from opportunities o where o.account_id = ap.account_id
-                     and o.created_at between ap.proposed_at and ap.proposed_at + interval '90 days')) as holdout_deals
+    count(*) filter (where arm = 'holdout') as holdout
 """
 
 
-def lifts(f: dict) -> tuple[dict, dict]:
-    return (stats.lift_report(f["treated_meetings_any"], f["proposed"], f["holdout_meetings"], f["holdout"]),
-            stats.lift_report(f["treated_deals"], f["proposed"], f["holdout_deals"], f["holdout"]))
+def lifts(cur, play_id: int | None = None) -> tuple[dict, dict]:
+    """Treated against held back, intention to treat on each account's FIRST assignment: an account offered again
+    after a cooldown, or held back once and treated later, counts once, in the group it was first put in."""
+    r = db.one(cur, """
+        with first as (select distinct on (ap.account_id) ap.account_id, ap.arm, ap.proposed_at from account_plays ap
+                       where (%s::bigint is null or ap.play_id = %s) order by ap.account_id, ap.proposed_at, ap.id)
+        select count(*) filter (where arm = 'treated') as n_t, count(*) filter (where arm = 'holdout') as n_h,
+          count(*) filter (where arm = 'treated' and exists (select 1 from meetings m where m.account_id = f.account_id
+            and m.status <> 'cancelled' and m.booked_at between f.proposed_at and f.proposed_at + interval '60 days')) as m_t,
+          count(*) filter (where arm = 'holdout' and exists (select 1 from meetings m where m.account_id = f.account_id
+            and m.status <> 'cancelled' and m.booked_at between f.proposed_at and f.proposed_at + interval '60 days')) as m_h,
+          count(*) filter (where arm = 'treated' and exists (select 1 from opportunities o where o.account_id = f.account_id
+            and o.created_at between f.proposed_at and f.proposed_at + interval '90 days')) as d_t,
+          count(*) filter (where arm = 'holdout' and exists (select 1 from opportunities o where o.account_id = f.account_id
+            and o.created_at between f.proposed_at and f.proposed_at + interval '90 days')) as d_h
+        from first f""", play_id, play_id)
+    return (stats.lift_report(r["m_t"], r["n_t"], r["m_h"], r["n_h"]), stats.lift_report(r["d_t"], r["n_t"], r["d_h"], r["n_h"]))
 
 
 def plays_page(cur, *, money: bool) -> list[dict]:
@@ -335,7 +340,9 @@ def plays_page(cur, *, money: bool) -> list[dict]:
                                                and t.direction = 'out') t on t.first_at is not null
                                  where ap.play_id = %s""", p["id"])
         row = {**p, "funnel": f, "approvals": approvals, "bounces": bounces, "median_hours_to_first_touch": latency,
-               "lift": lifts(f)[0], "deal_lift": lifts(f)[1], "promotion": promotion_check(cur, p)}
+               "lift": (lf := lifts(cur, p["id"]))[0], "deal_lift": lf[1], "promotion": promotion_check(cur, p),
+               "cap_use": [{"key": k, "cap": float(v), "used": spend.play_month_used(cur, p["id"], "anthropic" if k == "anthropic_cents" else k)}
+                           for k, v in (p.get("monthly_cap") or {}).items()] if money else []}
         if money:
             row["pipeline_cents"] = db.val(cur, """select coalesce(sum(amount_cents), 0) from opportunities
                                                    where source_play_id = %s and attribution = 'sourced'""", p["id"])
@@ -446,8 +453,9 @@ def deliverability(cur) -> dict:
     names = {r["key"]: r["name"] for r in db.all(cur, "select key, name from plays")}
     watch = db.all(cur, "select * from play_step_watch order by paused desc, template_key")
     for w in watch:
-        key, _, step = w["template_key"].partition(":")
-        w["play"] = names.get(key, key)
+        parts = w["template_key"].split(":")  # play:step, or play:vN:step since steps are watched per version
+        key, step = parts[0], parts[-1]
+        w["play"] = names.get(key, key) + (f", version {parts[1][1:]}" if len(parts) == 3 and parts[1] != "v1" else "")
         w["step"] = int(step or 0) + 1
     capacity = sum(b["cap"] for b in boxes if not b["blocked"])
     thresholds = {k: float(outreach.setting(cur, k, d)) for k, d in (("placement_hold_below", 0.8), ("placement_pause_below", 0.5))}
@@ -494,7 +502,7 @@ def results(cur, *, money: bool) -> dict:
                count(*) filter (where exists (select 1 from meetings m where m.person_id = o.person_id
                    and m.booked_at between o.first_at and o.first_at + interval '30 days')) as meetings
         from first_out o group by 1 order by reached desc""")
-    meeting_lift, deal_lift = lifts(f)
+    meeting_lift, deal_lift = lifts(cur)
     out = {"funnel": f, "lift": meeting_lift, "deal_lift": deal_lift,
            "opportunities": opps, "sla": sla, "labels": labels, "signals": signal_performance(cur), "learnings": learn,
            "channels": channels}

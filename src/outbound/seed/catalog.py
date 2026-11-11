@@ -189,5 +189,8 @@ SENDING_DOMAINS = [
     ("getlumenledger.com", 220), ("lumenledger-hq.com", 210), ("trylumenledger.com", 190), ("lumenledgerapp.com", 25),
 ]
 
+# The monthly cap each demo play was launched with (credits per vendor, AI in cents).
+PLAY_CAP = {"people_search": 120, "email_finder": 120, "email_verifier": 240, "phone_finder": 60, "anthropic_cents": 1500}
+
 BUDGETS = [("people_search", 400000), ("email_finder", 300000), ("email_verifier", 300000),
            ("phone_finder", 200000), ("anthropic", 30000)]  # vendor units: credits; anthropic in cents

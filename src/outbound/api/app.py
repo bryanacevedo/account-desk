@@ -430,8 +430,10 @@ class LinkedInEvent(BaseModel):
 def linkedin_event(person_id: int, body: LinkedInEvent, u: dict = Depends(writer)) -> dict:
     """The SDR records what happened on LinkedIn: they accepted the request, or they wrote back (pasted here)."""
     with db.tx() as cur:
-        if not db.val(cur, "select exists (select 1 from people where id = %s)", person_id):
+        acct = db.val(cur, "select account_id from people where id = %s", person_id)
+        if acct is None and not db.val(cur, "select exists (select 1 from people where id = %s)", person_id):
             raise HTTPException(404, "No such person.")
+        _sdr_owns(cur, u, acct)
         if body.event == "accepted":
             sdr_steps.connection_accepted(cur, person_id, user_id=u["id"])
             return {"ok": True}
@@ -563,6 +565,17 @@ def remove_suppression(sup_id: int, u: dict = Depends(writer)) -> dict:
     return {"ok": True}
 
 
+def _sdr_owns(cur, u: dict, account_id: int | None) -> None:
+    """An SDR acts on accounts they own or work in an open play; managers and GTM act on any."""
+    if u["role"] != "sdr" or account_id is None:
+        return
+    owner = db.val(cur, """select coalesce((select ap.owner_id from account_plays ap where ap.account_id = %s and ap.state in
+                           ('proposed','accepted','researching','approving','active','engaged','meeting') order by ap.proposed_at desc
+                           limit 1), (select owner_id from accounts where id = %s))""", account_id, account_id)
+    if owner not in (None, u["id"]):
+        raise HTTPException(403, "This account belongs to another SDR.")
+
+
 class Hold(BaseModel):
     until: datetime
     reason: str = Field(min_length=3, max_length=300)
@@ -572,6 +585,7 @@ class Hold(BaseModel):
 def hold_account(account_id: int, body: Hold, u: dict = Depends(writer)) -> dict:
     """Put an account on hold (a partner is talking to them, legal asked): nothing sends until the date."""
     with db.tx() as cur:
+        _sdr_owns(cur, u, account_id)
         db.run(cur, "insert into holds (account_id, reason, until, set_by) values (%s,%s,%s,%s)",
                account_id, body.reason, body.until, f"person:{u['id']}")
         audit.log(cur, "person", "held", "account", account_id, {"until": body.until.isoformat()}, actor_id=u["id"])
@@ -626,6 +640,9 @@ class PlayChange(BaseModel):
     status: Literal["live", "paused"] | None = None
     autonomy: Literal["research", "draft", "supervised", "autonomous"] | None = None
     reason: str = Field(min_length=3, max_length=300)
+    # The monthly cap the manager sets at launch (SPEC 22.16): credits per vendor, and AI in cents.
+    monthly_cap: dict[Literal["people_search", "email_finder", "email_verifier", "phone_finder", "anthropic_cents"],
+                      int] | None = None
 
 
 @app.post("/api/plays/{play_id}")
@@ -640,10 +657,18 @@ def change_play(play_id: int, body: PlayChange, u: dict = Depends(writer)) -> di
                 raise HTTPException(403, "A manager launches plays.")
             if body.status == "live" and p["created_by"] == u["id"]:
                 raise HTTPException(422, "The person who wrote a play cannot launch it.")
+            if body.status == "live" and p["status"] == "draft" and not (body.monthly_cap or p["monthly_cap"]):
+                raise HTTPException(422, "Set the play's monthly cap from its cost card before launching it.")
             db.run(cur, """update plays set status = %s,
                            launched_by = case when %s = 'live' then coalesce(launched_by, %s) else launched_by end,
                            launched_at = case when %s = 'live' then coalesce(launched_at, app_now()) else launched_at end
                            where id = %s""", body.status, body.status, u["id"], body.status, play_id)
+        if body.monthly_cap is not None:
+            if u["role"] != "manager":
+                raise HTTPException(403, "A manager sets a play's monthly cap.")
+            if any(v < 0 for v in body.monthly_cap.values()):
+                raise HTTPException(422, "A cap cannot be negative.")
+            db.run(cur, "update plays set monthly_cap = %s where id = %s", db.J(body.monthly_cap), play_id)
         if body.autonomy and body.autonomy != p["autonomy"]:
             order = views.STAGES
             if order.index(body.autonomy) > order.index(p["autonomy"]):
@@ -686,12 +711,17 @@ def create_play(body: play_editor.PlayIn, u: dict = Depends(writer)) -> dict:
         key = play_editor.slug(body.name)
         while db.val(cur, "select exists (select 1 from plays where key = %s)", key):
             key = f"{key}_2" if not key[-1].isdigit() else key[:-1] + str(int(key[-1]) + 1)
+        # The desk's own legitimate-interest reference, recorded at init; the most recent play's otherwise.
+        lia = db.val(cur, "select value #>> '{}' from settings where key = 'lia_ref'") or db.val(
+            cur, "select lia_ref from plays where lia_ref is not null order by id desc limit 1")
+        if not lia:
+            raise HTTPException(422, "The desk has no legitimate-interest reference yet. Set it at init.")
         pid = db.val(cur, """insert into plays (key, name, hypothesis, trigger, personas, max_people, sequence, angle, autonomy,
                                                 status, holdout_pct, owner_id, created_by, urgent, latency_hours, lia_ref)
-                             values (%s,%s,%s,%s,%s,%s,%s,%s,'draft','draft',%s,%s,%s,%s,%s,'LIA-2026-07') returning id""",
+                             values (%s,%s,%s,%s,%s,%s,%s,%s,'draft','draft',%s,%s,%s,%s,%s,%s) returning id""",
                      key, body.name, body.hypothesis, db.J(body.trigger.model_dump()), body.personas, body.max_people,
                      db.J([s.model_dump() for s in body.sequence]), body.angle, body.holdout_pct, u["id"], u["id"],
-                     body.urgent, body.latency_hours)
+                     body.urgent, body.latency_hours, lia)
         audit.log(cur, "person", "play_created", "play", pid, {"name": body.name}, actor_id=u["id"])
     return {"ok": True, "id": pid}
 
@@ -704,6 +734,15 @@ def edit_play(play_id: int, body: play_editor.PlayIn, u: dict = Depends(writer))
         if p is None:
             raise HTTPException(404, "No such play.")
         _play_in(cur, body)
+        # A live play's words can change; who it reaches, when, and how many are held back change only after a
+        # manager pauses it, so the comparison group is not reshuffled mid-measurement without anyone deciding to.
+        if p["status"] == "live":
+            moved = [k for k, new in (("trigger", body.trigger.model_dump()), ("sequence", [x.model_dump() for x in body.sequence]),
+                                      ("personas", body.personas), ("max_people", body.max_people),
+                                      ("holdout_pct", body.holdout_pct)) if p[k] != new]
+            if moved:
+                raise HTTPException(409, "This play is live. A manager pauses it before its "
+                                         + ", ".join(m.replace("_", " ") for m in moved) + " can change.")
         db.run(cur, """update plays set name = %s, hypothesis = %s, trigger = %s, personas = %s, max_people = %s,
                        sequence = %s, angle = %s, holdout_pct = %s, urgent = %s, latency_hours = %s, version = version + 1
                        where id = %s""", body.name, body.hypothesis, db.J(body.trigger.model_dump()), body.personas,

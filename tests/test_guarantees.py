@@ -356,3 +356,15 @@ def test_a_domain_at_its_daily_cap_cannot_send(cur, scene):
            scene["mailbox"])
     refused(cur, scene["message"], "domain at its daily cap")
 
+
+
+def test_nobody_is_emailed_after_replying(cur, scene):
+    db.run(cur, """insert into replies (person_id, account_id, received_at, from_addr, raw, cleaned, label)
+                   values (%s, %s, now(), 'ana@x.example', 'Not now', 'Not now', null)""", scene["person"], scene["account"])
+    refused(cur, scene["message"], "they replied")
+
+
+def test_an_out_of_office_does_not_count_as_a_reply(cur, scene):
+    db.run(cur, """insert into replies (person_id, account_id, received_at, from_addr, raw, cleaned, label)
+                   values (%s, %s, now(), 'ana@x.example', 'Away', 'Away', 'out_of_office')""", scene["person"], scene["account"])
+    send(cur, scene["message"])

@@ -15,6 +15,14 @@ PERIODIC = {  # kind: minutes
 
 def tick(cur) -> int:
     jobs.reap(cur)
+    # Guarantee 21: the monitors run every 6 hours. If none ran in 12, the tick itself says so.
+    last = db.val(cur, "select max(at) from monitor_runs")
+    if last is not None and db.val(cur, "select %s < app_now() - interval '12 hours'", last):
+        from . import alerts
+        alerts.raise_alert(cur, kind="monitors_stale", severity="urgent", channel="#outbound-ops",
+                           title="The checks have not run for 12 hours",
+                           body="Nothing is watching sends, caps or replies. Check the worker.",
+                           dedup_key=f"monitors_stale:{db.val(cur, "select to_char(app_now(), 'YYYY-MM-DD')")}")
     now = db.val(cur, "select app_now()")
     queued = 0
     state = {r["key"]: r["value"] for r in db.all(cur, "select key, value from settings where key like 'sched:%%'")}

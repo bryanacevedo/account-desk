@@ -7,7 +7,7 @@ import os
 import urllib.parse
 import urllib.request
 
-from . import Adapters, DnsResult
+from . import Adapters, DnsResult, DomainTelemetry, VendorMissing
 
 DOH = "https://cloudflare-dns.com/dns-query"
 
@@ -38,12 +38,58 @@ class DohDns:
                           "spf_records": len(spf)})
 
 
+class Missing:
+    """Stands in for every vendor without a key in live mode. It never invents a result: paid lookups and sends
+    raise VendorMissing (the job waits and the team is told), and reads return 'unknown' or nothing."""
+    def __init__(self, vendor: str):
+        self.vendor = vendor
+        self.name = f"missing:{vendor}"
+
+    def _stop(self, *_a, **_k):
+        raise VendorMissing(f"no {self.vendor} configured")
+
+    # people search, finder, verifier, phone, email channel, CRM writes: refuse
+    search = find = verify = send = lookup = push = _stop
+
+    def saved(self, *_a, **_k) -> None:
+        return None
+
+    def pages(self, *_a, **_k) -> list:  # research: no pages, so no facts, never invented ones
+        return []
+
+    def domains(self, cur, domains: list[str]) -> list[DomainTelemetry]:  # spam rate unknown, never clean
+        return [DomainTelemetry(d, None, None) for d in domains]
+
+    def placement(self, *_a, **_k) -> list:  # no seed test: placement stays unknown, which holds capacity
+        return []
+
+    def deals_changed(self, *_a, **_k) -> list:
+        return []
+
+    def owners_changed(self, *_a, **_k) -> list:
+        return []
+
+    def post(self, *_a, **_k) -> bool:  # an alert that could not be delivered stays undelivered
+        return False
+
+    def ensure_channel(self, *_a, **_k) -> str:
+        return ""
+
+
 def adapters(sim: Adapters) -> Adapters:
+    """Live mode replaces every simulated vendor. A vendor with a key gets its live adapter; one without gets
+    Missing, so a live desk never acts on simulated data."""
+    m = Missing
+    live = Adapters(people=m("people search"), finder=m("email finder"), verifier=m("email verifier"),
+                    phone=m("phone finder"), research=m("website research"), email=m("mail provider"),
+                    telemetry=m("deliverability telemetry"), dns=m("DNS"), chat=m("Slack"), crm=m("CRM"), notes=[])
     if os.environ.get("LIVE_DNS", "1") != "0":
-        sim.dns = DohDns()
-        sim.notes.append("DNS checks are live (DNS-over-HTTPS); blocklists need a vendor key")
-    sim.notes.append("Live mode: other vendors stay simulated until their keys are set")
-    return sim
+        live.dns = DohDns()
+    missing = [a.vendor for a in vars(live).values() if isinstance(a, Missing)]
+    live.notes.append("Live: DNS checks (DNS-over-HTTPS)" if not isinstance(live.dns, Missing) else "Live: nothing yet")
+    if missing:
+        live.notes.append("Not configured, so that work waits: " + ", ".join(missing))
+    return live
 
 
 def fetch_source(cur, source: str) -> list[dict]:

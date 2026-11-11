@@ -44,6 +44,27 @@ def _backoff(attempts: int) -> timedelta:
     return timedelta(seconds=min(3600, 30 * 2 ** max(0, attempts - 1)))
 
 
+def adapters_missing() -> type[Exception]:
+    from .adapters import VendorMissing
+    return VendorMissing
+
+
+def _play_of(cur, payload: dict) -> int | None:
+    if payload.get("account_play_id"):
+        return db.val(cur, "select play_id from account_plays where id = %s", payload["account_play_id"])
+    if payload.get("enrollment_id"):
+        return db.val(cur, """select ap.play_id from enrollments e join account_plays ap on ap.id = e.account_play_id
+                              where e.id = %s""", payload["enrollment_id"])
+    if payload.get("person_id"):
+        return db.val(cur, """select ap.play_id from enrollments e join account_plays ap on ap.id = e.account_play_id
+                              where e.person_id = %s and e.state in ('pending','active','paused')
+                              order by e.created_at desc limit 1""", payload["person_id"])
+    if payload.get("reply_id"):
+        return db.val(cur, """select ap.play_id from replies r join account_plays ap on ap.account_id = r.account_id
+                              where r.id = %s and ap.state in ('approving','active','engaged') limit 1""", payload["reply_id"])
+    return None
+
+
 def run_ready(limit: int = 200) -> int:
     """Run jobs whose time has come, one transaction each. Returns how many ran."""
     ran = 0
@@ -60,13 +81,30 @@ def run_ready(limit: int = 200) -> int:
                                 "attempts = attempts + 1 where id = %s", WORKER_ID, job["id"])
             fn = HANDLERS.get(job["kind"])
             error = None
+            from . import spend
             try:
                 if fn is None:
                     raise RuntimeError(f"no handler for job kind {job['kind']}")
                 with conn.transaction():
                     with conn.cursor() as cur:
-                        fn(cur, job["payload"])
+                        # Every charge this job makes is tagged with the play it works for, so the play's cap holds.
+                        with spend.for_play(_play_of(cur, job["payload"])):
+                            fn(cur, job["payload"])
                         db.run(cur, "update jobs set status = 'done', finished_at = app_now() where id = %s", job["id"])
+            except (spend.OverBudget, adapters_missing()) as exc:
+                # Out of budget is "not now", never a failure: the job waits a day without using up a retry.
+                with conn.transaction():
+                    with conn.cursor() as cur:
+                        db.run(cur, "update jobs set status = 'queued', attempts = attempts - 1, last_error = %s, "
+                                    "run_at = app_now() + interval '1 day' where id = %s", f"Waiting: {exc}", job["id"])
+                        from . import alerts
+                        month = db.val(cur, "select to_char(app_now(), 'YYYY-MM')")
+                        alerts.raise_alert(cur, kind="budget_wait", severity="warn", channel="#outbound-ops",
+                                           title=f"Work is waiting: {exc}",
+                                           body="It runs again tomorrow, or as soon as the cap is raised or the vendor is set up.",
+                                           dedup_key=f"budget_wait:{exc}:{month}")
+                ran += 1
+                continue
             except Exception as exc:  # the job's own writes rolled back; record the failure
                 error = f"{type(exc).__name__}: {exc}"
                 log.warning("job %s %s failed: %s", job["id"], job["kind"], error)

@@ -158,6 +158,9 @@ PLAY = {"name": "Test play from the editor", "hypothesis": "Companies hiring bil
                      {"day": 4, "channel": "call", "job": "call", "by": "sdr"}]}
 
 
+CAP = {"people_search": 500, "email_finder": 500, "email_verifier": 1000, "phone_finder": 200, "anthropic_cents": 5000}
+
+
 def test_gtm_writes_a_play_and_only_another_manager_launches_it(client):
     gtm, mgr, sdr = (str(user(r)) for r in ("gtm", "manager", "sdr"))
     assert client.post("/api/plays", json=PLAY, headers={"X-Acting-As": sdr}).status_code == 403
@@ -169,7 +172,10 @@ def test_gtm_writes_a_play_and_only_another_manager_launches_it(client):
     edited = {**PLAY, "max_people": 3}
     assert client.put(f"/api/plays/{pid}", json=edited, headers={"X-Acting-As": gtm}).status_code == 200
     assert client.post(f"/api/plays/{pid}", json={"status": "live", "reason": "test"}, headers={"X-Acting-As": gtm}).status_code == 403
-    assert client.post(f"/api/plays/{pid}", json={"status": "live", "reason": "test"}, headers={"X-Acting-As": mgr}).status_code == 200
+    no_cap = client.post(f"/api/plays/{pid}", json={"status": "live", "reason": "test"}, headers={"X-Acting-As": mgr})
+    assert no_cap.status_code == 422 and "monthly cap" in no_cap.json()["detail"]
+    assert client.post(f"/api/plays/{pid}", json={"status": "live", "reason": "test", "monthly_cap": CAP},
+                       headers={"X-Acting-As": mgr}).status_code == 200
     with db.tx() as cur:
         row = db.one(cur, "select status, max_people, version, launched_by from plays where id = %s", pid)
     assert row["status"] == "live" and row["max_people"] == 3 and row["version"] == 2 and row["launched_by"] == int(mgr)
@@ -195,7 +201,7 @@ def test_a_play_without_emails_runs_on_calls_and_linkedin(client):
             "sequence": [{"day": 0, "channel": "linkedin_connect", "job": "connect", "by": "sdr"},
                          {"day": 2, "channel": "call", "job": "call", "by": "sdr"}]}
     pid = client.post("/api/plays", json=body, headers={"X-Acting-As": gtm}).json()["id"]
-    client.post(f"/api/plays/{pid}", json={"status": "live", "reason": "test"}, headers={"X-Acting-As": mgr})
+    client.post(f"/api/plays/{pid}", json={"status": "live", "reason": "test", "monthly_cap": CAP}, headers={"X-Acting-As": mgr})
     with db.tx() as cur:
         acct = db.val(cur, """select a.id from accounts a where a.fit_tier in ('A','B') and a.lifecycle = 'prospect'
                               and not exists (select 1 from account_plays x where x.account_id = a.id and x.state in
@@ -245,3 +251,16 @@ def test_a_calendar_booking_and_its_cancellation(client):
     with db.tx() as cur:
         assert db.val(cur, "select status from meetings where id = %s", mid) == "cancelled"
     assert client.get(f"/api/meetings/{mid}").status_code == 200
+
+
+def test_a_live_play_keeps_its_audience_until_a_manager_pauses_it(client):
+    gtm, mgr = str(user("gtm")), str(user("manager"))
+    pid = client.post("/api/plays", json={**PLAY, "name": "Live edit rules"}, headers={"X-Acting-As": gtm}).json()["id"]
+    client.post(f"/api/plays/{pid}", json={"status": "live", "reason": "test", "monthly_cap": CAP}, headers={"X-Acting-As": mgr})
+    r = client.put(f"/api/plays/{pid}", json={**PLAY, "name": "Live edit rules", "holdout_pct": 30}, headers={"X-Acting-As": gtm})
+    assert r.status_code == 409 and "holdout pct" in r.json()["detail"]
+    assert client.put(f"/api/plays/{pid}", json={**PLAY, "name": "Live edit rules, renamed"},
+                      headers={"X-Acting-As": gtm}).status_code == 200
+    client.post(f"/api/plays/{pid}", json={"status": "paused", "reason": "test"}, headers={"X-Acting-As": mgr})
+    assert client.put(f"/api/plays/{pid}", json={**PLAY, "name": "Live edit rules", "holdout_pct": 30},
+                      headers={"X-Acting-As": gtm}).status_code == 200

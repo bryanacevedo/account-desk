@@ -145,3 +145,17 @@ def test_live_dns_reads_records_and_never_claims_a_clean_blocklist(monkeypatch):
     assert (r.spf, r.dkim, r.dmarc, r.dmarc_policy, r.dmarc_aligned, r.blocklists) == (True, True, True, "quarantine", True, None)
     r = live.DohDns().check(None, "acme.example", "selector1")
     assert r.dkim is False and r.dmarc_aligned is False
+
+
+def test_a_play_at_its_monthly_cap_waits_and_takes_no_new_accounts(cur, box):
+    from outbound import spend
+    play = db.one(cur, """insert into plays (key, name, hypothesis, trigger, personas, sequence, angle, monthly_cap)
+                          values (%s, 'Capped', 'h', '{}', '{cfo}', '[]', 'a', %s) returning *""",
+                  f"cap{id(cur)}", '{"email_verifier": 2}')
+    with spend.for_play(play["id"]):
+        db.run(cur, "insert into ledger (vendor, unit, qty, cost_cents, purpose, play_id) values "
+                    "('email_verifier', 'credits', 2, 1.6, 'verify', %s)", play["id"])
+        with pytest.raises(spend.PlayOverBudget):
+            spend.check_play(cur, "email_verifier", 1)
+    assert spend.play_at_cap(cur, play)
+    assert spend.check_play(cur, "email_verifier", 1) is None  # outside the play's work, its cap does not apply

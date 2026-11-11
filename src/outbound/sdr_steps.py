@@ -125,6 +125,9 @@ def complete(cur, task_id: int, *, user: dict, outcome: str, text: str | None = 
                    f"Not sent: {reason}", task_id)
             raise ValueError(f"The desk refused this: {reason}. The task is closed.") from None
         touch_kind = t["kind"]
+    elif t["kind"] == "research" and outcome == "done" and t["person_id"] and t["title"].startswith("Write to"):
+        # A research-stage play: the SDR wrote this email themselves. It is outreach, so it is recorded as such.
+        touch_kind = "sdr_email"
     elif t["kind"] == "call" and outcome != "skipped":
         touch_kind = f"call_{outcome}"
         if outcome == "wrong_number":
@@ -133,7 +136,8 @@ def complete(cur, task_id: int, *, user: dict, outcome: str, text: str | None = 
         db.run(cur, """insert into touches (account_id, person_id, account_play_id, channel, direction, kind, at, source,
                                             message_id, dedup_key)
                        values (%s,%s,%s,%s,'out',%s,app_now(),'sdr',%s,%s) on conflict do nothing""",
-               p["account_id"], p["id"], t["account_play_id"], "call" if t["kind"] == "call" else "linkedin", touch_kind,
+               p["account_id"], p["id"], t["account_play_id"],
+               {"call": "call", "research": "email"}.get(t["kind"], "linkedin"), touch_kind,
                t["message_id"], f"task:{task_id}")
     if t["kind"] == "call" and outcome == "connected" and p:
         in_conversation(cur, p["id"], t["account_play_id"])

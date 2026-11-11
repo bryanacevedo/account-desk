@@ -898,6 +898,7 @@ export function PlaySheet({ id }: { id: number }) {
     .map((t: any) => [t.key, t.label]));
   const me = useData<any>("/api/me").data;
   const [busy, run] = useBusy();
+  const [limits, setLimits] = useState<Record<string, number> | null>(null);
   if (error) return <Frame crumb="Play"><Failed error={error} retry={reload} /></Frame>;
   const p = data?.plays.find((x: any) => x.id === id);
   if (!p) return <Frame crumb="Play"><Loading rows={8} /></Frame>;
@@ -909,7 +910,7 @@ export function PlaySheet({ id }: { id: number }) {
     <>
       {me.user.role === "gtm" ? <button className="btn line" onClick={() => openSheet("playedit", id)}>Edit</button> : null}
       {p.status === "live" ? <button className="btn line" disabled={busy} onClick={() => change({ status: "paused", reason: "Paused from the desk" }, "Paused. Nothing new is proposed.")}>Pause</button>
-        : p.status === "draft" ? (isManager && !isAuthor ? <button className="btn" disabled={busy} onClick={() => change({ status: "live", reason: "Launched after the cost card" }, "Launched.")}>Launch</button>
+        : p.status === "draft" ? (isManager && !isAuthor ? <button className="btn" disabled={busy || !limits} onClick={() => change({ status: "live", reason: "Launched after the cost card", monthly_cap: limits }, "Launched, with its monthly cap.")}>Launch</button>
           : <span className="mute small">{isAuthor ? "A manager launches it" : "Waiting for a manager"}</span>)
         : <button className="btn line" disabled={busy || !isManager} onClick={() => change({ status: "live", reason: "Resumed from the desk" }, "Live again.")}>Resume</button>}
       {promo.next && p.status !== "draft" ? <button className="btn" disabled={busy || !promo.ready || !isManager} title={!isManager ? "A manager approves a promotion" : undefined}
@@ -962,7 +963,9 @@ export function PlaySheet({ id }: { id: number }) {
           ))}
         </div>
       </Section>
-      {p.status === "draft" ? <DraftPreview p={p} /> : null}
+      {p.status === "draft" ? <DraftPreview p={p} onCost={(c) => { if (!limits && c) setLimits(defaultCap(c)); }} /> : null}
+      {p.status === "draft" && isManager && !isAuthor && limits ? <CapForm limits={limits} setLimits={setLimits} /> : null}
+      {p.status !== "draft" && p.cap_use?.length ? <CapUse rows={p.cap_use} /> : null}
       {promo.next && p.status !== "draft" ? (
         <Section title={`Before: ${STAGE[promo.next]}`}>
           <div className="ledger">
@@ -978,15 +981,60 @@ export function PlaySheet({ id }: { id: number }) {
   );
 }
 
-function DraftPreview({ p }: { p: any }) {
+function DraftPreview({ p, onCost }: { p: any; onCost?: (c: any) => void }) {
   const [pv, setPv] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     const body = { name: p.name, hypothesis: p.hypothesis, angle: p.angle, personas: p.personas, max_people: p.max_people,
       holdout_pct: p.holdout_pct, urgent: p.urgent, latency_hours: p.latency_hours, sequence: p.sequence, trigger: p.trigger };
-    api("/api/play-preview", { method: "POST", body }).then(setPv).catch((e) => setErr(e.message));
+    api<any>("/api/play-preview", { method: "POST", body }).then((r) => { setPv(r); onCost?.(r.cost); }).catch((e) => setErr(e.message));
   }, [p.id]); // eslint-disable-line react-hooks/exhaustive-deps
   return <PlayPreview pv={pv} error={err} />;
+}
+
+const CAP_NAMES: Record<string, [string, string]> = {
+  people_search: ["People search", "credits"], email_finder: ["Email finder", "credits"],
+  email_verifier: ["Email verification", "credits"], phone_finder: ["Phone finder", "credits"], anthropic_cents: ["AI", "cents"],
+};
+
+/** The cost card's worst case a month, rounded up, as the starting cap. The manager can lower or raise it. */
+function defaultCap(c: any): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(c.per_month.credits as Record<string, number>)) if (v > 0) out[k] = Math.ceil(v);
+  out.anthropic_cents = Math.max(100, Math.ceil(c.per_month.ai_dollars * 100));
+  return out;
+}
+
+function CapForm({ limits, setLimits }: { limits: Record<string, number>; setLimits: (c: Record<string, number>) => void }) {
+  return (
+    <Section title="Monthly cap" right={<span className="mute small">Starts at the worst case above. At the cap the play takes no new accounts until next month.</span>}>
+      <div className="ledger">
+        {Object.entries(limits).map(([k, v]) => (
+          <div key={k} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 120px 70px" }}>
+            <span>{CAP_NAMES[k]?.[0] || k}</span>
+            <input className="input num" inputMode="numeric" value={v} aria-label={`${CAP_NAMES[k]?.[0] || k} cap`}
+              onChange={(e) => setLimits({ ...limits, [k]: Math.max(0, Number(e.target.value.replace(/\D/g, "")) || 0) })} />
+            <span className="mute small">{CAP_NAMES[k]?.[1]}</span>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+function CapUse({ rows }: { rows: any[] }) {
+  return (
+    <Section title="This month against its cap">
+      <div className="ledger">
+        {rows.map((r: any) => (
+          <div key={r.key} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(140px,1.4fr)" }}>
+            <span>{CAP_NAMES[r.key]?.[0] || r.key}</span>
+            <Bar label="" value={r.used} of={Math.max(r.cap, 1)} shown={`${n0(r.used)} of ${n0(r.cap)}`} hint={CAP_NAMES[r.key]?.[1]} tone={r.used >= r.cap ? "accent" : undefined} />
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
 }
 
 function PlayAccounts({ id }: { id: number }) {

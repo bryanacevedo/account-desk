@@ -124,8 +124,11 @@ def upsert_deal(cur, d, *, account_id: int | None = None) -> int | None:
 
 def _lifecycle(cur, account_id: int) -> None:
     """A won deal makes a customer; an open deal an open opportunity; a lost expansion leaves a customer a customer."""
+    # A customer stays a customer: the CRM or an import said so, and a lost expansion deal does not change it.
+    # Only an account the desk itself moved to open_opp falls back to prospect when its last open deal closes lost.
     db.run(cur, """update accounts a set lifecycle = case
                      when exists (select 1 from opportunities x where x.account_id = a.id and x.won) then 'customer'
+                     when a.lifecycle = 'customer' then 'customer'
                      when exists (select 1 from opportunities x where x.account_id = a.id and x.closed_at is null) then 'open_opp'
                      else 'prospect' end
                    where a.id = %s and a.lifecycle in ('open_opp', 'prospect', 'customer')""", account_id)
@@ -236,7 +239,8 @@ def crm_sync(cur, payload: dict) -> None:
         for d in batch:
             if upsert_deal(cur, d) is None:
                 unknown += 1
-            since = d.updated_at.isoformat() if hasattr(d.updated_at, "isoformat") else str(d.updated_at)
+            # The cursor is (time, id): deals that share a timestamp across a batch edge are still all read.
+            since = (d.updated_at.isoformat() if hasattr(d.updated_at, "isoformat") else str(d.updated_at)) + "|" + d.crm_id
         if len(batch) < 200:
             break
     if since:

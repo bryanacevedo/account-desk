@@ -2,6 +2,7 @@
 the vendor's monthly cap. Credits and dollars are never added together."""
 from __future__ import annotations
 
+import contextvars
 import time
 from contextlib import contextmanager
 from typing import Iterator
@@ -17,6 +18,57 @@ UNITS = {"people_search": "credits", "email_finder": "credits", "email_verifier"
 
 class OverBudget(Exception):
     pass
+
+
+class PlayOverBudget(OverBudget):
+    """The play reached the monthly cap its manager set at launch; the desk-wide cap may still have room."""
+
+
+# The play the current work is for. Jobs that work an account play set it; every paid call charges it.
+current_play: contextvars.ContextVar[int | None] = contextvars.ContextVar("current_play", default=None)
+
+
+@contextmanager
+def for_play(play_id: int | None) -> Iterator[None]:
+    token = current_play.set(play_id)
+    try:
+        yield
+    finally:
+        current_play.reset(token)
+
+
+def play_month_used(cur, play_id: int, vendor: str) -> float:
+    col = "cost_cents" if vendor == "anthropic" else "qty"
+    return float(db.val(cur, f"select coalesce(sum({col}), 0) from ledger where play_id = %s and vendor = %s "
+                             "and at >= date_trunc('month', app_now())", play_id, vendor))
+
+
+def check_play(cur, vendor: str, qty: float) -> None:
+    """Hold the play's own cap. Over it: the play stops taking accounts this month and its manager hears once."""
+    pid = current_play.get()
+    if pid is None:
+        return
+    p = db.one(cur, "select name, monthly_cap, launched_by from plays where id = %s", pid)
+    caps = (p or {}).get("monthly_cap") or {}
+    key = "anthropic_cents" if vendor == "anthropic" else vendor
+    if key not in caps:
+        return
+    if play_month_used(cur, pid, vendor) + qty > float(caps[key]):
+        month = db.val(cur, "select to_char(app_now(), 'YYYY-MM')")
+        alerts.raise_alert(cur, kind="play_budget", severity="warn", channel="#outbound-ops", target_user=p["launched_by"],
+                           title=f"{p['name']} reached its monthly cap for {vendor}",
+                           body="It takes no new accounts until next month. Raise the cap on the play to continue.",
+                           object_kind="play", object_id=pid, dedup_key=f"play_budget:{pid}:{vendor}:{month}")
+        raise PlayOverBudget(f"{p['name']}: {vendor}")
+
+
+def play_at_cap(cur, play: dict) -> bool:
+    """Whether any of the play's caps is used up this month, so matching stops proposing accounts for it."""
+    for key, cap in (play.get("monthly_cap") or {}).items():
+        vendor = "anthropic" if key == "anthropic_cents" else key
+        if play_month_used(cur, play["id"], vendor) >= float(cap):
+            return True
+    return False
 
 
 def month_used(cur, vendor: str) -> float:
@@ -41,6 +93,8 @@ def paid_call(cur, adapter: str, operation: str, *, vendor: str, qty: float, pur
               account_id: int | None = None) -> Iterator[dict]:
     """Wraps one paid adapter call. Charges only when the call returns; a failed call is logged unpaid."""
     check_budget(cur, vendor, qty)
+    check_play(cur, vendor, qty)
+    play_id = current_play.get()
     started = time.perf_counter()
     info: dict = {}
     ok = False
@@ -57,12 +111,13 @@ def paid_call(cur, adapter: str, operation: str, *, vendor: str, qty: float, pur
                                     "values (%s,%s,%s,%s,%s,%s) returning id", adapter, operation, ok, ok, ms, J(info))
                 if ok:
                     charged = info.get("charged_qty", qty)
-                    db.run(c, "insert into ledger (vendor, unit, qty, cost_cents, purpose, account_id, adapter_call_id) "
-                              "values (%s,%s,%s,%s,%s,%s,%s)", vendor, UNITS.get(vendor, "credits"), charged,
-                           round(charged * RATES.get(vendor, 0), 4), purpose, account_id, call_id)
+                    db.run(c, "insert into ledger (vendor, unit, qty, cost_cents, purpose, account_id, adapter_call_id, play_id) "
+                              "values (%s,%s,%s,%s,%s,%s,%s,%s)", vendor, UNITS.get(vendor, "credits"), charged,
+                           round(charged * RATES.get(vendor, 0), 4), purpose, account_id, call_id, play_id)
 
 
 def charge_llm(cur, *, model: str, input_tokens: int, output_tokens: int, cost_cents: float, purpose: str,
                account_id: int | None = None) -> None:
-    db.run(cur, "insert into ledger (vendor, unit, qty, cost_cents, purpose, account_id) values "
-                "('anthropic', 'tokens', %s, %s, %s, %s)", input_tokens + output_tokens, cost_cents, purpose, account_id)
+    db.run(cur, "insert into ledger (vendor, unit, qty, cost_cents, purpose, account_id, play_id) values "
+                "('anthropic', 'tokens', %s, %s, %s, %s, %s)", input_tokens + output_tokens, cost_cents, purpose, account_id,
+           current_play.get())

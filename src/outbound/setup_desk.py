@@ -76,6 +76,8 @@ def init(cur, cfg: DeskConfig) -> dict:
         raise ValueError("This desk already has users. init only runs once, on an empty database.")
     for k, v in C.SETTINGS.items():
         db.run(cur, "insert into settings (key, value) values (%s, %s) on conflict (key) do nothing", k, J(v))
+    db.run(cur, "insert into settings (key, value) values ('lia_ref', %s) on conflict (key) do update set value = excluded.value",
+           J(cfg.lia_ref))
     ids: dict[str, int] = {}
     for u in cfg.users:
         ids[u.email.lower()] = db.val(cur, """insert into users (name, email, role, timezone, slack_id)
@@ -145,8 +147,8 @@ def import_accounts(cur, text: str) -> dict:
         if not r.get("name") or not domain:
             refused.append({"row": i, "why": "needs a name and a company domain (not a free email provider)"})
             continue
-        lifecycle = (r.get("lifecycle") or "prospect").lower()
-        if lifecycle not in LIFECYCLES:
+        lifecycle = (r.get("lifecycle") or "").lower() or None  # blank keeps what the desk has
+        if lifecycle is not None and lifecycle not in LIFECYCLES:
             refused.append({"row": i, "why": f"lifecycle must be one of {', '.join(sorted(LIFECYCLES))}"})
             continue
         emp = r.get("employees") or None
@@ -156,14 +158,15 @@ def import_accounts(cur, text: str) -> dict:
         owner = db.val(cur, "select id from users where email = %s", r["owner_email"].lower()) if r.get("owner_email") else None
         aid = db.val(cur, """
             insert into accounts (name, name_key, primary_domain, industry, employees, hq_country, lifecycle, owner_id, crm_id, source)
-            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'import')
+            values (%s,%s,%s,%s,%s,%s,coalesce(%s, 'prospect'),%s,%s,'import')
             on conflict (primary_domain) do update set name = excluded.name, name_key = excluded.name_key,
               industry = coalesce(excluded.industry, accounts.industry), employees = coalesce(excluded.employees, accounts.employees),
-              hq_country = coalesce(excluded.hq_country, accounts.hq_country), lifecycle = excluded.lifecycle,
+              hq_country = coalesce(excluded.hq_country, accounts.hq_country),
+              lifecycle = case when %s::text is null then accounts.lifecycle else excluded.lifecycle end,
               owner_id = coalesce(excluded.owner_id, accounts.owner_id), crm_id = coalesce(excluded.crm_id, accounts.crm_id)
             returning id""", r["name"], normalize_name(r["name"]), domain, r.get("industry") or None,
                      int(emp) if emp else None, (r.get("country") or "").upper() or None, lifecycle, owner,
-                     r.get("crm_id") or None)
+                     r.get("crm_id") or None, lifecycle)
         db.run(cur, "insert into account_domains (domain, account_id) values (%s,%s) on conflict do nothing", domain, aid)
         if r.get("parent_domain"):
             parents.append((aid, normalize_domain(r["parent_domain"])))

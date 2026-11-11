@@ -182,9 +182,11 @@ class SimDns:
 
 class SimCrm:
     def deals_changed(self, cur, since, limit: int) -> list[CrmDeal]:
+        ts, _, last = (since or "").partition("|")
         rows = db.all(cur, """select d.*, a.primary_domain from sim_crm_deals d join accounts a on a.id = d.account_id
-                              where d.updated_at > coalesce(%s::timestamptz, '-infinity') and d.updated_at <= app_now()
-                              order by d.updated_at, d.id limit %s""", since, limit)
+                              where (d.updated_at, d.crm_id) > (coalesce(nullif(%s, '')::timestamptz, '-infinity'), %s)
+                                and d.updated_at <= app_now()
+                              order by d.updated_at, d.crm_id limit %s""", ts, last, limit)
         return [CrmDeal(r["crm_id"], r["primary_domain"], r["name"], r["amount_cents"], r["stage"], r["created_at"],
                         r["updated_at"], r["closed_at"], r["won"], r["loss_reason"], r["contact_email"]) for r in rows]
 

@@ -240,8 +240,12 @@ def build_committee(cur, ap: dict, play: dict, account: dict, *, exclude: frozen
     gaps: dict[str, str] = {}
     trigger_person = db.val(cur, "select person_id from signals where id = %s", ap["trigger_signal_id"])
     used: set[int] = set(exclude)
+    # The account's own cap wins: a play may ask for five, but only tier A accounts take more than three at once
+    # (the enrollment trigger refuses the rest).
+    wide = int(setting(cur, "account_max_active_wide", 5)) if account.get("fit_tier") == "A" else int(setting(cur, "account_max_active", 3))
+    limit = min(play["max_people"], wide if play["max_people"] > 3 else play["max_people"])
     for key in play["personas"]:
-        if len(chosen) >= play["max_people"]:
+        if len(chosen) >= limit:
             break
         persona = personas[key]
         candidates = db.all(cur, """select * from people where account_id = %s and status = 'active'
@@ -310,9 +314,9 @@ def mailbox_capacity(cur, mailbox: dict) -> int:
     weeks = max(0, int(db.val(cur, "select (app_now()::date - %s) / 7", mailbox["ramp_start"])))
     cap = min(int(db.val(cur, "select value from settings where key = 'mailbox_max_daily'") or 30), 5 + 5 * weeks)
     d = db.one(cur, "select * from sending_domains where domain = %s", mailbox["domain"])
-    unknown_long = d["spam_rate"] is None and db.val(cur, "select coalesce(%s::timestamptz, '-infinity') < app_now() - interval '7 days'",
-                                                     d["spam_rate_at"])
-    if unknown_long or (d["spam_rate"] is not None and float(d["spam_rate"]) >= 0.001):
+    # Unknown means no reading in the last 7 days, whether there never was one or the last one is old.
+    unknown_long = db.val(cur, "select coalesce(%s::timestamptz, '-infinity') < app_now() - interval '7 days'", d["spam_rate_at"])
+    if unknown_long or d["spam_rate"] is None or float(d["spam_rate"]) >= 0.001:
         cap = min(cap, 10)  # cannot gain capacity while complaints are unknown or high
     worst, stale = placement(cur, mailbox["id"])
     if stale or (worst is not None and worst < float(setting(cur, "placement_hold_below", 0.8))):
@@ -484,7 +488,7 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
             returning *""",
             enrollment_id, step_index, linkedin_text(out["sentences"]),
             J({"ids": citations, "sentences": out["sentences"]}), status, J(verdict.as_dict()), J(attempts),
-            f"{play['key']}:{step_index}")
+            f"{play['key']}:v{play['version']}:{step_index}")
         return msg
     body = copy_gate.assemble(out, sender_name=owner["name"], footer=footer_for(person, f"{enrollment_id}:{step_index}"))
     msg = db.one(cur, """
@@ -495,7 +499,7 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
           citations = excluded.citations, status = excluded.status, gate = excluded.gate, attempts = excluded.attempts
         returning *""",
         enrollment_id, step_index, out["subject"], body, J({"ids": citations, "sentences": out["sentences"]}), status,
-        J(verdict.as_dict()), J(attempts), f"{play['key']}:{step_index}", e["mailbox_id"])
+        J(verdict.as_dict()), J(attempts), f"{play['key']}:v{play['version']}:{step_index}", e["mailbox_id"])
     if status == "awaiting_approval":
         maybe_auto_approve(cur, msg["id"])
     return db.one(cur, "select * from messages where id = %s", msg["id"])
@@ -735,10 +739,7 @@ def research_job(cur, payload: dict) -> None:
     plays.set_state(cur, ap["id"], "researching")
     play = db.one(cur, "select * from plays where id = %s", ap["play_id"])
     account = db.one(cur, "select * from accounts where id = %s", ap["account_id"])
-    try:
-        _research_facts(cur, account)
-    except spend.OverBudget:
-        raise
+    _research_facts(cur, account)  # out of budget raises, and the job waits a day (jobs.run_ready)
     write_brief(cur, ap, account)
     people = build_committee(cur, ap, play, account)
     if not people:

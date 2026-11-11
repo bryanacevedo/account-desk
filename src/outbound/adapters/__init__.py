@@ -12,6 +12,11 @@ from typing import Protocol
 from ..config import CONFIG
 
 
+class VendorMissing(Exception):
+    """A live desk asked for a vendor it has no key for. Work that needs it waits, and the team is told; nothing is
+    invented in its place."""
+
+
 @dataclass
 class Candidate:
     full_name: str
@@ -137,7 +142,7 @@ class CrmOwner:
 
 class Crm(Protocol):
     def push(self, cur, kind: str, payload: dict, idempotency_key: str) -> str: ...
-    def deals_changed(self, cur, since, limit: int) -> list[CrmDeal]: ...  # oldest change first
+    def deals_changed(self, cur, since: str | None, limit: int) -> list[CrmDeal]: ...  # since is 'time|crm_id', oldest first
     def owners_changed(self, cur, since, limit: int) -> list[CrmOwner]: ...  # oldest change first
 
 
