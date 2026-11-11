@@ -796,8 +796,24 @@ function AccountOverview({ d }: { d: any }) {
           ) : null}
         </Section>
       ) : d.plays[0]?.state === "held_out" ? (
-        <Section title="Held back"><div className="mute">Matched {d.plays[0].play} on {day(d.plays[0].proposed_at)}. Not contacted, on purpose.</div></Section>
+        <Section title="Held back"><div className="mute">Matched <button className="link" onClick={() => openSheet("play", d.plays[0].play_id)}>{d.plays[0].play}</button> on {day(d.plays[0].proposed_at)}. Not contacted, on purpose.</div></Section>
       ) : null}
+      {(() => {
+        // Every earlier play here, so any of them is one click away.
+        const past = (d.plays as any[]).filter((x) => x.id !== cur?.id && !(x === d.plays[0] && !cur && x.state === "held_out"));
+        return past.length ? (
+          <Section title="Earlier plays here">
+            <div className="ledger">
+              {past.map((x) => (
+                <button key={x.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => openSheet("play", x.play_id)}>
+                  <div className="cell-main"><span className="t">{x.play}</span><span className="s">{day(x.proposed_at)}{x.closed_at ? ` to ${day(x.closed_at)}` : ""}{x.owner ? `, ${x.owner}` : ""}</span></div>
+                  <Status kind={PLAY_STATE[x.state]?.[0] || "none"}>{PLAY_STATE[x.state]?.[1] || x.state}</Status>
+                </button>
+              ))}
+            </div>
+          </Section>
+        ) : null;
+      })()}
       <Section title="What moves the score">
         {d.contributions.length ? (
           <div className="bars">
