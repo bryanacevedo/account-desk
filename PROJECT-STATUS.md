@@ -8,7 +8,7 @@ v1 is built end to end on simulated vendors. **Public** at https://github.com/br
 
 Checked on 2026-11-11 by running them:
 
-- `pytest` on real Postgres 18: 107 passed on 2026-11-11 after the layer work (79 at first publish) (77 then, plus 2 eval replays) in about 5 seconds, including a 21-day simulation of the whole desk (140 accounts) followed by checks of every promise against what happened, and 9 regression tests for the first code review's blocking findings.
+- `pytest` on real Postgres 18: 152 passed on 2026-11-11 after both layer reviews' work (79 at first publish) (77 then, plus 2 eval replays) in about 5 seconds, including a 21-day simulation of the whole desk (140 accounts) followed by checks of every promise against what happened, and 9 regression tests for the first code review's blocking findings.
 - `ruff check src tests`: clean. `tsc --noEmit` and `vite build`: clean.
 - `make demo`: 460 invented accounts, 60 simulated days in about 25 seconds; opens on 2026-11-11 with work waiting for each SDR.
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Not yet walked by a fresh reviewer against `docs/DESIGN-CHECKLIST.md`, and not yet checked at phone width.
@@ -41,14 +41,13 @@ Checked on 2026-11-11 by running them:
 
 ## Next
 
-The layer review (`docs/LAYER-REVIEW.md`, 2026-11-11) found the email path deep and most of what sits off it thin. Done since: placement, LinkedIn and calls, the person sheet. Remaining, in the review's order of harm:
+Two fresh layer reviews (`docs/LAYER-REVIEW.md`) drove the work below. What the second one listed and is still open:
 
-1. Pipeline outside the simulator: opportunities only come from the simulator and nothing closes them in a running desk; the CRM is push-only.
-2. Meetings after booking: no date on booking, no held or no-show or notes in the UI, no booking webhook.
-3. Standing up a real desk: users, mailboxes, domains, ICP, plays and accounts only come from the demo seed.
-4. Referrals and job changes stop at a task.
-5. Deliverability inputs are static: SPF, DKIM, DMARC and blocklists are seed values with no check job.
-6. Evals for drafts and briefs with live calls; the MCP server; live vendor adapters; a second fresh code review.
+1. Live vendor adapters beyond DNS (people search, finder, verifier, mail provider, seed tests, CRM, Slack), with `docs/INTEGRATIONS.md`; a delivery-event webhook for complaints and soft bounces.
+2. User, mailbox and domain administration after `init`.
+3. Evals with recordings for the brief, drafts and call-note extraction; `EVALS_STRICT`.
+4. Tests for the time-based play exits, auto-approve and demotion, CRM push retries and SLA escalation.
+5. A second fresh code review over everything since the first.
 
 ## Done since the first review (2026-11-11)
 
@@ -58,4 +57,7 @@ The layer review (`docs/LAYER-REVIEW.md`, 2026-11-11) found the email path deep 
 - LinkedIn and calls (decision 16): drafted notes through the copy checks, sent through the send guard, every outcome a touch, LinkedIn replies as replies, guarantee 20 in the trigger, a monitor for it, results by channel on Results. 16 tests. Checked in the browser: a note marked sent shows on the person's history and LinkedIn row.
 - People open a person sheet from an account: how to reach them, their plays, and one history across email, LinkedIn, calls and signals.
 - Icons within the Instrument identity (status icons in ink, green for healthy, amber and red only where someone must act); relative times spelled out ("2 days ago"), Bryan's call.
+- After the first layer review (Bryan: "greenlight on deepening all the layers that are thin"): deals read from the CRM with attribution that needs a cause and is recomputed; owners from the CRM; meetings with a sheet, a date, outcomes, notes and a booking webhook; referrals enrolled and job changes as signals; a real desk from `init` and CSV imports; live DNS checks; mailbox and domain caps and replies in the send trigger; do-not-contact, holds, unmatched-signal resolution, resumes and unknown sends in the UI; a read-only MCP server; per-play monthly caps set at launch.
+- After the second layer review: live mode refuses missing vendors instead of simulating them; customers are never downgraded; fit is judged on known fields and the ICP is editable; the watched batch and the comparison count correctly; live plays keep their audience until paused; erasure closes its gaps; the remaining UI dead ends have actions. Decisions 18 to 31.
+- The footer is two lines and "no thanks" is an opt-out (decision 25).
 - The flaky monitor test was the slow-first-touch alert catching late approvals by simulated SDRs, which is its job; the test now fails only when a play is stuck inside the desk, and that found a real one (decision 17). Simulator picks now use its seeded generator instead of SQL `random()`.

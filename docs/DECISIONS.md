@@ -49,3 +49,17 @@ Each entry: what was decided, why, and what it costs. Newest last.
 23. **Guarantee 8 is in the database.** The send trigger refuses an email past the mailbox's cap for the day or the domain's, and a mailbox whose cap was not set today; the sending code sets it under the row lock it already took. A cap refusal reschedules; it never stops the person.
 
 24. **The MCP server is read-only by construction.** Five tools, each in a read-only transaction, none returning money; built on the official MCP Python SDK, version 2.
+
+25. **The footer is two short lines, and "no thanks" is an opt-out (Bryan, 2026-11-11: "couldn't you design a better footer?").** Company and postal address, then "Reply "no thanks" and I won't write again, or unsubscribe:" with a short link (`/u/<id>-<12 characters>`); links in emails already sent keep working. A reply of "no thanks" was being labelled not interested, which did not stop future plays; it is now an opt-out, as the footer promises. The mailto unsubscribe is offered only when a real mailbox receives it (`UNSUBSCRIBE_MAILTO`). Risk: legal; counsel to confirm.
+
+26. **Owners come from the CRM.** A reassignment moves the account, its open play, open tasks and booked meetings to the new SDR; sequences already under way finish from the original sender, so a thread never changes voice; an owner who is not an SDR on the desk moves nothing and the manager is told.
+
+27. **A play launches with a monthly cap (SPEC 22.16).** The manager sets it from the cost card at launch, per vendor in credits and AI in cents. Every charge is tagged with the play it was for; at the cap the play takes no new accounts until next month and paid work waits a day instead of failing.
+
+28. **A live desk never acts on simulated data.** In live mode every vendor without a key is replaced by one that refuses (paid lookups and sends wait, and the team is told) or answers unknown (no spam rate, no seed test, no delivered alert). Found by the second layer review: the simulated verifier would have marked every real address invalid.
+
+29. **Fit is judged on what is known.** A field the desk has no data for is left out of the score instead of counting as a miss; below 60% of the profile known, fit is not judged. Imports carry region (from the country), revenue band and technologies, and GTM edits and publishes the profile, which rescores every account.
+
+30. **More guarantees live in the database.** The send trigger now also refuses an email to someone who replied since their sequence started (guarantee 6). Customers are never downgraded by a lost expansion or a blank re-import. A live play's trigger, sequence, people and held-back share change only after a manager pauses it.
+
+31. **Measurement counts causes once.** The held-back comparison counts each account once, in the group it was first put in; the watched first batch counts the first 20 sends of each step version, however late a bounce arrives; an email an SDR writes in a research-stage play is outreach.
