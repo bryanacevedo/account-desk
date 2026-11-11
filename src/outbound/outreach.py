@@ -893,3 +893,6 @@ def research_job(cur, payload: dict) -> None:
     plays.set_state(cur, ap["id"], "approving")
     for eid in enrollments:
         draft_step(cur, eid, first_email)
+
+
+from . import enrichment  # noqa: E402,F401  registers the enrichment_refresh job wherever outreach is loaded

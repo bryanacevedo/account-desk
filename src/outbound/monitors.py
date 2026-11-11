@@ -13,7 +13,8 @@ MONITORS: dict[str, dict] = {
     "sent_outside_window": {
         "title": "Emails sent outside the recipient's send window",
         "sql": """select m.id, m.sent_at, p.timezone, p.country from messages m join enrollments e on e.id = m.enrollment_id
-                  join people p on p.id = e.person_id where m.status = 'sent' and m.sent_at > app_now() - interval '2 days'""",
+                  join people p on p.id = e.person_id where m.status = 'sent' and m.channel = 'email'
+                  and m.sent_at > app_now() - interval '2 days'""",  # a LinkedIn step is done by hand, whenever the SDR does it
         "python": "window"},
     "hot_reply_unalerted": {
         "title": "Hot replies with no alert",

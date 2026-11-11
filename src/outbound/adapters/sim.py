@@ -42,6 +42,9 @@ def departments_for(title: str) -> list[str]:
     return ["other"]
 
 
+WORLD_EPOCH = date(2026, 10, 15)
+
+
 def _today(cur) -> date:
     return db.val(cur, "select app_now()::date")
 
@@ -49,7 +52,10 @@ def _today(cur) -> date:
 def _person_extras(cur, key: str, title: str, country: str | None) -> dict:
     """What a people-data vendor adds: departments, when the role started, city, headline, how sure the match is."""
     rng = random.Random(f"person-extras:{key}")
-    started = _today(cur) - timedelta(days=int(rng.choice([rng.randint(20, 85), rng.randint(120, 1400), rng.randint(200, 2400)])))
+    # Fixed to the world, not to today: someone who started in October is still the one who started in October next
+    # month. A few start inside the simulated months, which is what a new-in-seat signal is for.
+    started = WORLD_EPOCH - timedelta(days=int(rng.choice([rng.randint(-10, 60), rng.randint(120, 1400), rng.randint(200, 2400)])))
+    started = min(started, _today(cur))
     city = {"US": ["New York", "Chicago", "Austin", "Denver"], "GB": ["London", "Manchester"], "DE": ["Berlin", "Munich"],
             "CA": ["Toronto"], "FR": ["Paris"]}.get(country or "", ["Remote"])
     return {"departments": departments_for(title), "role_started_at": started, "city": rng.choice(city),
@@ -204,15 +210,16 @@ class SimCompany:
         roles = [{"title": rng.choice(["Revenue Accountant", "Billing Specialist", "Senior Billing Analyst", "FP&A Manager"]),
                   "department": "finance", "seen_at": str(_today(cur) - timedelta(days=rng.randint(1, 30)))}
                  for _ in range(int(need * 4 * (1 + day / 365)) if random.Random(f"roles:{account['id']}:{day // 14}").random() < need else 0)]
-        funded = rng.random() < 0.45
+        frng = random.Random(f"funding:{account['id']}")  # its own seed, so a filled field never moves the round
+        funded = frng.random() < 0.45
         return CompanyData(
             industry=account.get("industry"), employees=employees, revenue_band=account.get("revenue_band"),
             technologies=tools, keywords=rng.sample(["usage-based pricing", "subscriptions", "b2b saas", "payments",
                                                       "fintech", "data platform", "marketplace"], 3),
             founded_year=rng.randint(2008, 2021),
-            total_funding_cents=rng.choice([5, 12, 30, 60, 110]) * 100_000_000 if funded else None,
-            latest_funding_round=rng.choice(["Series A", "Series B", "Series C"]) if funded else None,
-            latest_funding_at=_today(cur) - timedelta(days=rng.randint(40, 900)) if funded else None,
+            total_funding_cents=frng.choice([5, 12, 30, 60, 110]) * 100_000_000 if funded else None,
+            latest_funding_round=frng.choice(["Series A", "Series B", "Series C"]) if funded else None,
+            latest_funding_at=WORLD_EPOCH - timedelta(days=frng.randint(40, 900)) if funded else None,
             headcount=headcount, open_roles=roles, confidence=0.9)
 
 
