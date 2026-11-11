@@ -4,7 +4,7 @@ Signal & Account based outbound.
 
 [![CI](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml)
 
-Account Desk runs signal-based, account-based outbound for a B2B sales team. It watches for the moments a company that fits your customer profile shows it may need you (a new finance leader, a pricing change, hiring for the team you serve, a past champion joining), decides which accounts are worth working this week and why, finds the people who buy there, drafts outreach grounded in what actually happened at that company, has an SDR approve it (until a play has earned more autonomy), sends it from healthy inboxes at a human pace, and handles every reply through to a meeting and pipeline. It measures which signals turn into meetings against a comparison group nobody contacted.
+Account Desk runs signal-based, account-based outbound for a B2B sales team. It watches for the moments a company that fits your customer profile shows it may need you (a new finance leader, a pricing change, hiring for the team you serve, a past champion joining), decides which accounts are worth working this week and why, finds the people who buy there, drafts outreach grounded in what actually happened at that company, has an SDR approve it (until a play has earned more autonomy), sends it from healthy inboxes at a human pace, and handles every reply through to a meeting and pipeline. It measures which signals turn into meetings against accounts that were matched but deliberately held back and never contacted.
 
 It is built for a small team that would rather write to 40 companies at the right moment than to 4,000 at random.
 
@@ -16,15 +16,15 @@ Autonomous "AI SDRs" mostly failed in 2025 and 2026: shallow or invented persona
 
 | People | AI | Code |
 |---|---|---|
-| Decide the ideal customer, the plays, which accounts to work | Reads the facts about a company and writes a brief, citing each fact | Scores accounts, matches plays, draws the comparison group |
+| Decide the ideal customer, the plays, which accounts to work | Reads the facts about a company and writes a brief, citing each fact | Scores accounts, matches plays, picks the held-back accounts |
 | Approve, edit or write first emails (every one, until a play earns autonomy) | Drafts each email as sentences, each claim tied to a fact id | Checks every citation, every number and every name against the facts |
 | Answer every positive reply, book meetings, make the calls | Labels a reply from a fixed list and pulls out dates and referrals | Stops the sequence the moment a reply lands, before anyone reads it |
-| Change weights and plays when results say so | Pulls objections and competitors out of call notes | Counts which signals and plays produce meetings, against the comparison group |
+| Change weights and plays when results say so | Pulls objections and competitors out of call notes | Counts which signals and plays produce meetings, against the held-back accounts |
 
 Three more rules came from running outbound in production:
 
 - **Act on tracking data, never cite it.** Website visits, research intent and product sign-ups can trigger a play, but the drafter never sees them and the copy check fails any email that cites one. Buyers read that as surveillance.
-- **Make the bad state impossible, and watch for what cannot be.** A send to a suppressed address, a holdout account or a message edited after approval is refused by a Postgres trigger, so no bug in the app can do it. Promises about time (sent inside the recipient's hours, hot replies answered on time, every source ran) are monitors that alert.
+- **Make the bad state impossible, and watch for what cannot be.** A send to a suppressed address, a held-back account or a message edited after approval is refused by a Postgres trigger, so no bug in the app can do it. Promises about time (sent inside the recipient's hours, hot replies answered on time, every source ran) are monitors that alert.
 - **Autonomy is earned per play.** Four stages: the SDR writes; the desk drafts and the SDR approves every message; the SDR approves every first email and a sample of the rest; and, last, the desk sends emails to fit tier B accounts that passed every check on its own, while tier A still goes to a person. Each step up needs 50 approvals with 90% unedited, no complaint, bounces under 2%, a positive reply rate at the play's floor, and known complaint data for every sending domain, and a manager approves it. A spam complaint, hard bounces over 3% of the play's last 200 sends, or SDRs editing more than 6 of the last 20 drafts moves a play back down a stage on its own.
 
 ## What it does
@@ -33,13 +33,13 @@ Three more rules came from running outbound in production:
 - **Costs.** The Vendors and costs page lists every vendor and source, paid or free, connected or not, with metered spend, flat monthly fees prorated by the day, the month's projection, last month, spend by play and cost per outbound meeting. The demo's prices are assumptions, marked as such.
 - **Signals.** Seventeen signal types, each with a written reason it matters, a weight and a half-life. Sources are adapters (job postings, funding, job changes, website visits, intent, reviews, technology changes, social engagement, product sign-ups, the CRM, a signed webhook). Every source run is recorded, so a silent source shows up.
 - **Scoring.** Fit from a versioned ideal customer profile, intent from decayed signals with a bonus when different kinds of signal agree, engagement from replies and meetings. Every stored score keeps its inputs and must reproduce from them.
-- **Plays.** Six shipped plays, each a hypothesis with a trigger, the people to reach, a sequence and an angle. A deterministic share of matched accounts goes to a comparison group that is never contacted.
+- **Plays.** Six shipped plays, each a hypothesis with a trigger, the people to reach, a sequence and an angle. A deterministic share of matched accounts is held back: measured, never contacted.
 - **The buying committee.** Up to three people per account by role (finance leader, controller, revenue operations, data), found through a people search, emails found and verified, phones found for call steps, all charged to a ledger in each vendor's own unit. Gaps are named ("Email in Germany needs consent first").
 - **Drafting and the copy checks.** Code checks every draft: citations exist, numbers and proper names appear in a cited fact, it opens with the person's first name, length fits the step, no banned phrases, no long dashes, no links in a first email, not a near copy of a colleague's email, no private signal. A failed draft is rewritten once, then goes to the SDR.
 - **Sending.** An account calendar staggers colleagues two business days apart. Sends land inside the recipient's own working hours, skip public holidays, ramp each mailbox, cap each domain, and pause a mailbox at a 2% bounce rate or any complaint. Every email carries the sender's postal address, a plain opt-out and RFC 8058 one-click unsubscribe headers; EU and UK recipients also get a privacy notice link.
 - **Replies.** Stop first. Then clean the reply (quoted history, signatures, legal footers, so an "unsubscribe" in a footer opts nobody out), label it with rules first and the model second, and act: hot replies go to the owner with a deadline and a suggested answer, out-of-office pauses until the return date, referrals become tasks, not-now becomes a hold until the date given. Opt-outs work in five languages.
 - **Meetings and pipeline.** Meetings stop the account's sequences. Opportunities are attributed as sourced or influenced. Call notes, once a person marks them worth learning from, become quotes grouped by play and signal.
-- **Results.** A funnel from signal to meeting, meeting rate per signal type, and the difference from the comparison group with a Newcombe interval. Below the sample size needed to tell a difference, the page says how many accounts are still needed instead of showing a number.
+- **Results.** A funnel from signal to meeting, meeting rate per signal type, and the difference from the held-back accounts with a Newcombe interval. Below the sample size needed to tell a difference, the page says how many accounts are still needed instead of showing a number.
 - **Health.** Monitors, background jobs, the CRM outbox, alerts and spend against each vendor's monthly cap, plus one button that stops all sending.
 
 ## How it fits together
@@ -49,7 +49,7 @@ flowchart LR
   S[Signal sources] --> I[Ingest: resolve by domain, keep evidence]
   I --> SC[Score: fit, intent, engagement]
   SC --> M{Play matches and account gate passes}
-  M -->|comparison group| H[Held out, measured, never contacted]
+  M -->|held back| H[Held back, measured, never contacted]
   M --> P[Proposed to the SDR]
   P -->|accepted| R[Research and brief, buying committee, verified emails]
   R --> D[Drafts, then the copy checks]
@@ -85,7 +85,13 @@ That builds an invented company with 700 accounts, simulates 60 days of signals,
 make test
 ```
 
-The tests run on real Postgres, including a 21-day simulation of the whole desk followed by every promise checked against what actually happened: nobody in the comparison group was contacted, nothing was sent after a reply, every sent email matches what was approved and carries its legal footer, no email cites tracking data.
+The tests run on real Postgres, including a 21-day simulation of the whole desk followed by every promise checked against what actually happened: nobody held back was contacted, nothing was sent after a reply, every sent email matches what was approved and carries its legal footer, no email cites tracking data.
+
+Or with Docker, the same image the hosted demo runs (it uses the Postgres that Debian ships, not a pinned 18):
+
+```bash
+make docker
+```
 
 ### A real desk, not the demo
 
@@ -117,12 +123,6 @@ Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts 
 
 At that size the monitors also found the real limit: four SDRs cannot approve first emails fast enough for 5,000 accounts, so 38 accepted accounts passed their play's time limit before a first email. The fix is people or autonomy, not code.
 
-Or with Docker, the same image the hosted demo runs (it uses the Postgres that Debian ships, not a pinned 18):
-
-```bash
-make docker
-```
-
 ### LinkedIn through HeyReach
 
 Set `LINKEDIN_TOOL_TOKEN` to a long random string, then in HeyReach add a webhook to `https://<your desk>/api/webhooks/linkedin/<token>` for "Connection request accepted" and "Message reply received". The desk finds the person by their LinkedIn profile; events for people it does not know are acknowledged and noted. HeyReach reports only the first reply in a conversation, so later messages are pasted on the person's page.
@@ -137,15 +137,14 @@ cannot (the model under test never grades itself). Live run on 2026-11-11 with C
 | Task | Cases | Result |
 |---|---|---|
 | Labelling replies | 148 | 99% labelled as a careful person would, 95% exact; every stop request caught; every positive reply kept positive; no invented referral email; return dates 5 of 6 |
-| Drafting emails and LinkedIn notes | 50 | 94% pass the copy checks and the claim checker after one rewrite; the rest are held as Needs a rewrite, never sent on their own; none cites a private signal or a fact that does not exist; none follows an instruction hidden in a fact; the judge, stricter than the desk's own checker, finds 70% say nothing about the buyer the facts do not |
+| Drafting emails and LinkedIn notes | 50 | 94% pass the copy checks and the claim checker after one rewrite; the rest are held as Needs a rewrite, never sent on their own; none cites a private signal or a fact that does not exist; none follows an instruction hidden in a fact; the judge, stricter than the desk's own checker, finds that 70% say nothing about the buyer that the facts do not support |
 | Account briefs | 20 | 100% faithful to their facts by the judge; every instruction hidden in a fact ignored |
 | Suggested replies | 30 | 63% pass every check (tone is the usual miss); none has an invented number or placeholder; 1 in 30 repeats a prospect's question about an integration as if it exists |
 | Learnings from call notes | 20 | 87% of expected learnings found; every quote verbatim; 95% invent nothing |
 
 The first live run found real problems and the prompts were fixed against the eval: suggested replies invented
 integrations and data locations or left placeholders in half the cases (now no placeholders, and 1 in 30 invents something); drafts stated guesses about the
-buyer's billing as fact (faithfulness 40% before, 78% after); briefs stated inferences as findings (10% before, 90%
-after); return dates missed because the model was never told today's date. Reports with every case in full:
+buyer's billing as fact (judge-faithful 40% on the first live run, 70% now); briefs stated inferences as findings (judge-faithful 10% on the first live run, 100% now); return dates missed because the model was never told today's date. Reports with every case in full:
 `evals/REPLIES.md`, `WRITING.md`, `SUGGEST.md`, `EXTRACT.md`; the cases' coverage in `evals/CASES_V2.md`.
 
 ```bash
@@ -157,9 +156,11 @@ prospect did not bring up is rewritten once and then withheld, so the SDR writes
 about the buyer is read against its facts by a second call; an unsupported one goes back for a rewrite, and a draft that
 still fails is held as Needs a rewrite, which no autonomous play can send.
 
-That replays the recorded answers, free, and is what CI checks on every push, along with the recordings matching
-the current prompts. `make evals-live` calls Claude and the judge again (roughly $5 to $10). Each score has a floor in
-`evals/thresholds.json`, set 5 to 12 points under the baseline (wider where the case count is small); the safety ones (stop requests, private signals, hidden
+`make evals` replays the recorded answers, free. CI does not run `make evals`; it replays the same recordings through
+the test suite (`tests/test_evals.py`, part of `uv run pytest`), which also fails when a recording no longer matches
+the current prompt. `make evals-live` calls Claude and the judge again (roughly $5 to $10). Each score has a floor in
+`evals/thresholds.json`, set a little under the latest result: 0 points under for judge-faithful drafts (70% against a
+70% floor), 20 for brief faithfulness (100% against 80%), and 4 to 8 points for most of the rest. The safety ones (stop requests, private signals, hidden
 instructions, invented emails) must stay at 100%. A weekly workflow (`.github/workflows/evals.yml`) runs the live evals
 and fails below a floor, but only once an `ANTHROPIC_API_KEY` secret is added to the repository; this demo does not
 have one, so it never runs here. In the desk itself, a check raises an alert when SDRs start editing many more drafts
@@ -185,10 +186,15 @@ than in the weeks before.
 
 ## Words used here
 
+- **Signal**: a dated fact about a company that may mean it needs you, such as a new finance leader or a pricing change. It always keeps its evidence.
+- **Play**: one hypothesis about outreach: a trigger, the people to reach, a sequence of steps and an angle.
+- **SDR**: sales development rep, the person who approves, edits or writes first outreach and answers replies.
+- **GTM engineering**: go-to-market engineering, the role that sets up and tunes the desk (plays, signal weights, imports) rather than working accounts.
+- **Autonomy stage**: how much a play may do without a person, from the SDR writing everything to the desk sending tier B emails on its own. A play moves up only on a manager's approval.
 - **Fit tier**: A, B or C from how well an account matches the ideal customer profile; X means excluded.
 - **A play's floor**: the positive-reply rate a play must keep to earn more autonomy.
 - **Account gate, contact gate**: the checks before a play is proposed for an account, and before a person is contacted.
-- **Held back**: the comparison group, never contacted, that results are measured against.
+- **Held back**: accounts a play matched but deliberately never contacts, so results can be compared against them. The same thing is called the comparison group in some pages and the holdout in the code and the spec.
 - **Catch-all**: a mail server that accepts every address, so a normal check cannot say whether one is real.
 
 ## License

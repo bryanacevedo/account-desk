@@ -1,6 +1,6 @@
 # Account Desk: spec
 
-**Written:** 2026-11-11. **Working name**, Bryan's call to rename. **Status:** v1 spec, before code.
+**Written:** 2026-11-11. **Status:** this is the original spec, kept for its reasoning. The product was renamed Account Desk and v1 is built. Where this document differs from the code, the code and the README win; section 22 holds the review decisions, and docs/DECISIONS.md the later ones.
 
 Account Desk runs signal-based, account-based outbound from one place. It watches for moments when a company that fits your ideal customer profile (ICP) shows it may need you, decides which accounts are worth working this week and why, maps the people who buy there, drafts outreach grounded in what actually happened at that company, has a person approve it, sends it through healthy inboxes at a pace a human would, and handles every reply, meeting and outcome through to pipeline. It measures which signals turn into meetings and which do not, and feeds that back into the score.
 
@@ -112,9 +112,9 @@ All tables are in `migrations/`. Every state column has a CHECK constraint namin
 
 ## 5. Signals
 
-**Sources** are adapters with one contract: `fetch(since) -> list[RawSignal]`. Shipped: simulated sources for every type, plus written adapters for a webhook intake (generic JSON, HMAC-signed), CSV import, Trigify-style social engagement, job-postings, funding and website-visit providers, all behind env keys. Each source run is recorded (`source_runs`: started, finished, fetched, matched, error) so a silent source is visible.
+**Sources** are adapters with one contract: `fetch(since) -> list[RawSignal]`. In v1 the sources are the simulated ones for every type (`src/outbound/adapters/sources.py`) and the HMAC-signed webhook intake (`POST /api/webhooks/signal`). No live source adapter for job postings, funding, website visits, social engagement or the like is written; in live mode `live.fetch_source` returns nothing. CSV import covers accounts and people, not signals. Each source run is recorded (`source_runs`: started, finished, fetched, matched, error) so a silent source is visible.
 
-**Types shipped** (each with a "because" and a starting weight and half-life):
+**Types shipped**, 17 in `src/outbound/seed/catalog.py` (each with a "because" and a starting weight and half-life):
 
 | Key | Level | Because | Weight | Half-life |
 |---|---|---|---|---|
@@ -129,7 +129,11 @@ All tables are in `migrations/`. Every state column has a CHECK constraint namin
 | tech_added | account | Adopted a tool we integrate with. | 9 | 60 d |
 | tech_removed | account | Dropped a competitor or a tool we replace. | 15 | 45 d |
 | social_engaged | person | Engaged with our or a peer's content on the topic. | 7 | 14 d |
-| expansion | account | Opened an office or entered a market we serve. | 8 | 60 d |
+| pricing_change | account | Moving to usage-based pricing breaks seat-based billing systems. | 20 | 45 d |
+| job_change | person | A person we have spoken to joined this company. | 12 | 60 d |
+| closed_lost_revisit | account | We lost a deal here over timing, and the timing has passed. | 14 | 60 d |
+| product_signup | account | Trying the product means they already have the problem. | 20 | 14 d |
+| event_attended | person | Someone from the company attended our webinar or dinner. | 10 | 21 d |
 | news_negative | account | Layoffs or a freeze: lowers priority. | -15 | 45 d |
 
 **Ingest** dedupes on (source, external_id), resolves the company by domain through `account_domains` (normalised: lowercase, strip `www.`, public email domains rejected), then by exact normalised name, else stores the signal as `unmatched` with the reason. An unmatched signal waits in Signals, Not matched, where a person adds the company as an account or sets it aside (decision 21: no automatic account creation). Person signals resolve by email, then LinkedIn URL. A `champion_moved` signal also marks the person `left` at the old account and creates the person at the new one.
@@ -142,6 +146,7 @@ Three parts, each 0 to 100, with the breakdown stored.
 
 - **Fit** from the published ICP version: weighted factors (industry, employee band, region, revenue band, required and helpful tech, excluded tech), each with its contribution. Hard excludes (lifecycle customer, open_opp, competitor; excluded industries) set tier X. Tiers: A at 70+, B at 50+, C otherwise.
 - **Intent**: `raw = sum(weight_t * strength * 0.5^(age/half_life_t))` over the account's signals, plus a convergence bonus of 15% per distinct positive type beyond the first (capped at 3); `intent = 100 * (1 - exp(-raw / 40))`. Negative signals subtract after saturation, floored at 0.
+  Events are counted once (decision 44 in docs/DECISIONS.md): signals of one type within 14 days are one event worth the strongest report, a second agreeing source adds 25%, and one type adds at most 1.5 strong events. The convergence bonus above still applies across types.
 - **Engagement** from our own outreach outcomes in the last 90 days (positive replies, meetings; never opens).
 - **Priority** = `fit^0.4 * intent^0.6` when fit tier is A or B, else 0. The "reason" is the signal that contributed most.
 
@@ -223,7 +228,7 @@ An approval stores `approved_hash = sha256(subject + body)`. Sending refuses any
 
 **Headers.** Every email carries `List-Unsubscribe` (mailto and https) and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. The https endpoint suppresses the address immediately.
 
-**Channels** are adapters with one contract: `send(message, mailbox) -> SendResult(sent|failed|unknown, provider_id)`. Shipped: simulated email (with a simulated recipient world that replies, bounces and complains), an SMTP/Gmail-API email adapter, Instantly and Smartlead (single-send API), and HeyReach for LinkedIn. LinkedIn steps default to a **task for the SDR** (connect, message) because LinkedIn's terms prohibit automation; the HeyReach adapter needs a per-sender consent flag. Call steps are always tasks.
+**Channels** are adapters with one contract: `send(message, mailbox) -> SendResult(sent|failed|unknown, provider_id)`. Only the simulated email channel exists (with a simulated recipient world that replies, bounces and complains). An SMTP, Gmail API, Instantly or Smartlead adapter is not written, so a live desk cannot send email yet. LinkedIn is done by hand, with HeyReach webhooks for connection accepted and first reply (`POST /api/webhooks/linkedin/{token}`). LinkedIn steps default to a **task for the SDR** (connect, message) because LinkedIn's terms prohibit automation; Call steps are always tasks.
 
 **Unknown outcomes.** A send that times out is `send_unknown`. It is never retried blindly; a reconcile job asks the provider by idempotency key, and a person resolves it if the provider cannot say.
 
@@ -260,7 +265,7 @@ An approval stores `approved_hash = sha256(subject + body)`. Sending refuses any
 
 ## 13. CRM, Slack and security
 
-**CRM** adapters (HubSpot-shaped and Salesforce-shaped; simulated by default). Read: accounts, owners, lifecycle, open opportunities, contacts. Write through `crm_outbox` with idempotency keys: contact create, activity (email sent, reply), task (hot reply), meeting. Retries with backoff; after 5 attempts an item is dead and alerts GTM.
+**CRM** adapters (only the simulated one exists; a HubSpot-shaped or Salesforce-shaped one is not written). Read: accounts, owners, lifecycle, open opportunities, contacts. Write through `crm_outbox` with idempotency keys: contact create, activity (email sent, reply), task (hot reply), meeting. Retries with backoff; after 5 attempts an item is dead and alerts GTM.
 
 **Slack**: hot replies, SLA escalations, launch requests and health alerts go to channels (`#outbound-replies`, `#outbound-ops`), never DMs, with the person @-mentioned. Every alert is also a row in `alerts`, and the health endpoint reports undelivered alerts, so a dead Slack is visible.
 
@@ -272,15 +277,16 @@ Every paid call (people search, email finder, verifier, model) writes the ledger
 
 ## 15. AI: where it runs and how it is checked
 
-- Account brief, drafts, reply classification, suggested replies. Everything else is code.
+- Account brief, drafts, reply classification, suggested replies, and call-note extraction. Everything else is code.
+- **The claim checker.** After the copy checks, a second model call reads every sentence a draft says about the buyer against the facts (`check_claims` in `src/outbound/outreach.py`). An unsupported sentence sends the draft back for one rewrite, and a draft that still fails is held as Needs a rewrite. Suggested replies get a code check for numbers, product facts and placeholders the prospect did not raise.
 - Structured outputs only. Model output can select a label or cite ids; code checks every id and every number.
 - Model: `claude-opus-5-5` through the Anthropic SDK, effort `low` for classification and `medium` for drafting, configurable per task.
-- **Record and replay**: every live call is recorded by input hash. CI replays recordings; a changed prompt marks recordings stale and `EVALS_STRICT=1` fails CI until re-recorded. The demo uses a deterministic simulated model.
-- **Evals**: reply classifier (dev and holdout sets, multilingual, quoted-footer traps, injection attempts) with a confusion matrix; copy gate (labelled good and bad drafts); brief grounding (every finding cites a real fact). Rules-only baseline reported beside rules plus model.
+- **Record and replay**: every live call is recorded by input hash. CI replays recordings; a changed prompt marks recordings stale and the prompt-hash tests in `tests/test_evals.py` fail CI until they are re-recorded (an `EVALS_STRICT` setting is parsed but never read). The demo uses a deterministic simulated model.
+- **Evals**: reply classifier (dev and holdout sets, multilingual, quoted-footer traps, injection attempts) with a confusion matrix; copy gate (labelled good and bad drafts); brief grounding (every finding cites a real fact); suggested replies; call-note extraction (`evals/run_extract.py`, graded on recall and verbatim quotes). Rules-only baseline reported beside rules plus model. Current results are in the README and `evals/*.md`, with floors in `evals/thresholds.json`.
 
 ## 16. Guarantees: prevented at write time, monitored where they cannot be
 
-Decision (2026-11-11, Bryan left the call to Claude): no separate invariant layer. A promise the database can enforce is enforced when the row is written, so the bad state cannot exist: CHECK constraints, partial unique indexes, foreign keys, and triggers that refuse a send to a holdout or suppressed person, a send whose body changed after approval, a second open play per account, a second active enrollment per person, a stop with no reason. The rest (promises about time, other systems, or the absence of something) are **monitors**: queries that run on a schedule, write an alert to the ops channel when they find rows, and show on the Health page. Monitors never fix anything. The same list runs as a test after a simulated 60-day run in CI.
+Decision (2026-11-11, Bryan left the call to Claude): no separate invariant layer. A promise the database can enforce is enforced when the row is written, so the bad state cannot exist: CHECK constraints, partial unique indexes, foreign keys, and triggers that refuse a send to a holdout or suppressed person, a send whose body changed after approval, a second open play per account, a second active enrollment per person, a stop with no reason. The rest (promises about time, other systems, or the absence of something) are **monitors**: queries that run on a schedule, write an alert to the ops channel when they find rows, and show on the Health page. Monitors never fix anything. The same list runs as a test after a simulated 21-day run in CI (`tests/conftest.py`).
 
 Each item below is labelled **[enforced]** (cannot happen) or **[monitor]** (detected and alerted).
 
@@ -326,18 +332,20 @@ React and Vite, served by the API. Pages by job:
 - **Plays**: each play's hypothesis, trigger, sequence, stage, launch checks, results against holdout.
 - **Approvals**: each draft beside the facts it cites, with the gate result; approve, edit or reject.
 - **Replies**: every reply with its label, the action taken, and the ones a person must classify.
-- **Deliverability**: domains and mailboxes, health, capacity forecast for the next 10 business days.
+- **Inboxes** (managers, GTM): domains and mailboxes, their health, where mail lands (seed tests) and today's sending capacity.
+- **In flight**: every open play with each person's sequence as a step strip and what happens next.
+- **Vendors and costs** (managers, GTM): every vendor and signal source, connected or simulated, with spend, projection and cost per meeting.
 - **Results** (manager, GTM): funnel, lift, signal performance, cost per meeting.
 - **Health** (GTM): monitors, jobs, outbox, sources, alerts, spend.
 - **Settings** (GTM): ICP, signal types and weights, caps and windows, regions, suppression, kill switch.
 
-Design follows the house design checklist (copied from Events Desk) with its own palette.
+Design follows docs/DESIGN-CHECKLIST.md (the house rules, adapted from an earlier product by the same author) with its own palette.
 
 ## 19. Operations
 
 - One process in the demo: API, scheduler and worker. The worker claims jobs with `SKIP LOCKED`; the scheduler enqueues periodic jobs (ingest, decay rescoring, scheduled sends, SLA checks, reconcile, monitors) with dedupe keys so a double tick enqueues once.
 - Structured JSON logs with a request and job id. `/api/health` reports database, job backlog, dead jobs, stale sources, undelivered alerts, and monitor findings.
-- The demo clock: `make demo` seeds a world and runs 45 simulated days so every screen has history; the app's clock control advances days.
+- The demo clock: `make demo` seeds a world and runs 60 simulated days so every screen has history; the app's clock control advances days.
 
 ## 20. Stack and hosting
 
@@ -401,7 +409,7 @@ There are no stored templates; every draft is written per person. The unit that 
 ### 22.5 Complaints and placement are aggregate signals
 
 Gmail never says which message was reported. So:
-- A **deliverability telemetry** adapter reads Google Postmaster Tools (domain spam rate, compliance status) per sending domain, Yahoo's complaint feedback loop and Microsoft SNDS/JMRP where enrolled, and seed-list placement tests per mailbox. Simulated in the demo. Each email carries a `Feedback-ID` header naming the play.
+- A **deliverability telemetry** adapter reads Google Postmaster Tools (domain spam rate, compliance status) per sending domain, Yahoo's complaint feedback loop and Microsoft SNDS/JMRP where enrolled, and seed-list placement tests per mailbox. Simulated in the demo; no live adapter exists yet. Each email carries a `Feedback-ID` header naming the play.
 - Per-message complaint events exist only where a feedback loop provides them.
 - Missing data is **unknown**, never zero. A domain whose spam rate is unknown for more than 7 days, or at or above 0.1%, cannot gain capacity; at 0.3% it pauses. Promotion to a higher autonomy stage is blocked while any domain the play uses is unknown.
 - Bounce rate for a mailbox: hard bounces over sends in a rolling 14 days, measured from 50 sends. Warn at 1.5%, pause at 2%. For a play: over its last 200 sends; demotion at 3%.
@@ -427,8 +435,8 @@ Each play has `latency_hours` (default 48 business hours; 24 for pricing visit a
 
 - **Account universe**: CSV or CRM import of the target account list, refreshed on a schedule; a signal never creates an account on its own (decision 21).
 - **Research**: before the brief, an AI research step may add `facts` with a `source_url` (live mode: web search tool; demo: the simulated world's pages). Cached by domain for 30 days. The brief cites facts from signals and research alike.
-- **Re-enrichment**: people re-verified when older than 45 days at the moment of a send, and every 90 days for people in open account plays. Accounts' firmographics refresh every 90 days.
-- **First-party signals**: `product_signup`, `closed_lost_revisit`, `event_attended`, `form_abandoned`, `job_change` (any known person who moved; `champion_moved` only when `is_champion`). Website visits stay at the account level; a de-anonymised visitor never becomes a contact.
+- **Re-enrichment**: people re-verified when older than 45 days at the moment of a send, and every 90 days for people in open account plays. Accounts' firmographics refresh monthly, so that two reads show change (decision 41).
+- **First-party signals**: `product_signup`, `closed_lost_revisit`, `event_attended`, `job_change` (any known person who moved; `champion_moved` only when `is_champion`). Website visits stay at the account level; a de-anonymised visitor never becomes a contact.
 - **Job changes need corroboration**: a move marks the person `left` only when a second source agrees or their old address hard-bounces. The person row moves to the new account (one row per human), with the move in `person_moves`.
 
 ### 22.10 Phone
@@ -473,7 +481,7 @@ Credits stay in their vendor's unit and AI spend in dollars; they are never adde
 - The public demo (`PUBLIC_DEMO=1`) takes no uploads and sends nothing outside.
 - `AUTH_MODE` has `demo` (acting-as menu) and `header` (identity from a trusted proxy header such as Cloudflare Access). `LIVE_SEND=1` refuses to start in `demo`.
 - Erasure deletes the person, their enrollments, messages, replies, touches, facts about them, learnings quoting them, tasks and meetings; scrubs their address from crm_outbox payloads, llm_calls and audit_log details; and leaves an `email_hash` suppression.
-- Integration limits are written down per adapter in `docs/INTEGRATIONS.md`.
+- Integration limits are to be written down per adapter in `docs/INTEGRATIONS.md`. That file is planned and does not exist yet.
 
 ### 22.18 Screen words
 

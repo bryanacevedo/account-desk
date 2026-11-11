@@ -8,7 +8,7 @@ v1 is built end to end on simulated vendors. **Public** at https://github.com/br
 
 Checked on 2026-11-11 by running them:
 
-- `pytest` on real Postgres 18: 199 passed on 2026-11-11, including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
+- `pytest` on real Postgres 18: 201 tests (the count `pytest --collect-only` gives on 2026-11-11; the last full run recorded here passed 199), including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
 - `ruff check src tests`: clean. `tsc --noEmit` and `vite build`: clean.
 - `make demo`: 700 invented accounts, 60 simulated days; opens on 2026-11-11 with work waiting for three of the four SDRs (Maya Okafor has none that morning).
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Since then two fresh design reviews and checks at 375 wide (see below).
@@ -33,8 +33,8 @@ Checked on 2026-11-11 by running them:
 
 **Not proven:**
 
-- Every AI task has an eval (268 cases, 194 written by an agent that never saw the code), run live once on 2026-11-11: replies 99% accepted, drafts 92% pass and 78% faithful, briefs 90% faithful, suggested replies 77% pass and 97% invent nothing, call notes 87% recall. Not a real buyer among them.
-- No live vendor adapter (people search, finders, verifier, catch-all resolver, company data, phone, research, mail provider, telemetry, CRM, Slack). Contracts only.
+- Every AI task has an eval (268 cases, 194 written by an agent that never saw the code), run live once on 2026-11-11: replies 99% accepted (147 of 148), drafts 94% pass after one rewrite (47 of 50) and 70% judge-faithful (35 of 50), briefs 100% faithful (20 of 20), suggested replies 63% pass every check (19 of 30) with 1 of 30 judged invented, call notes 87% recall. Not a real buyer among them.
+- Only the DNS check is live (SPF, DKIM and DMARC over DNS-over-HTTPS). Every other vendor is simulated: people search, finders, verifier, catch-all resolver, company data, phone, research, mail provider, telemetry, CRM, Slack. For these only the contracts exist, and in live mode a vendor without a key refuses instead of simulating.
 - The HeyReach webhook has not seen a real event.
 - No mail provider adapter: a live desk cannot send email yet.
 - Real login only through Cloudflare Access token verification, which has not been run against a real Access app.
@@ -48,9 +48,11 @@ Checked on 2026-11-11 by running them:
 
 ## Done since the first review (2026-11-11)
 
+Counts in this list (tests, cases) are as of when each item was done, not today's.
+
 - Hard gates on invention, in code: suggested replies are checked for numbers, product facts and placeholders the prospect did not bring up (rewritten once, then withheld); every draft's sentences about the buyer are read against the facts by a second call (rewritten once, then held as Needs a rewrite). Re-measured live: drafts 94% pass, briefs 100% faithful, suggested replies with no invented number or placeholder. Accounts list pages through all accounts. The held-back comparison is said in plain words.
 
-- The AI layer, made measurable: 268 eval cases over all six tasks (194 written independently), graded by code and a Claude Sonnet 5.5 judge with written checklists, with recordings so CI replays them free and floors in `evals/thresholds.json`. The first live run found real faults and the prompts were fixed against it: suggested replies invented product facts and left placeholders (half the cases, now 1 in 30); drafts stated guesses about the buyer as fact (40% faithful, now 78%); briefs stated inferences as findings (10%, now 90%); return dates were missed for want of today's date; a departure notice was read as out of office. A weekly live workflow is in place but dormant without an API key secret; an in-app check alerts when SDRs start editing many more drafts.
+- The AI layer, made measurable: 268 eval cases over all six tasks (194 written independently), graded by code and a Claude Sonnet 5.5 judge with written checklists, with recordings so CI replays them free and floors in `evals/thresholds.json`. The first live run found real faults and the prompts were fixed against it: suggested replies invented product facts and left placeholders (half the cases, now 1 in 30); drafts stated guesses about the buyer as fact (40% judge-faithful on the first run, now 70%); briefs stated inferences as findings (10% on the first run, now 100%); return dates were missed for want of today's date; a departure notice was read as out of office. A weekly live workflow is in place but dormant without an API key secret; an in-app check alerts when SDRs start editing many more drafts.
 
 - Final reviews on the final state (2026-11-11): a goldfish drift check (README and decisions accurate; five stale lines here, fixed) and a fresh design review (11 majors, all fixed: "Draft rejected" instead of a wrong "Email rejected"; follow-up drafts count as waiting on the team in In flight; panels say "overdue" against the desk's clock; the colleagues decision only while colleagues are waiting; "Play started" against "Held back" with share bars drawn to 100%; the finder order as figures; honest statuses with icons; a readable per-signal table; play people and meetings open; one owner on every page; "Colleague's meeting"). The six nits were then fixed too: figures on one line, a call panel with why now and what was sent, values shown once, one word per thing, nine distinct panel tints with ink labels, and a phone stage control that shows there is more.
 
@@ -76,7 +78,7 @@ Checked on 2026-11-11 by running them:
 
 - The daily cap is the database's own rule: `mailbox_cap()` (migration 0017) computes ramp, ceiling and the spam and placement holds, and the send trigger uses it; nothing the sending code writes is trusted.
 - CRM deals on accounts the desk does not know yet are held (`crm_held_deals`, migration 0018) and read again after an import or a resolved signal; tested.
-- In flight page: every open play with each person's sequence as a step strip (done, next, not happening) and what happens next; stage filter, Mine and Team for SDRs. On phones it takes Accounts' slot in the bottom bar (Accounts moves to More). Checked at 1440 and 375 (no sideways scroll); tested. 170 tests.
+- In flight page: every open play with each person's sequence as a step strip (done, next, not happening) and what happens next; stage filter, Mine and Team for SDRs. On phones it takes Accounts' slot in the bottom bar (Accounts moves to More). Checked at 1440 and 375 (no sideways scroll); tested. Then 170 tests.
 
 - Play editor: GTM writes a play with a live preview of matching accounts and a worst-case cost card, saved as a draft; a manager who did not write it launches it. Checked in the browser.
 - Plays with no email step activate directly; tested end to end.
