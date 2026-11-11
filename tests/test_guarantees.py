@@ -237,13 +237,74 @@ def test_a_lost_expansion_deal_leaves_a_customer_a_customer(cur, scene):
     assert db.val(cur, "select lifecycle from accounts where id = %s", scene["account"]) == "customer"
 
 
-def test_influenced_counts_a_play_that_is_still_open(cur, scene):
+def _touch(cur, scene, days_ago: int, key: str) -> None:
+    db.run(cur, """insert into touches (account_id, person_id, account_play_id, channel, direction, kind, at, source, dedup_key)
+                   values (%s, %s, %s, 'email', 'out', 'email_sent', app_now() - (%s || ' days')::interval, 'desk', %s)""",
+           scene["account"], scene["person"], scene["ap"], days_ago, key)
+
+
+def test_influenced_counts_a_play_that_reached_them(cur, scene):
     from outbound import pipeline
     db.run(cur, "update account_plays set proposed_at = app_now() - interval '110 days', state = 'meeting' where id = %s",
            scene["ap"])
+    _touch(cur, scene, 30, "infl-touch")
     oid = pipeline.opportunity_created(cur, account_id=scene["account"], crm_id="infl-1", name="x", amount_cents=1,
                                        stage="Discovery", created_at=db.val(cur, "select app_now()"))
     assert db.val(cur, "select attribution from opportunities where id = %s", oid) == "influenced"
+
+
+def test_a_play_that_never_reached_them_gets_no_credit(cur, scene):
+    from outbound import pipeline
+    oid = pipeline.opportunity_created(cur, account_id=scene["account"], crm_id="none-1", name="x", amount_cents=1,
+                                       stage="Discovery", created_at=db.val(cur, "select app_now()"))
+    assert db.val(cur, "select attribution from opportunities where id = %s", oid) == "none"
+
+
+def _meeting(cur, scene, source: str, days_ago: int) -> int:
+    return db.val(cur, """insert into meetings (account_play_id, account_id, person_id, booked_at, starts_at, status, source)
+                          values (%s, %s, %s, app_now() - (%s || ' days')::interval, app_now(), 'booked', %s) returning id""",
+                  scene["ap"], scene["account"], scene["person"], days_ago, source)
+
+
+def test_sourced_needs_outreach_before_the_meeting(cur, scene):
+    from outbound import pipeline
+    _touch(cur, scene, 20, "src-touch")
+    _meeting(cur, scene, "sdr", 10)
+    oid = pipeline.opportunity_created(cur, account_id=scene["account"], crm_id="src-1", name="x", amount_cents=1,
+                                       stage="Discovery", created_at=db.val(cur, "select app_now()"))
+    assert db.val(cur, "select attribution from opportunities where id = %s", oid) == "sourced"
+
+
+def test_an_inbound_meeting_is_not_sourced_by_outbound(cur, scene):
+    from outbound import pipeline
+    _touch(cur, scene, 20, "inb-touch")
+    _meeting(cur, scene, "inbound", 10)
+    oid = pipeline.opportunity_created(cur, account_id=scene["account"], crm_id="inb-1", name="x", amount_cents=1,
+                                       stage="Discovery", created_at=db.val(cur, "select app_now()"))
+    assert db.val(cur, "select attribution from opportunities where id = %s", oid) == "influenced"
+
+
+def test_a_no_show_takes_the_credit_back(cur, scene):
+    from outbound import pipeline
+    _touch(cur, scene, 20, "ns-touch")
+    mid = _meeting(cur, scene, "sdr", 10)
+    oid = pipeline.opportunity_created(cur, account_id=scene["account"], crm_id="ns-1", name="x", amount_cents=1,
+                                       stage="Discovery", created_at=db.val(cur, "select app_now()"))
+    assert db.val(cur, "select attribution from opportunities where id = %s", oid) == "sourced"
+    pipeline.set_meeting_status(cur, mid, "no_show")
+    assert db.val(cur, "select attribution from opportunities where id = %s", oid) == "influenced"
+
+
+def test_a_deal_read_twice_updates_amount_and_close(cur, scene):
+    from outbound import pipeline
+    from outbound.adapters import CrmDeal
+    dom = db.val(cur, "select primary_domain from accounts where id = %s", scene["account"])
+    now = db.val(cur, "select app_now()")
+    pipeline.upsert_deal(cur, CrmDeal("upd-1", dom, "Deal", 1000, "Discovery", now, now))
+    pipeline.upsert_deal(cur, CrmDeal("upd-1", dom, "Deal", 5000, "Closed Lost", now, now, now, False, "timing"))
+    o = db.one(cur, "select amount_cents, won, loss_reason from opportunities where crm_id = 'upd-1'")
+    assert (o["amount_cents"], o["won"], o["loss_reason"]) == (5000, False, "timing")
+    assert db.val(cur, "select lifecycle from accounts where id = %s", scene["account"]) == "prospect"
 
 
 def test_a_failed_draft_cannot_be_approved_unchanged(cur, scene):

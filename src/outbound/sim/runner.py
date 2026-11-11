@@ -28,6 +28,7 @@ def setup(*, start: datetime, seed: int = 7, n_accounts: int = 700) -> dict:
         load.load_catalog(cur, start=start)
         info = world.build(cur, seed=seed, n_accounts=n_accounts, start=start)
         _sim_placement(cur, random.Random(seed), start)
+        pipeline.crm_sync(cur, {})  # the first read of the CRM: its history becomes the desk's
         for r in db.all(cur, "select id from accounts"):
             scoring.rescore(cur, r["id"])
         # Earlier history: a few months of signals already ingested, so scores start warm.
@@ -228,8 +229,24 @@ def call_notes(rng: random.Random) -> str:
     return "\n".join(dict.fromkeys(lines))
 
 
+STAGES = ["Discovery", "Evaluation", "Proposal", "Negotiation"]
+LOSS = [("timing", 4), ("budget", 3), ("competitor", 2), ("no decision", 3)]
+
+
+def _crm_deal(cur, rng: random.Random, at: datetime, account_id: int, need: float, contact_email: str | None) -> None:
+    """A deal appears in the CRM, the way a sales team would open one; the desk only learns of it by reading."""
+    name = db.val(cur, "select name from accounts where id = %s", account_id)
+    n = db.val(cur, "select count(*) from sim_crm_deals") + 1
+    db.run(cur, """insert into sim_crm_deals (crm_id, account_id, name, amount_cents, stage, created_at, updated_at,
+                                             contact_email, close_on, will_win)
+                   values (%s,%s,%s,%s,'Discovery',%s,%s,%s,%s,%s)""",
+           f"006SIM{n:06d}", account_id, f"{name} new business", rng.randint(30, 180) * 100000, at, at, contact_email,
+           at + timedelta(days=rng.randint(20, 70)), rng.random() < 0.2 + 0.45 * need)
+
+
 def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
-    for m in db.all(cur, """select m.*, sa.need::float as need from meetings m join sim_accounts sa on sa.account_id = m.account_id
+    for m in db.all(cur, """select m.*, sa.need::float as need, p.email from meetings m join sim_accounts sa on sa.account_id = m.account_id
+                            left join people p on p.id = m.person_id
                             where m.status = 'booked' and m.starts_at < %s""", at):
         status = "held" if rng.random() < 0.84 else "no_show"
         pipeline.set_meeting_status(cur, m["id"], status)
@@ -240,14 +257,39 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
                 pipeline.learn_from(cur, nid, m["owner_id"])
             if rng.random() < 0.22 + 0.5 * m["need"]:
                 db.run(cur, "insert into sim_events (at, kind, payload) values (%s, 'opportunity', %s)",
-                       at + timedelta(days=rng.randint(2, 8)),
-                       J({"account_id": m["account_id"], "amount": rng.randint(30, 180) * 100000}))
+                       at + timedelta(days=rng.randint(2, 8)), J({"account_id": m["account_id"], "email": m["email"]}))
     for ev in db.all(cur, "select * from sim_events where kind = 'opportunity' and not done and at <= %s", at):
         p = ev["payload"]
-        name = db.val(cur, "select name from accounts where id = %s", p["account_id"])
-        pipeline.opportunity_created(cur, account_id=p["account_id"], crm_id=f"CRM-OPP-{ev['id']}", name=f"{name} new business",
-                                     amount_cents=p["amount"], stage="Discovery", created_at=ev["at"])
+        need = db.val(cur, "select need::float from sim_accounts where account_id = %s", p["account_id"]) or 0.3
+        _crm_deal(cur, rng, ev["at"], p["account_id"], need, p.get("email"))
         db.run(cur, "update sim_events set done = true where id = %s", ev["id"])
+    # Deals move: a stage every week or two, then they close on their hidden date.
+    for d in db.all(cur, "select * from sim_crm_deals where closed_at is null and updated_at < %s - interval '9 days'", at):
+        if at >= d["close_on"]:
+            reason = None if d["will_win"] else rng.choices([r for r, _ in LOSS], weights=[w for _, w in LOSS])[0]
+            db.run(cur, """update sim_crm_deals set closed_at = %s, won = %s, loss_reason = %s, updated_at = %s,
+                           stage = %s where id = %s""", at, d["will_win"], reason, at,
+                   "Closed Won" if d["will_win"] else "Closed Lost", d["id"])
+        elif d["stage"] in STAGES and STAGES.index(d["stage"]) < len(STAGES) - 1:
+            db.run(cur, "update sim_crm_deals set stage = %s, updated_at = %s where id = %s",
+                   STAGES[STAGES.index(d["stage"]) + 1], at, d["id"])
+    if at.hour == 15:
+        _organic(cur, rng, at)
+
+
+def _organic(cur, rng: random.Random, at: datetime) -> None:
+    """What happens without outbound, once a day: some companies ask for a demo, and sales opens some deals on its
+    own. Held-back accounts get these too, so the comparison group measures what outbound adds, not zero."""
+    for a in db.all(cur, """select a.id, sa.need::float as need from accounts a join sim_accounts sa on sa.account_id = a.id
+                            where a.lifecycle = 'prospect'"""):
+        if rng.random() < 0.0012 * a["need"]:
+            person = db.one(cur, "select id, email from people where account_id = %s and status = 'active' order by id limit 1", a["id"])
+            if person:
+                pipeline.book_meeting(cur, account_id=a["id"], person_id=person["id"],
+                                      starts_at=at + timedelta(days=rng.randint(2, 6)), source="inbound",
+                                      external_id=f"sim-inbound-{a['id']}-{at:%Y%m%d}")
+        elif rng.random() < 0.0004 * a["need"]:
+            _crm_deal(cur, rng, at, a["id"], a["need"], None)
 
 
 def _hour(cur_rng: random.Random, at: datetime, eagerness: float, totals: dict) -> None:

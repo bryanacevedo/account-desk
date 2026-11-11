@@ -172,6 +172,26 @@ def task(cur, task_id: int) -> dict | None:
     return t
 
 
+# ---------------------------------------------------------------- meetings
+
+def meeting(cur, meeting_id: int, *, money: bool) -> dict | None:
+    m = db.one(cur, """select m.*, pe.full_name, pe.photo_url, pe.title as person_title, a.name as company, a.primary_domain,
+                              pl.name as play, pl.id as play_id, u.name as owner
+                       from meetings m left join people pe on pe.id = m.person_id join accounts a on a.id = m.account_id
+                       left join account_plays ap on ap.id = m.account_play_id left join plays pl on pl.id = ap.play_id
+                       left join users u on u.id = m.owner_id where m.id = %s""", meeting_id)
+    if m is None:
+        return None
+    m["notes"] = db.all(cur, """select cn.id, cn.text, cn.created_at, cn.worth_learning, u.name as by from call_notes cn
+                                left join users u on u.id = cn.marked_by where cn.meeting_id = %s order by cn.created_at""", meeting_id)
+    m["learnings"] = db.all(cur, """select l.kind, l.text, l.quote from learnings l join call_notes cn on cn.id = l.call_note_id
+                                    where cn.meeting_id = %s""", meeting_id)
+    m["deals"] = db.all(cur, "select id, name, stage, attribution, won, closed_at, created_at" + (", amount_cents" if money else "") +
+                        " from opportunities where attribution_meeting_id = %s or (account_id = %s and created_at >= %s) "
+                        "order by created_at", meeting_id, m["account_id"], m["booked_at"])
+    return m
+
+
 # ---------------------------------------------------------------- people
 
 def person(cur, person_id: int) -> dict | None:
@@ -182,7 +202,12 @@ def person(cur, person_id: int) -> dict | None:
     if p is None:
         return None
     enrollments = db.all(cur, """select e.id, e.state, e.step_index, e.stop_reason, e.pause_reason, e.next_at, e.created_at,
-                                        e.persona_key, pl.name as play, pl.sequence, ap.id as account_play_id, ap.state as play_state
+                                        e.persona_key, pl.id as play_id, pl.name as play, pl.sequence, ap.id as account_play_id,
+                                        ap.state as play_state,
+                                        (select json_build_object('id', m.id, 'person_id', m.person_id, 'name', pe.full_name,
+                                                                  'starts_at', m.starts_at, 'status', m.status)
+                                         from meetings m left join people pe on pe.id = m.person_id
+                                         where m.account_play_id = ap.id order by m.booked_at desc limit 1) as meeting
                                  from enrollments e join account_plays ap on ap.id = e.account_play_id
                                  join plays pl on pl.id = ap.play_id where e.person_id = %s order by e.created_at desc""", person_id)
     touches = db.all(cur, """select t.id, t.channel, t.direction, t.kind, t.at, t.source, t.message_id, m.subject, m.step_index
@@ -190,7 +215,9 @@ def person(cur, person_id: int) -> dict | None:
                              where t.person_id = %s order by t.at desc limit 100""", person_id)
     reps = db.all(cur, """select id, received_at, label, cleaned, hot, channel from replies where person_id = %s
                           order by received_at desc""", person_id)
-    meetings = db.all(cur, "select id, starts_at, status from meetings where person_id = %s order by starts_at desc", person_id)
+    meetings = db.all(cur, """select m.id, m.starts_at, m.booked_at, m.status, m.source, pl.name as play from meetings m
+                              left join account_plays ap on ap.id = m.account_play_id left join plays pl on pl.id = ap.play_id
+                              where m.person_id = %s order by m.starts_at desc""", person_id)
     sigs = db.all(cur, """select s.id, s.type_key, t.label, s.observed_at, s.evidence from signals s
                           join signal_types t on t.key = s.type_key where s.person_id = %s order by s.observed_at desc limit 20""",
                   person_id)
@@ -255,24 +282,41 @@ def signal_performance(cur) -> list[dict]:
 
 # ---------------------------------------------------------------- plays
 
+FUNNEL = """
+    count(*) filter (where arm = 'treated') as proposed,
+    count(*) filter (where arm = 'treated' and state not in ('proposed','skipped','expired')) as accepted,
+    count(*) filter (where arm = 'treated' and exists (select 1 from touches t where t.account_play_id = ap.id
+                     and t.direction = 'out')) as contacted,
+    count(*) filter (where arm = 'treated' and exists (select 1 from replies r join enrollments e on e.person_id = r.person_id
+                     and e.account_play_id = ap.id where r.received_at >= ap.proposed_at
+                     and coalesce(r.label, 'other') not in ('out_of_office','auto_reply','bounce'))) as replied,
+    count(*) filter (where arm = 'treated' and exists (select 1 from replies r join enrollments e on e.person_id = r.person_id
+                     and e.account_play_id = ap.id where r.hot and r.received_at >= ap.proposed_at)) as positive,
+    count(*) filter (where arm = 'treated' and exists (select 1 from meetings m where m.account_play_id = ap.id
+                     and m.source <> 'inbound' and m.status <> 'cancelled')) as meetings,
+    count(*) filter (where arm = 'holdout') as holdout,
+    -- The comparison counts any meeting or deal at the account, whatever started it, the same way in both arms.
+    count(*) filter (where arm = 'treated' and exists (select 1 from meetings m where m.account_id = ap.account_id
+                     and m.status <> 'cancelled' and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days')) as treated_meetings_any,
+    count(*) filter (where arm = 'holdout' and exists (select 1 from meetings m where m.account_id = ap.account_id
+                     and m.status <> 'cancelled' and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days')) as holdout_meetings,
+    count(*) filter (where arm = 'treated' and exists (select 1 from opportunities o where o.account_id = ap.account_id
+                     and o.created_at between ap.proposed_at and ap.proposed_at + interval '90 days')) as treated_deals,
+    count(*) filter (where arm = 'holdout' and exists (select 1 from opportunities o where o.account_id = ap.account_id
+                     and o.created_at between ap.proposed_at and ap.proposed_at + interval '90 days')) as holdout_deals
+"""
+
+
+def lifts(f: dict) -> tuple[dict, dict]:
+    return (stats.lift_report(f["treated_meetings_any"], f["proposed"], f["holdout_meetings"], f["holdout"]),
+            stats.lift_report(f["treated_deals"], f["proposed"], f["holdout_deals"], f["holdout"]))
+
+
 def plays_page(cur, *, money: bool) -> list[dict]:
     out = []
     for p in db.all(cur, "select p.*, u.name as owner from plays p left join users u on u.id = p.owner_id order by p.id"):
-        f = db.one(cur, """
-            select count(*) filter (where arm = 'treated') as proposed,
-                   count(*) filter (where arm = 'treated' and state not in ('proposed','skipped','expired')) as accepted,
-                   count(*) filter (where arm = 'holdout') as holdout,
-                   count(*) filter (where state in ('proposed','accepted','researching','approving','active','engaged','meeting')) as open,
-                   count(*) filter (where arm = 'treated' and exists (select 1 from touches t where t.account_play_id = ap.id
-                                    and t.direction = 'out')) as contacted,
-                   count(*) filter (where arm = 'treated' and exists (select 1 from replies r where r.account_id = ap.account_id
-                                    and r.received_at >= ap.proposed_at and r.label not in ('out_of_office','auto_reply','bounce'))) as replied,
-                   count(*) filter (where arm = 'treated' and exists (select 1 from replies r where r.account_id = ap.account_id
-                                    and r.hot and r.received_at >= ap.proposed_at)) as positive,
-                   count(*) filter (where arm = 'treated' and exists (select 1 from meetings m where m.account_id = ap.account_id
-                                    and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days')) as meetings,
-                   count(*) filter (where arm = 'holdout' and exists (select 1 from meetings m where m.account_id = ap.account_id
-                                    and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days')) as holdout_meetings
+        f = db.one(cur, "select " + FUNNEL + """,
+                   count(*) filter (where state in ('proposed','accepted','researching','approving','active','engaged','meeting')) as open
             from account_plays ap where ap.play_id = %s""", p["id"])
         approvals = db.one(cur, """
             select count(*) filter (where approval_mode = 'person') as by_person,
@@ -291,8 +335,7 @@ def plays_page(cur, *, money: bool) -> list[dict]:
                                                and t.direction = 'out') t on t.first_at is not null
                                  where ap.play_id = %s""", p["id"])
         row = {**p, "funnel": f, "approvals": approvals, "bounces": bounces, "median_hours_to_first_touch": latency,
-               "lift": stats.lift_report(f["meetings"], f["proposed"], f["holdout_meetings"], f["holdout"]),
-               "promotion": promotion_check(cur, p)}
+               "lift": lifts(f)[0], "deal_lift": lifts(f)[1], "promotion": promotion_check(cur, p)}
         if money:
             row["pipeline_cents"] = db.val(cur, """select coalesce(sum(amount_cents), 0) from opportunities
                                                    where source_play_id = %s and attribution = 'sourced'""", p["id"])
@@ -415,20 +458,7 @@ def deliverability(cur) -> dict:
 # ---------------------------------------------------------------- results
 
 def results(cur, *, money: bool) -> dict:
-    f = db.one(cur, """
-        select count(*) filter (where arm = 'treated') as proposed,
-               count(*) filter (where arm = 'treated' and state not in ('proposed','skipped','expired')) as accepted,
-               count(*) filter (where arm = 'treated' and exists (select 1 from touches t where t.account_play_id = ap.id and t.direction = 'out')) as contacted,
-               count(*) filter (where arm = 'treated' and exists (select 1 from replies r where r.account_id = ap.account_id
-                   and r.received_at >= ap.proposed_at and r.label not in ('out_of_office','auto_reply','bounce'))) as replied,
-               count(*) filter (where arm = 'treated' and exists (select 1 from replies r where r.account_id = ap.account_id and r.hot
-                   and r.received_at >= ap.proposed_at)) as positive,
-               count(*) filter (where arm = 'treated' and exists (select 1 from meetings m where m.account_id = ap.account_id
-                   and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days')) as meetings,
-               count(*) filter (where arm = 'holdout') as holdout,
-               count(*) filter (where arm = 'holdout' and exists (select 1 from meetings m where m.account_id = ap.account_id
-                   and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days')) as holdout_meetings
-        from account_plays ap""")
+    f = db.one(cur, "select " + FUNNEL + " from account_plays ap")
     opps = db.one(cur, """select count(*) filter (where attribution = 'sourced') as sourced,
                                  count(*) filter (where attribution = 'influenced') as influenced""" +
                   (""", coalesce(sum(amount_cents) filter (where attribution = 'sourced'), 0) as sourced_cents,
@@ -464,7 +494,8 @@ def results(cur, *, money: bool) -> dict:
                count(*) filter (where exists (select 1 from meetings m where m.person_id = o.person_id
                    and m.booked_at between o.first_at and o.first_at + interval '30 days')) as meetings
         from first_out o group by 1 order by reached desc""")
-    out = {"funnel": f, "lift": stats.lift_report(f["meetings"], f["proposed"], f["holdout_meetings"], f["holdout"]),
+    meeting_lift, deal_lift = lifts(f)
+    out = {"funnel": f, "lift": meeting_lift, "deal_lift": deal_lift,
            "opportunities": opps, "sla": sla, "labels": labels, "signals": signal_performance(cur), "learnings": learn,
            "channels": channels}
     if money:
@@ -472,7 +503,11 @@ def results(cur, *, money: bool) -> dict:
                                where at >= date_trunc('month', app_now()) group by vendor, unit order by vendor""")
         out["spend"] = spend
         total_cents = sum(float(s["cost_cents"]) for s in spend)
-        out["cost_per_meeting_cents"] = (total_cents / f["meetings"]) if f["meetings"] else None
+        # This month's spend over this month's outbound meetings: the same window on both sides.
+        month_meetings = db.val(cur, """select count(*) from meetings where account_play_id is not null and source <> 'inbound'
+                                        and status <> 'cancelled' and booked_at >= date_trunc('month', app_now())""")
+        out["meetings_this_month"] = month_meetings
+        out["cost_per_meeting_cents"] = (total_cents / month_meetings) if month_meetings else None
     return out
 
 

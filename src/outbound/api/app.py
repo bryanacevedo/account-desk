@@ -464,6 +464,49 @@ def meeting_status(meeting_id: int, body: MeetingStatus, u: dict = Depends(write
     return {"ok": True, "learnings": kept}
 
 
+@app.get("/api/meetings/{meeting_id}")
+def meeting(meeting_id: int, u: dict = Depends(current_user)) -> dict:
+    with db.tx() as cur:
+        m = views.meeting(cur, meeting_id, money=money(u))
+    if m is None:
+        raise HTTPException(404, "No such meeting.")
+    return m
+
+
+class CalendarBooking(BaseModel):
+    """A booking tool's webhook (Calendly-shaped): an invitee booked, rescheduled or cancelled."""
+    event: Literal["booked", "rescheduled", "cancelled"]
+    external_id: str = Field(min_length=1, max_length=300)
+    invitee_email: str = Field(min_length=3, max_length=320)
+    starts_at: datetime | None = None
+    inbound: bool = False  # booked from the website rather than a link an SDR sent
+
+
+@app.post("/api/webhooks/meeting")
+async def webhook_meeting(request: Request) -> dict:
+    raw = await request.body()
+    verify_signature(request, raw)
+    b = CalendarBooking.model_validate_json(raw)
+    with db.tx() as cur:
+        existing = db.one(cur, "select id from meetings where external_id = %s", b.external_id)
+        if b.event == "cancelled":
+            if existing:
+                pipeline.set_meeting_status(cur, existing["id"], "cancelled")
+            return {"ok": True, "meeting_id": existing["id"] if existing else None}
+        if b.starts_at is None:
+            raise HTTPException(422, "A booking needs starts_at.")
+        if existing:
+            db.run(cur, "update meetings set starts_at = %s, status = 'booked' where id = %s", b.starts_at, existing["id"])
+            return {"ok": True, "meeting_id": existing["id"]}
+        p = db.one(cur, "select id, account_id from people where email = %s", b.invitee_email.strip().lower())
+        account_id = p["account_id"] if p else signals.resolve_account(cur, b.invitee_email.split("@")[-1], None)[0]
+        if account_id is None:
+            return {"ok": True, "meeting_id": None, "unmatched": True}
+        mid = pipeline.book_meeting(cur, account_id=account_id, person_id=p["id"] if p else None, starts_at=b.starts_at,
+                                    source="inbound" if b.inbound else "calendar", external_id=b.external_id)
+    return {"ok": True, "meeting_id": mid}
+
+
 class PlayChange(BaseModel):
     status: Literal["live", "paused"] | None = None
     autonomy: Literal["research", "draft", "supervised", "autonomous"] | None = None

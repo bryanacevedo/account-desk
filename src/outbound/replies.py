@@ -33,6 +33,8 @@ OOO = re.compile(r"\b(out of (the )?office|on (annual )?leave|automatic reply|au
                  r"fuera de la oficina|absent du bureau|ausente)\b", re.I)
 BOUNCE_FROM = re.compile(r"^(mailer-daemon|postmaster)@", re.I)
 LEFT = re.compile(r"\b(no longer (with|at)|has left the company|left the company|is no longer employed)\b", re.I)
+# Only a company the person actually named: "I'm now at Kestrel Health." Nothing is guessed.
+NEW_CO = re.compile(r"\b(?:now at|now with|joined|moved to)\s+([A-Z][\w&'-]*(?:\s+[A-Z][\w&'-]*){0,3})")
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 MONTHS = {m: i for i, m in enumerate(["january", "february", "march", "april", "may", "june", "july", "august",
                                       "september", "october", "november", "december"], start=1)}
@@ -186,6 +188,10 @@ def classify_job(cur, payload: dict) -> None:
     if ruled:
         label, conf = ruled
         by = "rules"
+        if label == "left_company":
+            m = NEW_CO.search(r["cleaned"])
+            if m:
+                extracted["new_company"] = m.group(1).strip()
         if label == "out_of_office":
             extracted["return_date"] = None
             m = re.search(r"(?:until|return(?:ing)? on|bis|hasta|jusqu'au)\s+(\d{1,2}\s+\w+|\w+\s+\d{1,2})", r["cleaned"], re.I)
@@ -363,16 +369,19 @@ def act(cur, r: dict) -> None:
             plays.set_state(cur, ap["id"], "lost", reason="not_interested")
     elif label == "referral":
         ref = r["extracted"].get("referral") or {}
-        db.run(cur, """insert into tasks (account_play_id, person_id, reply_id, kind, title, due_at, owner_id, note)
-                       values (%s,%s,%s,'referral',%s,app_now(),%s,%s)""", ap["id"] if ap else None, pid, r["id"],
-               f"Referred to {ref.get('name', 'a colleague')}", owner,
-               ", ".join(x for x in (ref.get("title"), ref.get("email")) if x) or None)
+        if ref.get("name") and aid:
+            jobs.enqueue(cur, "enroll_referral", {"reply_id": r["id"]}, dedupe_key=f"referral:{r['id']}")
+        else:
+            db.run(cur, """insert into tasks (account_play_id, person_id, reply_id, kind, title, due_at, owner_id, note)
+                           values (%s,%s,%s,'referral',%s,app_now(),%s,%s)""", ap["id"] if ap else None, pid, r["id"],
+                   "Referred to a colleague", owner, "The reply did not name them clearly.")
         if aid:
             _resume_others(cur, aid, pid)
     elif label == "left_company":
         if pid:
             db.run(cur, "update people set status = 'left' where id = %s", pid)
             _next_for_persona(cur, pid, ap)
+            _moved_signal(cur, r, pid)
         if aid:
             _resume_others(cur, aid, pid)
     elif label == "wrong_person":
@@ -387,6 +396,21 @@ def act(cur, r: dict) -> None:
     audit.log(cur, "desk", "reply_acted", "reply", r["id"], {"label": label})
 
 
+def _moved_signal(cur, r: dict, person_id: int) -> None:
+    """'I have left; I am at X now' is a job change told by the person themselves: a signal at X. Unknown companies
+    land in Signals, Not matched, for a person to resolve."""
+    new_company = (r["extracted"] or {}).get("new_company")
+    if not new_company:
+        return
+    from . import signals
+    p = db.one(cur, "select full_name, email, linkedin_url, is_champion from people where id = %s", person_id)
+    signals.ingest(cur, "replies", [{
+        "type": "champion_moved" if p["is_champion"] else "job_change", "external_id": f"reply-{r['id']}",
+        "observed_at": r["received_at"], "company": new_company, "strength": 0.8,
+        "person": {"email": p["email"], "linkedin_url": p["linkedin_url"]},
+        "evidence": {"summary": f"{p['full_name']} joined {new_company}.", "quote": r["cleaned"][:300]}}])
+
+
 def _next_for_persona(cur, person_id: int, ap: dict | None) -> None:
     """Propose the next person for the same role at this account, if the play is still open."""
     if not ap or ap["state"] not in ("active", "approving", "engaged"):
@@ -394,10 +418,8 @@ def _next_for_persona(cur, person_id: int, ap: dict | None) -> None:
     persona = db.val(cur, "select persona_key from enrollments where person_id = %s and account_play_id = %s",
                      person_id, ap["id"])
     if persona:
-        db.run(cur, """insert into tasks (account_play_id, kind, title, due_at, owner_id)
-                       values (%s,'research',%s,app_now(),%s)""", ap["id"],
-               f"Find another {db.val(cur, 'select label from personas where key = %s', persona).lower()} at this account",
-               ap["owner_id"])
+        jobs.enqueue(cur, "replace_person", {"account_play_id": ap["id"], "persona_key": persona},
+                     dedupe_key=f"replace:{ap['id']}:{persona}")
 
 
 @jobs.handler("resume")

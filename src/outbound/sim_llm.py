@@ -89,6 +89,7 @@ def draft(p: dict) -> dict:
     first = p["person"]["first_name"]
     company = p["company"]
     facts = p["facts"]
+    referral = next((f for f in facts if f["kind"] == "referral"), None)
     signal_facts = [f for f in facts if f["kind"].startswith("signal:")]
     page_facts = [f for f in facts if f["kind"] in ("page:billing", "page:careers")]
     lead = signal_facts[0] if signal_facts else (page_facts[0] if page_facts else None)
@@ -96,7 +97,15 @@ def draft(p: dict) -> dict:
     persona = (p.get("persona_key") or "cfo")
     job = p["step"]["job"]
     s: list[dict] = [{"text": f"{first},", "kind": "courtesy", "fact_ids": []}]
-    if job == "open":
+    if job == "open" and referral:
+        who = referral["text"].split(" suggested ")[0]
+        s.append({"text": f"{who} suggested I get in touch with you.", "kind": "claim", "fact_ids": [referral["id"]]})
+        c2 = _claim(company, lead) if lead else None
+        if c2:
+            s.append({"text": c2, "kind": "claim", "fact_ids": [lead["id"]]})
+        s.append({"text": r.choice(WHY.get(persona, WHY["cfo"])), "kind": "courtesy", "fact_ids": []})
+        s.append({"text": r.choice(ASK), "kind": "ask", "fact_ids": []})
+    elif job == "open":
         c = _claim(company, lead) if lead else None
         if c:
             s.append({"text": c, "kind": "claim", "fact_ids": [lead["id"]]})

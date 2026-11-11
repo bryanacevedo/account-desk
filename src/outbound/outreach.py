@@ -94,10 +94,107 @@ def _persona_for(cur, title: str | None) -> str | None:
     return None
 
 
-def _enrollable(cur, person_id: int, ap_id: int) -> list[gate.Reason]:
-    """Person-level reasons that matter at selection. Email problems are fixed by finding and verifying."""
+def _enrollable(cur, person_id: int, ap_id: int, channel: str = "email") -> list[gate.Reason]:
+    """Person-level reasons that matter at selection, for the play's first channel. Email problems are fixed by
+    finding and verifying; a play with no email never refuses someone over their email."""
     skip = {"no_email", "verify_due", "no_basis"}
-    return [r for r in gate.person_reasons(cur, person_id, "email", account_play_id=ap_id) if r.code not in skip]
+    return [r for r in gate.person_reasons(cur, person_id, channel, account_play_id=ap_id) if r.code not in skip]
+
+
+def _first_channel(play: dict) -> str:
+    chans = [st["channel"] for st in play["sequence"]]
+    if "email" in chans:
+        return "email"
+    return "call" if chans and chans[0] == "call" else "linkedin"
+
+
+@jobs.handler("replace_person")
+def replace_person(cur, payload: dict) -> None:
+    """The person for a role left or was the wrong one: find the next person for that role and enroll them, or tell
+    the SDR why nobody could be found."""
+    ap = db.one(cur, "select * from account_plays where id = %s", payload["account_play_id"])
+    if ap is None or ap["state"] not in ("approving", "active", "engaged"):
+        return
+    play = dict(db.one(cur, "select * from plays where id = %s", ap["play_id"]))
+    account = db.one(cur, "select * from accounts where id = %s", ap["account_id"])
+    tried = frozenset(r["person_id"] for r in db.all(cur, "select person_id from enrollments where account_play_id = %s", ap["id"]))
+    play.update(personas=[payload["persona_key"]], max_people=1)
+    found = build_committee(cur, ap, play, account, exclude=tried)
+    label = db.val(cur, "select label from personas where key = %s", payload["persona_key"]).lower()
+    if not found:
+        why = db.val(cur, "select reason from committee_gaps where account_play_id = %s and persona_key = %s",
+                     ap["id"], payload["persona_key"])
+        db.run(cur, """insert into tasks (account_play_id, kind, title, due_at, owner_id, note)
+                       values (%s,'research',%s,app_now(),%s,%s)""", ap["id"], f"Find another {label} at this account",
+               ap["owner_id"], why or "The desk found nobody else for this role")
+        return
+    p = found[0]
+    eid = db.val(cur, """insert into enrollments (account_play_id, person_id, persona_key, state, mailbox_id, next_at)
+                         values (%s,%s,%s,'pending',%s,app_now()) returning id""",
+                 ap["id"], p["id"], p["persona_key"], pick_mailbox(cur, ap["owner_id"], ap["id"]))
+    first_email = next((i for i, st in enumerate(play["sequence"]) if st["channel"] == "email" and st["by"] == "desk"), None)
+    if first_email is None:
+        activate(cur, eid)
+    else:
+        draft_step(cur, eid, first_email)
+    audit.log(cur, "desk", "person_replaced", "account_play", ap["id"], {"person_id": p["id"], "persona": p["persona_key"]})
+
+
+@jobs.handler("enroll_referral")
+def enroll_referral(cur, payload: dict) -> None:
+    """Someone replied 'talk to my colleague'. The colleague becomes a person at the account, the referral becomes a
+    fact a draft may cite, and if the play is still open they are found, verified and enrolled like anyone else.
+    When that cannot happen, the SDR gets a task that says why."""
+    r = db.one(cur, "select * from replies where id = %s", payload["reply_id"])
+    ref = (r["extracted"] or {}).get("referral") or {}
+    name = (ref.get("name") or "").strip()
+    if not r["account_id"] or not name:
+        return
+    account = db.one(cur, "select * from accounts where id = %s", r["account_id"])
+    referrer = db.val(cur, "select full_name from people where id = %s", r["person_id"]) or "A colleague"
+    email = (ref.get("email") or "").strip().lower() or None
+    pid = db.val(cur, "select id from people where email = %s", email) if email else None
+    pid = pid or db.val(cur, "select id from people where account_id = %s and lower(full_name) = lower(%s)", account["id"], name)
+    if pid is None:
+        first, _, last = name.partition(" ")
+        pid = db.val(cur, """insert into people (account_id, full_name, first_name, last_name, title, email, source)
+                             values (%s,%s,%s,%s,%s,%s,'referral') returning id""",
+                     account["id"], name, first, last or None, ref.get("title"), email)
+    db.run(cur, """insert into facts (account_id, person_id, kind, text, source, observed_at)
+                   values (%s,%s,'referral',%s,'reply',%s)""",
+           account["id"], pid, f"{referrer} suggested speaking with {name}.", r["received_at"])
+    ap = db.one(cur, """select * from account_plays where account_id = %s and state in ('approving','active','engaged')
+                        order by proposed_at desc limit 1""", account["id"])
+
+    def task(why: str) -> None:
+        db.run(cur, """insert into tasks (account_play_id, person_id, reply_id, kind, title, due_at, owner_id, note)
+                       values (%s,%s,%s,'referral',%s,app_now(),%s,%s)""", ap["id"] if ap else None, pid, r["id"],
+               f"Referred to {name}", ap["owner_id"] if ap else account["owner_id"], why)
+
+    if ap is None:
+        return task("No open play at this account, so nobody was enrolled.")
+    play = db.one(cur, "select * from plays where id = %s", ap["play_id"])
+    reasons = _enrollable(cur, pid, ap["id"], _first_channel(play))
+    if reasons:
+        return task(reasons[0].message)
+    person = db.one(cur, "select * from people where id = %s", pid)
+    if _first_channel(play) == "email":
+        status = _ensure_email(cur, person, account)
+        if status != "valid":
+            return task({"missing": "No email address found for them", "risky": "Their email could not be confirmed",
+                         "invalid": "Their email address does not work"}[status])
+    persona = _persona_for(cur, person["title"]) or db.val(
+        cur, "select persona_key from enrollments where person_id = %s order by created_at desc limit 1", r["person_id"]) or "cfo"
+    db.run(cur, "update people set persona_key = coalesce(persona_key, %s) where id = %s", persona, pid)
+    eid = db.val(cur, """insert into enrollments (account_play_id, person_id, persona_key, state, mailbox_id, next_at, via_referral)
+                         values (%s,%s,%s,'pending',%s,app_now(),true) returning id""",
+                 ap["id"], pid, persona, pick_mailbox(cur, ap["owner_id"], ap["id"]))
+    first_email = next((i for i, st in enumerate(play["sequence"]) if st["channel"] == "email" and st["by"] == "desk"), None)
+    if first_email is None:
+        activate(cur, eid)
+    else:
+        draft_step(cur, eid, first_email)
+    audit.log(cur, "desk", "referral_enrolled", "person", pid, {"reply_id": r["id"], "enrollment_id": eid})
 
 
 def _ensure_email(cur, person: dict, account: dict) -> str:
@@ -136,13 +233,13 @@ def _record_basis(cur, person: dict, play: dict) -> str | None:
     return rule
 
 
-def build_committee(cur, ap: dict, play: dict, account: dict) -> list[dict]:
+def build_committee(cur, ap: dict, play: dict, account: dict, *, exclude: frozenset[int] = frozenset()) -> list[dict]:
     ad = adapters.get()
     personas = {p["key"]: p for p in db.all(cur, "select * from personas")}
     chosen: list[dict] = []
     gaps: dict[str, str] = {}
     trigger_person = db.val(cur, "select person_id from signals where id = %s", ap["trigger_signal_id"])
-    used: set[int] = set()
+    used: set[int] = set(exclude)
     for key in play["personas"]:
         if len(chosen) >= play["max_people"]:
             break
@@ -173,7 +270,7 @@ def build_committee(cur, ap: dict, play: dict, account: dict) -> list[dict]:
         picked = None
         last_reason = "Nobody with this role found"
         for c in candidates:
-            reasons = _enrollable(cur, c["id"], ap["id"])
+            reasons = _enrollable(cur, c["id"], ap["id"], _first_channel(play))
             if reasons:
                 last_reason = reasons[0].message
                 continue
@@ -333,6 +430,10 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
     step = play["sequence"][step_index]
     owner = db.one(cur, "select name from users where id = %s", ap["owner_id"])
     facts = account_facts(cur, account["id"])
+    # A referral is about one person: only their draft may cite it.
+    others_refs = {r["id"] for r in db.all(cur, "select id from facts where account_id = %s and kind = 'referral' "
+                                               "and person_id is distinct from %s", account["id"], person["id"])}
+    facts = [f for f in facts if f["id"] not in others_refs]
     fact_map = {f["id"]: f["text"] for f in facts}
     prev = db.one(cur, "select subject from messages where enrollment_id = %s and step_index < %s and channel = 'email' "
                        "order by step_index desc limit 1", enrollment_id, step_index)

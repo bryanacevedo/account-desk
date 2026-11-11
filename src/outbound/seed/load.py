@@ -26,7 +26,7 @@ def load_catalog(cur, *, start: datetime) -> dict:
                key, label, because, level, weight, hl)
     for key, label, adapter, cadence, paid, provider in C.SIGNAL_SOURCES:
         db.run(cur, "insert into signal_sources (key, label, adapter, cadence_minutes, paid, provider) "
-                    "values (%s,%s,%s,%s,%s,%s)", key, label, adapter, cadence, paid, provider)
+                    "values (%s,%s,%s,%s,%s,%s) on conflict (key) do nothing", key, label, adapter, cadence, paid, provider)
     db.run(cur, "insert into icp_versions (rules, note, published_by, published_at) values (%s, %s, %s, %s)",
            J(C.ICP), "Starting ICP", gtm, start - timedelta(days=30))
     for (key, name, hyp, trig, personas, maxp, seq, angle, autonomy, urgent, latency) in C.PLAYS:

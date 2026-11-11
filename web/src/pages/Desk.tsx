@@ -128,10 +128,14 @@ export function Results() {
             <Bar label="Contacted" value={f.contacted} of={of} hint={pct(f.contacted / of)} />
             <Bar label="Replied" value={f.replied} of={of} hint={pct(f.replied / of)} />
             <Bar label="Positive reply" value={f.positive} of={of} hint={pct(f.positive / of)} tone="accent" />
-            <Bar label="Meeting" value={f.meetings} of={of} hint={pct(f.meetings / of)} tone="accent" />
+            <Bar label="Meeting from outbound" value={f.meetings} of={of} hint={pct(f.meetings / of)} tone="accent" />
           </div>
         </Section>
-        <Section title="Meetings: contacted against held back"><LiftBlock lift={data.lift} /></Section>
+        <div>
+          <Section title="Meetings: contacted against held back"><LiftBlock lift={data.lift} /></Section>
+          <Section title="Deals: contacted against held back"><LiftBlock lift={data.deal_lift} /></Section>
+          <p className="mute small">Any meeting within 60 days or deal within 90, however it started, counted the same way in both groups. Held-back accounts still get inbound requests and deals sales opens on its own.</p>
+        </div>
       </div>
       <Section title="By channel" right={<span className="mute small">Last 90 days. Someone reached on two channels counts in both.</span>}>
         {data.channels.length ? (

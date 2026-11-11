@@ -104,3 +104,17 @@ def test_every_paid_call_left_a_ledger_row(world):
 def test_hot_replies_reached_a_person(world):
     assert v("""select count(*) from replies r where r.hot and not exists
                 (select 1 from tasks t where t.reply_id = r.id and t.kind = 'reply')""") == 0
+
+
+def test_deals_only_arrive_by_reading_the_crm(world):
+    assert v("""select count(*) from opportunities o where not exists
+                (select 1 from sim_crm_deals d where d.crm_id = o.crm_id)""") == 0
+
+
+def test_no_deal_is_credited_without_outreach_first(world):
+    assert v("""select count(*) from opportunities o where o.attribution <> 'none' and not exists
+                (select 1 from touches t where t.account_play_id = o.account_play_id and t.direction = 'out'
+                 and t.at <= o.created_at)""") == 0
+    assert v("""select count(*) from opportunities o join meetings m on m.id = o.attribution_meeting_id
+                where o.attribution = 'sourced' and (m.source = 'inbound' or m.status in ('no_show', 'cancelled'))""") == 0
+

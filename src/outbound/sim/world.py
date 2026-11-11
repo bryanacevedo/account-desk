@@ -192,15 +192,28 @@ def build(cur, *, seed: int = 7, n_accounts: int = 260, start: datetime) -> dict
                                values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                        aid, full, first, last, title, seniority, linkedin, country, tz, email, truth, resp, phone, champion,
                        photo)
+        # History lives in the CRM; the desk learns it on its first read, like a real install.
         if lifecycle in ("customer", "churned"):
-            db.run(cur, """insert into opportunities (account_id, crm_id, name, amount_cents, stage, created_at, closed_at,
-                                                      won, attribution)
-                           values (%s, %s, %s, %s, 'Closed Won', %s, %s, true, 'none')""",
-                   aid, f"CRM-O{aid}", f"{name} new business", rng.randint(24, 140) * 100000,
-                   start - timedelta(days=rng.randint(200, 700)), start - timedelta(days=rng.randint(100, 190)))
-        if lifecycle == "open_opp":
-            db.run(cur, """insert into opportunities (account_id, crm_id, name, amount_cents, stage, created_at, attribution)
-                           values (%s, %s, %s, %s, 'Evaluation', %s, 'none')""",
-                   aid, f"CRM-O{aid}", f"{name} new business", rng.randint(24, 140) * 100000,
-                   start - timedelta(days=rng.randint(5, 60)))
+            created = start - timedelta(days=rng.randint(200, 700))
+            closed = start - timedelta(days=rng.randint(100, 190))
+            db.run(cur, """insert into sim_crm_deals (crm_id, account_id, name, amount_cents, stage, created_at, updated_at,
+                                                     closed_at, won, close_on, will_win)
+                           values (%s,%s,%s,%s,'Closed Won',%s,%s,%s,true,%s,true)""",
+                   f"CRM-O{aid}", aid, f"{name} new business", rng.randint(24, 140) * 100000, created, closed, closed, closed)
+        elif lifecycle == "open_opp":
+            created = start - timedelta(days=rng.randint(5, 60))
+            db.run(cur, """insert into sim_crm_deals (crm_id, account_id, name, amount_cents, stage, created_at, updated_at,
+                                                     close_on, will_win)
+                           values (%s,%s,%s,%s,'Evaluation',%s,%s,%s,%s)""",
+                   f"CRM-O{aid}", aid, f"{name} new business", rng.randint(24, 140) * 100000, created, created,
+                   start + timedelta(days=rng.randint(10, 50)), rng.random() < 0.4)
+        elif lifecycle == "prospect" and rng.random() < 0.06:
+            created = start - timedelta(days=rng.randint(200, 420))
+            closed = created + timedelta(days=rng.randint(30, 80))
+            reason = rng.choice(["timing", "timing", "budget", "competitor", "no decision"])
+            db.run(cur, """insert into sim_crm_deals (crm_id, account_id, name, amount_cents, stage, created_at, updated_at,
+                                                     closed_at, won, loss_reason, close_on, will_win)
+                           values (%s,%s,%s,%s,'Closed Lost',%s,%s,%s,false,%s,%s,false)""",
+                   f"CRM-O{aid}", aid, f"{name} new business", rng.randint(24, 140) * 100000, created, closed, closed,
+                   reason, closed)
     return {"accounts": len(accounts)}

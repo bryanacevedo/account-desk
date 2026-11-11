@@ -162,7 +162,7 @@ def first_party_from_crm(cur) -> int:
     n = 0
     rows = db.all(cur, """
         select o.id, o.account_id, o.closed_at from opportunities o
-        where o.won = false and o.closed_at < app_now() - interval '150 days'
+        where o.won = false and o.closed_at < app_now() - interval '150 days' and o.loss_reason = 'timing'
           and not exists (select 1 from signals s where s.source = 'crm' and s.external_id = 'lost-' || o.id)""")
     for r in rows:
         db.run(cur, """insert into signals (type_key, source, external_id, account_id, observed_at, strength, evidence, status)

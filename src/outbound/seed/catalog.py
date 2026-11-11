@@ -98,6 +98,7 @@ SIGNAL_SOURCES = [
     ("events", "Events", "sim", 1440, False, "Your own event and webinar registrations"),
     ("news_feed", "Company news", "sim", 720, True, "A company news or events API"),
     ("webhook", "Webhook intake", "webhook", 1440, False, "Anything you push to the desk yourself"),
+    ("replies", "Replies", "webhook", 1440, False, "What people tell us in replies, such as a new job"),
 ]
 
 ICP = {

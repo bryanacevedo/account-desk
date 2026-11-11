@@ -246,7 +246,7 @@ def test_only_first_party_sources_are_free():
     Only data the company owns is free."""
     from outbound.seed.catalog import SIGNAL_SOURCES
     free = {key for key, _label, _adapter, _cadence, paid, _provider in SIGNAL_SOURCES if not paid}
-    assert free == {"product", "crm", "events", "webhook"}
+    assert free == {"product", "crm", "events", "webhook", "replies"}
     assert all(provider for *_rest, provider in SIGNAL_SOURCES)
 
 

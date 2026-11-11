@@ -69,6 +69,7 @@ export function SheetHost() {
   if (kind === "message") return <MessageSheet key={key} id={Number(id)} />;
   if (kind === "person") return <PersonSheet key={key} id={Number(id)} />;
   if (kind === "task") return <TaskSheet key={key} id={Number(id)} />;
+  if (kind === "meeting") return <MeetingSheet key={key} id={Number(id)} />;
   if (kind === "reply") return <ReplySheet key={key} id={Number(id)} />;
   if (kind === "play") return <PlaySheet key={key} id={Number(id)} />;
   if (kind === "playedit") return <Frame key={key} crumb={id === "new" ? "New play" : "Edit play"}><PlayEditor id={id === "new" ? null : Number(id)} /></Frame>;
@@ -131,9 +132,10 @@ export function PersonSheet({ id }: { id: number }) {
   const p = data.person;
   // One history across channels, newest first. Replies are not repeated as touches.
   const history = [
-    ...data.touches.filter((t: any) => t.kind !== "reply").map((t: any) => ({ at: t.at, kind: "touch", t })),
+    ...data.touches.filter((t: any) => t.kind !== "reply" && t.kind !== "meeting_booked").map((t: any) => ({ at: t.at, kind: "touch", t })),
     ...data.replies.map((r: any) => ({ at: r.received_at, kind: "reply", r })),
     ...data.signals.map((g: any) => ({ at: g.observed_at, kind: "signal", g })),
+    ...data.meetings.map((m: any) => ({ at: m.starts_at, kind: "meeting", m })),
   ].sort((x, y) => (x.at < y.at ? 1 : -1));
   return (
     <Frame crumb="Person">
@@ -163,12 +165,17 @@ export function PersonSheet({ id }: { id: number }) {
             {data.enrollments.map((e: any) => {
               const st = ENROLL[e.state] || ["off", cap(e.state)];
               const word = e.state === "stopped" || e.state === "paused" ? stopWord(e.stop_reason || e.pause_reason) || st[1] : st[1];
+              const theirs = e.meeting && e.meeting.person_id === p.id;
+              const colleague = e.stop_reason === "meeting_booked" && e.meeting && !theirs;
+              const sub = e.state === "active" && e.next_at
+                ? `Step ${e.step_index + 1} of ${e.sequence.length}, ${ahead(e.next_at) === "due" ? "due now" : `next ${ahead(e.next_at)}`}`
+                : colleague ? `${e.meeting.name || "A colleague"} booked a meeting, so the play stopped for everyone`
+                : `Since ${day(e.created_at)}`;
               return (
-                <div key={e.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
-                  <div className="cell-main"><span className="t">{e.play}</span>
-                    <span className="s">{e.state === "active" && e.next_at ? `Step ${e.step_index + 1} of ${e.sequence.length}, ${ahead(e.next_at) === "due" ? "due now" : `next ${ahead(e.next_at)}`}` : `Since ${day(e.created_at)}`}</span></div>
-                  <Status kind={GOOD_STOPS.has(e.stop_reason) ? "ok" : st[0]}>{word}</Status>
-                </div>
+                <button key={e.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => openSheet("play", e.play_id)}>
+                  <div className="cell-main"><span className="t">{e.play}</span><span className="s">{sub}</span></div>
+                  <Status kind={GOOD_STOPS.has(e.stop_reason) ? "ok" : st[0]}>{colleague ? "Colleague's meeting" : word}</Status>
+                </button>
               );
             })}
           </div>
@@ -180,8 +187,13 @@ export function PersonSheet({ id }: { id: number }) {
             {history.map((h: any, i: number) => (
               <li key={i}>
                 <span className="at">{day(h.at)}</span>
-                {h.kind === "signal" ? <SignalIcon type={h.g.type_key} /> : <ChannelIcon channel={h.kind === "reply" ? (h.r.channel || "email") : h.t.channel} />}
-                {h.kind === "touch" ? (
+                {h.kind === "signal" ? <SignalIcon type={h.g.type_key} /> : <ChannelIcon channel={h.kind === "meeting" ? "meeting" : h.kind === "reply" ? (h.r.channel || "email") : h.t.channel} />}
+                {h.kind === "meeting" ? (
+                  <button className="cell-main link-row" onClick={() => openSheet("meeting", h.m.id)}>
+                    <span className="t">{MEETING[h.m.status] || cap(h.m.status)}{h.m.source === "inbound" ? ", they asked for it" : ""}</span>
+                    <span className="s">{dayTime(h.m.starts_at)}{h.m.play ? `, ${h.m.play}` : ""}</span>
+                  </button>
+                ) : h.kind === "touch" ? (
                   h.t.message_id ? (
                     <button className="cell-main link-row" onClick={() => openSheet("message", h.t.message_id)}>
                       <span className="t">{TOUCH[h.t.kind] || cap(h.t.kind.replace(/_/g, " "))}</span>
@@ -312,6 +324,92 @@ function LinkedInLog({ personId, canAccept, onDone }: { personId: number; canAcc
     </Section>
   );
 }
+
+// ---------------------------------------------------------------- meeting
+
+const ATTR: Record<string, string> = { sourced: "Sourced by outbound", influenced: "Influenced by outbound", none: "Not from outbound" };
+
+export function MeetingSheet({ id }: { id: number }) {
+  const { data: m, error, reload } = useData<any>(`/api/meetings/${id}`);
+  const [notes, setNotes] = useState("");
+  const [learn, setLearn] = useState(true);
+  const [busy, run] = useBusy();
+  if (error) return <Frame crumb="Meeting"><Failed error={error} retry={reload} /></Frame>;
+  if (!m) return <Frame crumb="Meeting"><Loading rows={6} /></Frame>;
+  const save = (status: string) => run(async () => {
+    await api(`/api/meetings/${id}/status`, { method: "POST", body: { status, notes: notes.trim() || null, learn } });
+    setNotes("");
+  }, status === "held" ? "Saved." : status === "no_show" ? "Saved. A task to rebook is on Today." : "Cancelled.");
+  const open = m.status === "booked";
+  return (
+    <Frame crumb="Meeting" foot={open ? (
+      <div className="actions" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+        <button className="btn quiet sm" disabled={busy} onClick={() => save("cancelled")}>Cancelled</button>
+        <button className="btn line sm" disabled={busy} onClick={() => save("no_show")}>They did not show</button>
+        <button className="btn sm" disabled={busy} onClick={() => save("held")}>It happened</button>
+      </div>
+    ) : null}>
+      <div className="who">
+        <Avatar name={m.full_name || m.company} photo={m.photo_url} size={44} />
+        <div style={{ minWidth: 0 }}>
+          <h2 className="clip">{m.person_id ? <button className="link-row" onClick={() => openSheet("person", m.person_id)}>{m.full_name}</button> : m.company}</h2>
+          <div className="meta clip">{m.person_title ? `${m.person_title} at ` : ""}<button className="link" onClick={() => openSheet("account", m.account_id)}>{m.company}</button></div>
+        </div>
+      </div>
+      <div className="figs">
+        <Fig value={dayTime(m.starts_at)} label="When" sm />
+        <Fig value={<Status kind={m.status === "held" ? "ok" : m.status === "booked" ? "go" : "off"}>{MEETING[m.status] || cap(m.status)}</Status>} label="Status" sm />
+        <Fig value={m.source === "inbound" ? "They asked" : m.play ? <button className="link" onClick={() => openSheet("play", m.play_id)}>{m.play}</button> : "Booked by hand"} label="Came from" sm />
+        <Fig value={m.owner || "Nobody"} label="Owner" sm />
+      </div>
+      <Section title="Call notes">
+        {m.notes.length ? (
+          <div className="ledger">
+            {m.notes.map((n: any) => (
+              <div key={n.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr)" }}>
+                <div className="cell-main"><span style={{ whiteSpace: "pre-wrap" }}>{n.text}</span><span className="s">{n.by ? `${n.by}, ` : ""}{day(n.created_at)}</span></div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {m.status !== "cancelled" ? (
+          <>
+            <textarea className="input" rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What they said: why they would buy, what worries them, tools they use" aria-label="Call notes" />
+            <div className="actions" style={{ justifyContent: "space-between", marginTop: 8 }}>
+              <label className="choice"><input type="checkbox" checked={learn} onChange={(e) => setLearn(e.target.checked)} />Learn from these notes</label>
+              {!open ? <button className="btn line sm" disabled={busy || !notes.trim()} onClick={() => save(m.status)}>Add notes</button> : null}
+            </div>
+          </>
+        ) : null}
+      </Section>
+      {m.learnings.length ? (
+        <Section title="What the desk learned">
+          <div className="ledger">
+            {m.learnings.map((l: any, i: number) => (
+              <div key={i} className="row" style={{ gridTemplateColumns: "minmax(0,1fr)" }}>
+                <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{l.text}</span><span className="s" style={{ whiteSpace: "normal" }}>&ldquo;{l.quote}&rdquo;</span></div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      ) : null}
+      <Section title="Deals after it">
+        {m.deals.length ? (
+          <div className="ledger">
+            {m.deals.map((d: any) => (
+              <div key={d.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
+                <div className="cell-main"><span className="t">{d.name}</span><span className="s">{d.stage}, {ATTR[d.attribution]}{d.amount_cents != null ? `, ${money(d.amount_cents)}` : ""}</span></div>
+                <Status kind={d.won ? "ok" : d.closed_at ? "off" : "go"}>{d.won ? "Won" : d.closed_at ? "Lost" : "Open"}</Status>
+              </div>
+            ))}
+          </div>
+        ) : <Empty title="No deal in the CRM yet" />}
+      </Section>
+    </Frame>
+  );
+}
+
+const MEETING: Record<string, string> = { booked: "Meeting booked", held: "Meeting held", no_show: "Meeting, they did not show", cancelled: "Meeting cancelled" };
 
 function Reach({ label, value, state }: { label: string; value: ReactNode; state?: [Glyph, string] | null }) {
   return (
@@ -546,10 +644,10 @@ function AccountOutreach({ d }: { d: any }) {
         <Section title="Meetings">
           <div className="ledger">
             {d.meetings.map((m: any) => (
-              <div key={m.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
+              <button key={m.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => openSheet("meeting", m.id)}>
                 <div className="cell-main"><span className="t">{m.full_name || "Meeting"}</span><span className="s">{dayTime(m.starts_at)}</span></div>
                 <Status kind={m.status === "held" ? "ok" : m.status === "booked" ? "go" : "off"}>{cap(m.status === "no_show" ? "no show" : m.status)}</Status>
-              </div>
+              </button>
             ))}
           </div>
         </Section>
@@ -686,6 +784,8 @@ export function ReplySheet({ id }: { id: number }) {
   const { data: r, error, reload } = useData<any>(`/api/replies/${id}`);
   const [busy, run] = useBusy();
   const [label, setLabel] = useState("");
+  const [booking, setBooking] = useState(false);
+  const [when, setWhen] = useState("");
   if (error) return <Frame crumb="Reply"><Failed error={error} retry={reload} /></Frame>;
   if (!r) return <Frame crumb="Reply"><Loading rows={8} /></Frame>;
   const l = LABEL[r.label] || LABEL.other;
@@ -703,8 +803,18 @@ export function ReplySheet({ id }: { id: number }) {
       </>
     ) : (
       <>
-        <button className="btn line" disabled={busy} onClick={() => act({ outcome: "answered" }, "Marked answered.")}>I answered</button>
-        <button className="btn" disabled={busy} onClick={() => act({ outcome: "meeting_booked" }, "Meeting booked. The rest of the sequence stops.")}>Meeting booked</button>
+        {booking ? (
+          <>
+            <input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} aria-label="When the meeting is" style={{ width: 220 }} />
+            <button className="btn quiet" onClick={() => setBooking(false)}>Cancel</button>
+            <button className="btn" disabled={busy || !when} onClick={() => act({ outcome: "meeting_booked", meeting_at: new Date(when).toISOString() }, "Meeting booked. The rest of the sequence stops.")}>Book it</button>
+          </>
+        ) : (
+          <>
+            <button className="btn line" disabled={busy} onClick={() => act({ outcome: "answered" }, "Marked answered.")}>I answered</button>
+            <button className="btn" disabled={busy} onClick={() => setBooking(true)}>Meeting booked</button>
+          </>
+        )}
       </>
     )
   ) : undefined;

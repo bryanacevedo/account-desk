@@ -114,6 +114,8 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
         kind = "referral"
     elif r < pos_share + 0.42:
         kind = "wrong_person"
+    elif r < pos_share + 0.47:
+        kind = "left"
     else:
         kind = "unsubscribe"
     sender_first = mailbox["display_name"].split()[0]
@@ -134,6 +136,13 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
         else:
             text = rng.choice(REFERRAL).format(ref_name=colleague["full_name"], ref_email=colleague["true_email"],
                                                ref_title=colleague["title"])
+    elif kind == "left":
+        # They moved: sometimes to a company the desk knows, sometimes to one it does not.
+        known = db.one(cur, """select a.name from accounts a where a.lifecycle = 'prospect' and a.id <> %s
+                               order by a.id offset %s limit 1""", p["account_id"], rng.randint(0, 200))
+        new = known["name"] if known and rng.random() < 0.6 else rng.choice(["Halcyon Freight", "Ostrava Analytics", "Bluefin Clinics"])
+        text = f"I'm no longer with {p['company']}. I'm now at {new}, happy to stay in touch."
+        kind = "left_company"
     elif kind == "wrong_person":
         text = rng.choice(WRONG)
     else:

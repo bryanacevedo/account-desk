@@ -115,7 +115,7 @@ export function Today() {
         <Section title="Meetings this week" icon={CalendarCheck}>
           <div className="ledger">
             {data.meetings.map((m: any) => (
-              <button key={m.id} className="row" style={{ gridTemplateColumns: "120px minmax(0,1fr) auto" }} onClick={() => openSheet("account", m.account_id)}>
+              <button key={m.id} className="row" style={{ gridTemplateColumns: "120px minmax(0,1fr) auto" }} onClick={() => openSheet("meeting", m.id)}>
                 <span className="mute">{dayTime(m.starts_at)}</span>
                 <div className="cell-main"><span className="t">{m.company}</span><span className="s">{m.full_name}</span></div>
                 <Status kind={m.status === "held" ? "ok" : "go"}>{cap(m.status)}</Status>

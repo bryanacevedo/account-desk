@@ -95,8 +95,25 @@ class Chat(Protocol):
     def ensure_channel(self, name: str, invite: list[str]) -> str: ...
 
 
+@dataclass
+class CrmDeal:
+    """One deal as the CRM holds it (Salesforce opportunity, HubSpot deal)."""
+    crm_id: str
+    account_domain: str
+    name: str
+    amount_cents: int
+    stage: str
+    created_at: object
+    updated_at: object
+    closed_at: object | None = None
+    won: bool | None = None
+    loss_reason: str | None = None
+    contact_email: str | None = None
+
+
 class Crm(Protocol):
     def push(self, cur, kind: str, payload: dict, idempotency_key: str) -> str: ...
+    def deals_changed(self, cur, since, limit: int) -> list[CrmDeal]: ...  # oldest change first
 
 
 @dataclass

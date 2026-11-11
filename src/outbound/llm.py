@@ -100,7 +100,8 @@ TASKS: dict[str, dict[str, Any]] = {
         "claim (says something about their company), ask (asks for something) or courtesy. A claim must cite the fact "
         "ids it relies on; use only facts given. Open with the person's first name. No greeting clichés, no hype, no "
         "em dashes, no exclamation marks, no links. Write like a person who did their homework: specific, brief, "
-        "one clear ask. Do not mention that you saw them visit a website.")},
+        "one clear ask. Do not mention that you saw them visit a website. If a fact of kind referral is given, open by "
+        "saying who suggested you write, citing that fact.")},
     "draft_linkedin": {"schema": LinkedInDraft, "effort": "medium", "model": "claude-opus-5-5", "max_tokens": 3000, "system": (
         "You draft a LinkedIn note from a named SDR to one person: a connection request note (step job 'connect') or a "
         "message after they connected (job 'message'). Return it as sentences, marked claim, ask or courtesy; a claim "

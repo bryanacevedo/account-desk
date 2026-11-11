@@ -210,3 +210,22 @@ def test_a_play_without_emails_runs_on_calls_and_linkedin(client):
         active = db.val(cur, "select count(*) from enrollments where account_play_id = %s and state = 'active'", ap)
         db.run(cur, "rollback")  # leave the shared world as it was
     assert state == "active" and emails == 0 and active >= 1
+
+
+def test_a_calendar_booking_and_its_cancellation(client):
+    with db.tx() as cur:
+        p = db.one(cur, "select id, email, account_id from people where email is not null and status = 'active' order by id desc limit 1")
+    booked = {"event": "booked", "external_id": "cal-test-1", "invitee_email": p["email"],
+              "starts_at": "2026-12-01T15:00:00+00:00", "inbound": True}
+    raw, h = signed(booked)
+    mid = client.post("/api/webhooks/meeting", content=raw, headers=h).json()["meeting_id"]
+    raw, h = signed(booked)
+    assert client.post("/api/webhooks/meeting", content=raw, headers=h).json()["meeting_id"] == mid  # once
+    with db.tx() as cur:
+        m = db.one(cur, "select source, status, person_id from meetings where id = %s", mid)
+    assert (m["source"], m["status"], m["person_id"]) == ("inbound", "booked", p["id"])
+    raw, h = signed({"event": "cancelled", "external_id": "cal-test-1", "invitee_email": p["email"]})
+    client.post("/api/webhooks/meeting", content=raw, headers=h)
+    with db.tx() as cur:
+        assert db.val(cur, "select status from meetings where id = %s", mid) == "cancelled"
+    assert client.get(f"/api/meetings/{mid}").status_code == 200
