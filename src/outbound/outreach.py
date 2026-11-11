@@ -420,6 +420,18 @@ def desk_steps(play: dict) -> list[int]:
     return [i for i, s in enumerate(play["sequence"]) if s["by"] == "desk"]
 
 
+def limits_for(job: str, linkedin: bool, max_chars: int | None) -> dict:
+    """The limits the copy checks hold a draft to, given to the model up front so the first attempt can meet them."""
+    lo, hi = copy_gate.LIMITS.get(job, (10, 120))
+    out = {"body_words": [lo, hi]}
+    if linkedin:
+        if max_chars:
+            out["max_characters"] = max_chars
+    else:
+        out["subject_words"] = [1, 6]
+    return out
+
+
 def linkedin_text(sentences: list[dict]) -> str:
     """The greeting on its own line, as in email: lowering the next word could break a name it starts with."""
     if not sentences:
@@ -465,14 +477,14 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
                    "step": {"index": step_index, "job": step["job"]}, "persona_key": e["persona_key"],
                    "facts": [{"id": f["id"], "kind": f["kind"], "text": f["text"]} for f in facts],
                    "previous_subject": prev["subject"] if prev else None, "attempt": attempt,
-                   "failures": [x["message"] for x in failures]}
+                   "failures": [x["message"] for x in failures], "limits": limits_for(step["job"], linkedin, max_chars)}
         if linkedin:
             payload["max_chars"] = max_chars
         out = llm.run(cur, "draft_linkedin" if linkedin else "draft", payload, account_id=account["id"])
         private_ids = {r["id"] for r in db.all(cur, "select id from facts where account_id = %s and kind = any(%s)",
                                               account["id"], [f"signal:{k}" for k in PRIVATE_SIGNALS])}
         verdict = copy_gate.check(out, job=step["job"], person=person, account=account, facts=fact_map,
-                                  our_names=OUR_NAMES, other_bodies=others, private_ids=private_ids,
+                                  our_names=OUR_NAMES + [owner["name"]], other_bodies=others, private_ids=private_ids,
                                   channel="linkedin" if linkedin else "email", max_chars=max_chars)
         attempts.append({"attempt": attempt, "passed": verdict.passed, "failures": verdict.failures})
         if verdict.passed:
