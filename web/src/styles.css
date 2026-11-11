@@ -621,3 +621,8 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .lift-pair b { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .lift-pair span { font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
 .lift-verdict { display: grid; gap: 4px; }
+
+/* The play an account is in: its name leads the section, the date and owner sit under it. */
+.play-line { display: grid; gap: 2px; margin-bottom: 12px; }
+.play-name { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); text-align: left; }
+.play-name:hover { color: var(--accent); }

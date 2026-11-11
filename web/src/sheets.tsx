@@ -778,7 +778,10 @@ function AccountOverview({ d }: { d: any }) {
       <CompanyData a={d.account} />
       {cur ? (
         <Section title={cur.state === "proposed" ? "Proposed play" : "In play"} right={<Status kind={PLAY_STATE[cur.state][0]}>{PLAY_STATE[cur.state][1]}</Status>}>
-          <div className="small mute">{cur.play}, proposed {day(cur.proposed_at)}</div>
+          <div className="play-line">
+            <button className="link-row play-name" onClick={() => openSheet("play", cur.play_id)}>{cur.play}</button>
+            <span className="mute small">Proposed {day(cur.proposed_at)}{cur.owner ? ` to ${cur.owner}` : ""}</span>
+          </div>
           <WhyNow why={cur.why_now} />
           {d.calendar?.length ? <Calendar rows={d.calendar} /> : null}
           {cur.brief?.findings?.length ? (
