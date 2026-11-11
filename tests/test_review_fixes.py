@@ -163,3 +163,26 @@ def test_heyreach_events_reach_the_right_person_once(cur, scene):  # noqa: F811
     assert first["applied"] and linkedin_tool.handle(cur, rep)["duplicate"]
     assert db.val(cur, "select state from enrollments where id = %s", scene["enrollment"]) == "paused"
     assert not linkedin_tool.handle(cur, {**rep, "lead": {"profile_url": "https://linkedin.com/in/nobody"}})["applied"]
+
+
+def test_a_message_written_already_sent_meets_the_same_rules(cur, scene):  # noqa: F811
+    db.run(cur, "update settings set value = 'true' where key = 'kill_switch'")
+    with pytest.raises(Exception, match="kill switch"):
+        db.run(cur, r"""insert into messages (enrollment_id, step_index, channel, subject, body, status, body_hash, approved_hash,
+                        approved_at, approval_mode, sent_at, mailbox_id)
+                        values (%s, 7, 'email', 's', 'b', 'sent', 'h', encode(sha256(convert_to('s' || E'\n' || 'b', 'UTF8')), 'hex'),
+                                now(), 'person', app_now(), %s)""", scene["enrollment"], scene["mailbox"])
+
+
+def test_a_finished_call_counts_as_a_done_step_in_flight(cur, scene):  # noqa: F811
+    from outbound import views
+    seq = [{"day": 0, "channel": "email", "job": "open", "by": "desk"}, {"day": 2, "channel": "call", "job": "call", "by": "sdr"},
+           {"day": 5, "channel": "email", "job": "bump", "by": "desk"}]
+    db.run(cur, "update plays set sequence = %s where id = %s", db.J(seq), scene["play"])
+    db.run(cur, "update messages set status = 'sent', sent_at = now() where id = %s", scene["message"])
+    db.run(cur, """insert into tasks (account_play_id, person_id, kind, title, due_at, owner_id, status, done_at)
+                   values (%s, %s, 'call', 'Call', now(), %s, 'done', now())""", scene["ap"], scene["person"], scene["user"])
+    db.run(cur, "update enrollments set step_index = 2 where id = %s", scene["enrollment"])
+    out = views.in_flight(cur, {"id": scene["user"]}, mine=True)
+    person = next(p for p in out["plays"] if p["id"] == scene["ap"])["people"][0]
+    assert person["sent"] == [0, 1]

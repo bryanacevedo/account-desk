@@ -164,7 +164,7 @@ function PersonSteps({ e, sequence }: { e: any; sequence: any[] }) {
           const st = stateOf(i);
           const Ic = s.channel === "email" ? EnvelopeSimple : s.channel === "call" ? Phone : LinkedinLogo;
           return (
-            <span key={i} className={`step ${st.replace(" ", "-")}`} title={`${stepLabel(s, i)}, day ${s.day}: ${st}`}>
+            <span key={i} className={`step ${st.replace(" ", "-")}`} style={{ animationDelay: `${i * 40}ms` }} title={`${stepLabel(s, i)}, day ${s.day}: ${st}`}>
               <Ic size={12} weight={st === "sent" ? "fill" : "regular"} />
             </span>
           );

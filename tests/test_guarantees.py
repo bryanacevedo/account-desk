@@ -353,7 +353,7 @@ def test_the_cap_is_the_databases_own_rule_not_a_stored_number(cur, scene):
     assert db.val(cur, "select mailbox_cap(%s)", scene["mailbox"]) == 5
     for i in range(5):
         db.run(cur, """insert into messages (enrollment_id, step_index, channel, subject, body, status, body_hash, approved_hash,
-                       approved_at, approval_mode, sent_at, mailbox_id) values (%s, %s, 'email', 's', 'b', 'sent', 'h', 'h',
+                       approved_at, approval_mode, sent_at, mailbox_id) values (%s, %s, 'email', 's', 'b', 'sent', 'h', encode(sha256(convert_to('s' || E'\n' || 'b', 'UTF8')), 'hex'),
                        now(), 'person', app_now(), %s)""", scene["enrollment"], 10 + i, scene["mailbox"])
     refused(cur, scene["message"], "mailbox at its daily cap")
 

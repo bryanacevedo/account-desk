@@ -98,8 +98,7 @@ begin
        and t.kind <> 'linkedin_accepted') then
     raise exception 'send refused: engaged on another channel' using errcode = 'P0001';
   end if;
-  -- Guarantee 8: no mailbox sends past its cap for the day, and no domain past its own. The desk sets the day's cap
-  -- under a row lock just before sending; a cap not set today means nothing sends from that mailbox.
+  -- Guarantee 8: no mailbox sends past its cap for the day (mailbox_cap() computes it here), and no domain past its own.
   if new.channel = 'email' then
     -- Take the mailbox's and the domain's locks here, so two sends can never both count the last free slot,
     -- whichever code path sends them.

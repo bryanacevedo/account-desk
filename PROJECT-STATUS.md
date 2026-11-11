@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 14. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 38. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -8,10 +8,10 @@ v1 is built end to end on simulated vendors. **Public** at https://github.com/br
 
 Checked on 2026-11-11 by running them:
 
-- `pytest` on real Postgres 18: 152 passed on 2026-11-11 after both layer reviews' work (79 at first publish) (77 then, plus 2 eval replays) in about 5 seconds, including a 21-day simulation of the whole desk (140 accounts) followed by checks of every promise against what happened, and 9 regression tests for the first code review's blocking findings.
+- `pytest` on real Postgres 18: 175 passed on 2026-11-11, including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
 - `ruff check src tests`: clean. `tsc --noEmit` and `vite build`: clean.
-- `make demo`: 460 invented accounts, 60 simulated days in about 25 seconds; opens on 2026-11-11 with work waiting for each SDR.
-- Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Not yet walked by a fresh reviewer against `docs/DESIGN-CHECKLIST.md`, and not yet checked at phone width.
+- `make demo`: 700 invented accounts, 60 simulated days; opens on 2026-11-11 with work waiting for each SDR.
+- Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Since then two fresh design reviews and checks at 375 wide (see below).
 
 ## At production size (measured 2026-11-11)
 
@@ -19,6 +19,7 @@ Checked on 2026-11-11 by running them:
 
 ## Reviews
 
+- Final goldfish review (2026-11-11, two fresh reviewers in parallel: one read the docs against the code, one read only the code and the demo): the README hid the fourth autonomy stage and called the eval and live-adapter state wrong, PROJECT-STATUS had stale counts, calls showed as skipped on In flight, and a message written already sent skipped the send guard. All fixed with tests where code changed.
 - Spec: goldfish review against its sources and the build checklist, a real-world review against how strong teams run signal-based outbound in 2026, and a re-review after the blockers were fixed. 49 findings, all resolved in spec section 22.
 - Second code review (fresh, 2026-11-11, everything since the first publish): "ship after fixes", no blocker, 10 majors (erased people could be re-imported or stay named in signals, a stopped person's call task stayed open and calls skipped the contact rules, a connected call could cost a play its sourced credit, the CRM owner cursor could skip bulk changes, a reply could point the desk at any address, the play-cap alert and live AI charges were lost on rollback, the cap check relied on the caller's locks, a sequence could change under people in it, the CRM could hand accounts back to someone who left). All fixed with regression tests (`tests/test_review_fixes.py`), plus most minors; the tests also found that erasing someone whose signal had only a quote would have failed.
 - Code: one fresh reviewer, verdict "do not ship" with 11 blocking findings (double-send on a crash mid-send, jobs stranded in running, plays that could stay open forever, a customer turned back into a prospect by a lost expansion deal, a spoofable login header, a default webhook secret, failed drafts approvable unchanged, wrong influenced attribution, and others). All 11 fixed with regression tests, plus most non-blocking items (commit `9b055c4`). A second code review has not run.
@@ -34,8 +35,9 @@ Checked on 2026-11-11 by running them:
 
 - Reply labelling is measured on live Claude answers (2026-11-11, `evals/REPLIES.md`): 45 of 48 exact, 47 of 48 acceptable, rules alone 12, injection flagged, no invented referral emails, $0.25. The set is 48 author-written replies: a regression guard, not a benchmark. Brief, drafts and call-note extraction still run on the stand-in only. The key lives in `.env` (gitignored, 600).
 - No live vendor adapter (people search, finder, verifier, phone, research, mail provider, telemetry, CRM, Slack). Contracts only.
-- No MCP server yet (in the spec, section 20).
-- No eval sets yet for the brief, drafts or call notes (spec 22.15).
+- Call-note extraction has no eval set (drafts and briefs do: `evals/WRITING.md`).
+- The HeyReach webhook has not seen a real event.
+- No mail provider adapter: a live desk cannot send email yet.
 - Real login only through Cloudflare Access token verification, which has not been run against a real Access app.
 - Region rules are a starting point. Counsel to confirm.
 - Contention from several servers at once (one process was measured).
@@ -46,6 +48,11 @@ Checked on 2026-11-11 by running them:
 2. Tests for the time-based play exits, auto-approve and demotion, CRM push retries and SLA escalation.
 
 ## Done since the first review (2026-11-11)
+
+- Vendors and costs page (managers and GTM): every vendor and signal source, paid, metered or free, connected, simulated or not connected, spend this month with flat fees prorated, projection, last month, cost per outbound meeting, credits, spend by play. The demo charges every lookup, every simulated AI call at its typical size, and seeded flat fees (mailbox seats, seed tests, HeyReach senders, paid feeds), all labelled as assumptions: about $1,820 last month, $130 per outbound meeting. Results links to it.
+- Motion pass: running states (Live, Reaching out, In sequence, Sending mail) show an on-air pulse; figures count to their value; the segmented control's thumb slides; pages arrive with a short rise; nav counts pop when they change; step strips fill in left to right; the mark's fourth dot fills on hover; toasts rise. Everything is off under reduced motion.
+- Every status word explains itself on hover (checked against what the code does).
+- Inboxes failed locally because the database was three migrations behind; the server now applies pending migrations at start, one instance at a time.
 
 - In flight search (company, domain or person) and filters (play, SDR, next step: due today, a call or LinkedIn, waiting on the team), kept in the URL; checked at 800 and 375 wide.
 - Renamed Account Desk, tagline "Signal & Account based outbound", new mark (one account, the people in it, one still to reach) in the sidebar and favicon.

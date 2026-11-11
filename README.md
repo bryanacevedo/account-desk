@@ -4,7 +4,7 @@ Signal & Account based outbound.
 
 [![CI](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml)
 
-Account Desk runs signal-based, account-based outbound for a B2B sales team. It watches for the moments a company that fits your customer profile shows it may need you (a new finance leader, a pricing change, hiring for the team you serve, a past champion joining), decides which accounts are worth working this week and why, finds the people who buy there, drafts outreach grounded in what actually happened at that company, has an SDR approve it, sends it from healthy inboxes at a human pace, and handles every reply through to a meeting and pipeline. It measures which signals turn into meetings against a comparison group nobody contacted.
+Account Desk runs signal-based, account-based outbound for a B2B sales team. It watches for the moments a company that fits your customer profile shows it may need you (a new finance leader, a pricing change, hiring for the team you serve, a past champion joining), decides which accounts are worth working this week and why, finds the people who buy there, drafts outreach grounded in what actually happened at that company, has an SDR approve it (until a play has earned more autonomy), sends it from healthy inboxes at a human pace, and handles every reply through to a meeting and pipeline. It measures which signals turn into meetings against a comparison group nobody contacted.
 
 It is built for a small team that would rather write to 40 companies at the right moment than to 4,000 at random.
 
@@ -17,7 +17,7 @@ Autonomous "AI SDRs" mostly failed in 2025 and 2026: shallow or invented persona
 | People | AI | Code |
 |---|---|---|
 | Decide the ideal customer, the plays, which accounts to work | Reads the facts about a company and writes a brief, citing each fact | Scores accounts, matches plays, draws the comparison group |
-| Approve, edit or write every first email | Drafts each email as sentences, each claim tied to a fact id | Checks every citation, every number and every name against the facts |
+| Approve, edit or write first emails (every one, until a play earns autonomy) | Drafts each email as sentences, each claim tied to a fact id | Checks every citation, every number and every name against the facts |
 | Answer every positive reply, book meetings, make the calls | Labels a reply from a fixed list and pulls out dates and referrals | Stops the sequence the moment a reply lands, before anyone reads it |
 | Change weights and plays when results say so | Pulls objections and competitors out of call notes | Counts which signals and plays produce meetings, against the comparison group |
 
@@ -25,7 +25,7 @@ Three more rules came from running outbound in production:
 
 - **Act on tracking data, never cite it.** Website visits, research intent and product sign-ups can trigger a play, but the drafter never sees them and the copy check fails any email that cites one. Buyers read that as surveillance.
 - **Make the bad state impossible, and watch for what cannot be.** A send to a suppressed address, a holdout account or a message edited after approval is refused by a Postgres trigger, so no bug in the app can do it. Promises about time (sent inside the recipient's hours, hot replies answered on time, every source ran) are monitors that alert.
-- **Autonomy is earned per play.** A play moves from "SDR writes" to "desk drafts, SDR approves" to "SDR approves first emails" only after 50 approvals with 90% unedited, no complaint, low bounces, and known complaint data for every sending domain. A manager approves each step.
+- **Autonomy is earned per play.** Four stages: the SDR writes; the desk drafts and the SDR approves every message; the SDR approves every first email and a sample of the rest; and, last, the desk sends emails to fit tier B accounts that passed every check on its own, while tier A still goes to a person. Each step up needs 50 approvals with 90% unedited, no complaint, bounces under 2%, a positive reply rate at the play's floor, and known complaint data for every sending domain, and a manager approves it. A complaint, a bad bounce day or heavy editing moves a play back down on its own.
 
 ## What it does
 
@@ -162,8 +162,11 @@ The first live run passed 2 of 20 first time. The eval found why: the request ne
 
 **Not yet proven:**
 
-- Reply labelling is measured on real Claude answers; the brief, drafting and call-note tasks still run on the deterministic stand-in in the demo and tests.
-- No live vendor adapter is written yet. The contracts are in `src/outbound/adapters/__init__.py`.
+- Reply labelling, drafts and briefs are measured on real Claude answers (`evals/`); the demo and tests use a deterministic stand-in, and call-note extraction has no eval yet.
+- Only DNS checks have a live adapter. There is no mail provider adapter yet, so a live desk cannot send email; the other contracts are in `src/outbound/adapters/__init__.py`.
+- The HeyReach webhook has not seen a real HeyReach event; the accepted event's field names come from third-party guides.
+- Cloudflare Access login has not been run against a real Access app, and contention was measured with one server process.
+- Prices on the cost page are demo assumptions until a manager enters real ones.
 - There is no login. "Acting as" is chosen from a menu in demo mode; `AUTH_MODE=header` reads identity from a trusted proxy such as Cloudflare Access. Live sending refuses to start in demo mode.
 - Region rules (which countries need a recorded legitimate interest or consent before a cold email) are a starting point. Counsel to confirm.
 - Profile photos in the demo are stock portraits from randomuser.me. In live use the photo URL comes from the enrichment vendor and is erased with the person.

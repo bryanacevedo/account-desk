@@ -131,7 +131,7 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .fig:first-child { padding-left: 0; border-left: 0; }
 .fig b { font-size: 24px; line-height: 30px; font-weight: 600; letter-spacing: -0.02em; }
 .fig b small { font-size: 13px; font-weight: 500; color: var(--mute); margin-left: 3px; letter-spacing: 0; }
-.fig span { font-size: 12.5px; color: var(--mute); }
+.fig > span { font-size: 12.5px; color: var(--mute); }
 .fig.sm b { font-size: 18px; line-height: 24px; }
 .fig.go { cursor: pointer; }
 .fig.go:hover b { color: var(--accent); }
@@ -273,6 +273,57 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .rise > *:nth-child(2) { animation-delay: 30ms; } .rise > *:nth-child(3) { animation-delay: 60ms; }
 .rise > *:nth-child(4) { animation-delay: 90ms; } .rise > *:nth-child(5) { animation-delay: 120ms; }
 @keyframes rise { from { transform: translateY(4px); } to { transform: none; } }
+
+/* ------------------------------------------------------------------ motion: quick, functional, never decorative */
+
+/* On air: a running state breathes once every few seconds, like a recording light. */
+.status.live { color: var(--ink); font-weight: 520; }
+.pulse { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; margin: 0 3px 0 3px; }
+.pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--ok);
+  animation: onair 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite; }
+@keyframes onair { 0% { transform: scale(1); opacity: 0.55; } 70%, 100% { transform: scale(2.8); opacity: 0; } }
+
+/* The segmented control: one thumb that slides to the choice. */
+.seg { position: relative; }
+.seg button { position: relative; z-index: 1; transition: color 160ms ease; }
+.seg button[aria-pressed="true"] { background: transparent; box-shadow: none; }
+.seg-thumb { position: absolute; top: 3px; left: 3px; height: calc(100% - 6px); border-radius: 7px; background: var(--ground);
+  box-shadow: 0 1px 2px rgba(18, 22, 29, 0.08), 0 0 0 0.5px rgba(18, 22, 29, 0.04);
+  transition: transform 260ms var(--ease), width 260ms var(--ease); }
+
+/* Figures settle into their value; tabular digits keep the width still while they count. */
+.fig b, .count-up { font-variant-numeric: tabular-nums; }
+
+/* A page arrives: a short rise, so a change of place reads as one. */
+.page-enter { animation: enter 240ms var(--ease) both; }
+@keyframes enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* A new count pops, so the eye finds what changed. */
+.nav .n, .pn-n { animation: pop 320ms cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+@keyframes pop { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* The mark: the faded fourth person fills in when you reach for it, one account fully reached. */
+.brand svg circle:last-of-type { transition: fill-opacity 260ms var(--ease); }
+.brand svg { transition: transform 260ms var(--ease); }
+.brand:hover svg { transform: rotate(-4deg) scale(1.04); }
+.brand:hover svg circle:last-of-type { fill-opacity: 1; }
+
+/* Step strips fill in left to right. */
+.step { animation: stepin 280ms var(--ease) both; }
+@keyframes stepin { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: none; } }
+.step.next { animation: stepin 280ms var(--ease) both, nextring 2.4s 600ms ease-in-out 2; }
+@keyframes nextring { 0%, 100% { box-shadow: inset 0 0 0 1.5px var(--ink); } 50% { box-shadow: inset 0 0 0 1.5px var(--ink), 0 0 0 3px rgba(18, 22, 29, 0.08); } }
+
+/* An empty state that means "all done" lands with a small settle, not a shrug. */
+.empty-icon { animation: settle 420ms cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+@keyframes settle { from { transform: scale(0.4) rotate(-20deg); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Toasts rise from the bottom edge instead of appearing. */
+.toast { animation: toastin 260ms var(--ease) both; }
+@keyframes toastin { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Rows answer the pointer a little faster than they leave it. */
+.ledger .row { transition: background-color 90ms ease; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; }
@@ -449,4 +500,16 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
   .toolbar.filters { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
   .toolbar.filters form { grid-column: 1 / -1; }
   .toolbar.filters input, .toolbar.filters select { width: 100% !important; }
+}
+
+.status[title] { cursor: help; }
+
+.ledger.vendors .num { display: grid; gap: 2px; justify-items: end; }
+.ledger.vendors .num .s { font-size: 12px; }
+.ledger.vendors .cell-main .s.wrap { white-space: normal; }
+.ledger .row.group-head { display: block; padding-top: 18px; padding-bottom: 6px; font-size: 12px; font-weight: 560; color: var(--mute);
+  text-transform: none; letter-spacing: 0; border-bottom: 1px solid var(--line); }
+@media (max-width: 900px) {
+  .ledger.vendors .row > .hide-sm { display: none; }
+  .ledger.vendors .cell-main .only-sm { white-space: normal; margin-top: 4px; color: var(--ink-2); }
 }

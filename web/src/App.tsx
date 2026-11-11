@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  CaretRight, ChartLineUp, CheckSquare, ChatsCircle, DotsThree, GearSix, Lightning, ListChecks, Pulse, Sun, Target,
+  CaretRight, ChartLineUp, Coins, CheckSquare, ChatsCircle, DotsThree, GearSix, Lightning, ListChecks, Pulse, Sun, Target,
   EnvelopeSimple, PaperPlaneTilt,
 } from "@phosphor-icons/react";
 import { api, setActingAs } from "./api";
@@ -8,6 +8,7 @@ import { Toaster, changed, navigate, setNow, toast, useBusy, useData, usePath } 
 import { SheetHost } from "./sheets";
 import { Accounts, Today } from "./pages/Work";
 import { Flight } from "./pages/Flight";
+import { Vendors } from "./pages/Vendors";
 import { Approvals, Plays, Replies, Signals } from "./pages/Flow";
 import { Deliverability, Ops, Results, Settings } from "./pages/Desk";
 
@@ -24,6 +25,7 @@ const ROUTES: { path: string; label: string; icon: ReactNode; page: () => JSX.El
   { path: "/plays", label: "Plays", icon: <ListChecks size={18} />, page: Plays },
   { path: "/results", label: "Results", icon: <ChartLineUp size={18} />, page: Results },
   { path: "/inboxes", label: "Inboxes", icon: <EnvelopeSimple size={18} />, page: Deliverability, roles: ["gtm", "manager"], group: "Running it" },
+  { path: "/vendors", label: "Vendors and costs", icon: <Coins size={18} />, page: Vendors, roles: ["gtm", "manager"] },
   { path: "/health", label: "Health", icon: <Pulse size={18} />, page: Ops, roles: ["gtm", "manager"] },
   { path: "/settings", label: "Settings", icon: <GearSix size={18} />, page: Settings, roles: ["gtm", "manager"] },
 ];
@@ -61,7 +63,7 @@ export function App() {
           <a href={r.path} aria-current={r.path === route.path ? "page" : undefined}
             onClick={(e) => { e.preventDefault(); navigate(r.path); }}>
             {r.icon}<span>{r.label}</span>
-            {r.count && me?.counts[r.count] ? <span className="n" aria-label={`${me.counts[r.count]} waiting`}>{me.counts[r.count]}</span> : null}
+            {r.count && me?.counts[r.count] ? <span className="n" key={me.counts[r.count]} aria-label={`${me.counts[r.count]} waiting`}>{me.counts[r.count]}</span> : null}
           </a>
         </div>
       ))}
@@ -95,12 +97,12 @@ export function App() {
             </select>
           ) : null}
         </div>
-        {me ? <Page key={`${route.path}:${me.user.id}`} /> : null}
+        {me ? <div className="page-enter" key={`${route.path}:${me.user.id}`}><Page /></div> : null}
       </main>
       <nav className="phone-nav" aria-label="Main">
         {bar.map((r) => (
           <a key={r.path} href={r.path} aria-current={r.path === route.path ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(r.path); }}>
-            <span className="pn-icon">{r.icon}{r.count && me?.counts[r.count] ? <i className="pn-n">{me.counts[r.count]}</i> : null}</span><span>{r.label}</span>
+            <span className="pn-icon">{r.icon}{r.count && me?.counts[r.count] ? <i className="pn-n" key={me.counts[r.count]}>{me.counts[r.count]}</i> : null}</span><span>{r.label}</span>
           </a>
         ))}
         <a href="/more" aria-current={route.path === "/more" || rest.some((r) => r.path === route.path) ? "page" : undefined}

@@ -107,7 +107,7 @@ def test_a_mailbox_gone_quiet_next_to_its_peers_raises_an_alert(cur, box):
                                values (%s, %s, 'cfo', 'active', %s) returning id""", ap, p, mb)
             m = db.val(cur, """insert into messages (enrollment_id, step_index, channel, subject, body, status, body_hash,
                                                      approved_hash, approved_at, approval_mode, sent_at, mailbox_id)
-                               values (%s, 0, 'email', 'hi', 'Ana, hello.', 'sent', 'h', 'h', app_now(), 'person',
+                               values (%s, 0, 'email', 'hi', 'Ana, hello.', 'sent', 'h', encode(sha256(convert_to('hi' || E'\n' || 'Ana, hello.', 'UTF8')), 'hex'), app_now(), 'person',
                                        app_now() - interval '5 days', %s) returning id""", e, mb)
             if i < replied:
                 db.run(cur, """insert into replies (message_id, person_id, account_id, received_at, from_addr, raw, cleaned, label)

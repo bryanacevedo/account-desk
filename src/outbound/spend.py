@@ -11,7 +11,9 @@ from . import alerts, db
 from .db import J
 
 # Configured rates, cents per unit. Credits are still reported as credits; cents are for leadership's cost view only.
-RATES = {"people_search": 1.0, "email_finder": 4.0, "email_verifier": 0.8, "phone_finder": 10.0, "research": 0.0}
+# Demo assumptions in the range public 2026 price lists show: a verification near a cent, a found work email near ten
+# cents, a direct dial well under a dollar. A real desk sets these from its own contracts.
+RATES = {"people_search": 2.0, "email_finder": 10.0, "email_verifier": 0.8, "phone_finder": 60.0, "research": 0.0}
 UNITS = {"people_search": "credits", "email_finder": "credits", "email_verifier": "credits", "phone_finder": "credits",
          "anthropic": "tokens"}
 

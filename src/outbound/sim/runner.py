@@ -24,6 +24,8 @@ def reset(url: str | None = None) -> None:
 
 def setup(*, start: datetime, seed: int = 7, n_accounts: int = 700) -> dict:
     clock.set_sim(start)
+    from .. import llm
+    llm.SIM_CHARGE = True  # the demo's AI work costs what it would
     with db.tx() as cur:
         load.load_catalog(cur, start=start)
         info = world.build(cur, seed=seed, n_accounts=n_accounts, start=start)

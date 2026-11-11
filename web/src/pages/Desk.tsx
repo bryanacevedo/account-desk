@@ -2,7 +2,7 @@ import { useState } from "react";
 import { EnvelopeSimple, LinkedinLogo, Phone } from "@phosphor-icons/react";
 import { api } from "../api";
 import {
-  Bar, Empty, Failed, Fig, Loading, Section, Status, VENDOR_NAME, ago, cap, day, money, n0, pct, useBusy, useData,
+  Bar, Empty, Failed, Fig, Loading, Section, Status, VENDOR_NAME, ago, cap, day, money, n0, navigate, pct, useBusy, useData,
 } from "../lib";
 import { Comparison, LABEL, openSheet } from "../sheets";
 import { SignalLabel } from "../signalIcons";
@@ -263,15 +263,11 @@ export function Results() {
       </Section>
       {me?.money && data.spend ? (
         <Section title="Spend this month">
-          <div className="ledger">
-            {data.spend.map((s: any) => (
-              <div key={s.vendor + s.unit} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 160px 100px" }}>
-                <span>{VENDOR_NAME[s.vendor] || cap(s.vendor)}</span>
-                <span className="num">{n0(s.qty)} {s.unit}</span>
-                <span className="num strong">{money(s.cost_cents)}</span>
-              </div>
-            ))}
-          </div>
+          <button className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => navigate("/vendors")}>
+            <span className="cell-main"><span className="t">{money(data.spend.reduce((t: number, s: any) => t + Number(s.cost_cents), 0))} on data and AI</span>
+              <span className="s">Every vendor, what it costs, and spend by play</span></span>
+            <span className="mute">Vendors and costs</span>
+          </button>
         </Section>
       ) : null}
     </div>

@@ -192,5 +192,15 @@ SENDING_DOMAINS = [
 # The monthly cap each demo play was launched with (credits per vendor, AI in cents).
 PLAY_CAP = {"people_search": 120, "email_finder": 120, "email_verifier": 240, "phone_finder": 60, "anthropic_cents": 1500}
 
+# Flat fees, demo assumptions in the range public price lists show. A manager replaces them from real bills.
+SUBSCRIPTIONS = [
+    ("mail", 700, "mailbox", "A mailbox seat at the mail provider"),
+    ("telemetry", 4900, "month", "Seed-test inbox placement"),
+    ("linkedin", 7900, "sender", "One LinkedIn sender at HeyReach"),
+    ("jobs_feed", 9900, "month", None), ("funding_feed", 4900, "month", None), ("people_moves", 14900, "month", None),
+    ("web_visits", 19900, "month", None), ("intent_feed", 29900, "month", None), ("reviews_feed", 24900, "month", None),
+    ("techstack_feed", 9900, "month", None), ("social_feed", 4900, "month", None), ("news_feed", 4900, "month", None),
+]
+
 BUDGETS = [("people_search", 400000), ("email_finder", 300000), ("email_verifier", 300000),
            ("phone_finder", 200000), ("anthropic", 30000)]  # vendor units: credits; anthropic in cents

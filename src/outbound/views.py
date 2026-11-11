@@ -176,7 +176,9 @@ def in_flight(cur, user: dict, *, mine: bool) -> dict:
     people = db.all(cur, """
         select e.account_play_id, e.id, e.state, e.step_index, e.next_at, e.stop_reason, e.pause_reason,
                p.id as person_id, p.full_name, coalesce(p.first_name, p.full_name) as first_name, p.photo_url,
-               (select coalesce(json_agg(m.step_index), '[]') from messages m where m.enrollment_id = e.id and m.status = 'sent') as sent
+               (select coalesce(json_agg(m.step_index), '[]') from messages m where m.enrollment_id = e.id and m.status = 'sent') as sent,
+               (select count(*) from tasks t where t.account_play_id = e.account_play_id and t.person_id = e.person_id
+                 and t.kind = 'call' and t.status = 'done') as calls_done
         from enrollments e join people p on p.id = e.person_id
         where e.account_play_id = any(%s) order by e.id""", [x["id"] for x in plays_])
     by_ap: dict[int, list] = {}
@@ -184,6 +186,10 @@ def in_flight(cur, user: dict, *, mine: bool) -> dict:
         by_ap.setdefault(r["account_play_id"], []).append(r)
     for x in plays_:
         x["people"] = by_ap.get(x["id"], [])
+        # A call is done by hand and leaves a finished task, not a sent message: the first N call steps are done.
+        call_steps = [i for i, s in enumerate(x["sequence"]) if s.get("channel") == "call"]
+        for r in x["people"]:
+            r["sent"] = sorted(set(r["sent"]) | set(call_steps[:int(r.pop("calls_done") or 0)]))
         upcoming = [r for r in x["people"] if r["state"] == "active" and r["next_at"]]
         nxt = min(upcoming, key=lambda r: r["next_at"]) if upcoming else None
         x["next"] = ({"at": nxt["next_at"], "person": nxt["first_name"], "index": nxt["step_index"],

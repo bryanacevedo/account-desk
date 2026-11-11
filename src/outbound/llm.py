@@ -24,6 +24,11 @@ from .db import J
 log = logging.getLogger("outbound.llm")
 RECORDINGS = Path(__file__).resolve().parents[2] / "evals" / "recordings"
 PRICES = {"claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5-5": (2.0, 10.0), "claude-haiku-5-5": (0.10, 0.50)}
+# The simulation charges each stand-in answer what a real call of that task typically uses, so the demo's AI cost is
+# the size it would be (the draft eval measured about 1.75 cents a draft). Off by default; the demo build turns it on.
+SIM_CHARGE = False
+TYPICAL_TOKENS = {"brief": (6000, 1500), "draft": (3000, 500), "draft_linkedin": (2000, 200), "classify": (800, 100),
+                  "suggest_reply": (2000, 400), "extract": (800, 150)}
 
 
 # ---------------------------------------------------------------- task schemas
@@ -209,12 +214,16 @@ def run(cur, task: str, payload: dict, *, account_id: int | None = None) -> dict
     else:
         out = SIM[task](payload)
     out = spec["schema"].model_validate(out).model_dump()
+    charged = source == "live" or (source == "sim" and SIM_CHARGE)
+    if source == "sim" and SIM_CHARGE:
+        tin, tout = TYPICAL_TOKENS.get(task, (1000, 200))
+        usage = {"input_tokens": tin, "output_tokens": tout}
     pin, pout = PRICES.get(spec["model"], (4.0, 20.0))
-    cost = (usage["input_tokens"] * pin + usage["output_tokens"] * pout) / 1_000_000 * 100 if source == "live" else 0
+    cost = (usage["input_tokens"] * pin + usage["output_tokens"] * pout) / 1_000_000 * 100 if charged else 0
     db.run(cur, """insert into llm_calls (task, model, input_hash, input_tokens, output_tokens, cost_cents, output, source)
                    values (%s,%s,%s,%s,%s,%s,%s,%s)""", task, spec["model"], h, usage["input_tokens"],
            usage["output_tokens"], cost, J(out), source)
-    if source == "live":
+    if charged:
         spend.charge_llm(cur, model=spec["model"], input_tokens=usage["input_tokens"],
                          output_tokens=usage["output_tokens"], cost_cents=cost, purpose=task, account_id=account_id)
     return out

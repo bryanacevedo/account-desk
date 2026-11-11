@@ -46,7 +46,7 @@ Each entry: what was decided, why, and what it costs. Newest last.
 
 22. **A real desk starts careful.** `init` refuses a database with users, creates plays as drafts in the draft stage with the team's own legitimate-interest reference, and sending domains start unauthenticated until the DNS check reads them. The DNS check is the first live adapter (DNS-over-HTTPS, no new dependency); blocklists stay "not checked" until a vendor key exists, never "clean".
 
-23. **Guarantee 8 is in the database.** The send trigger refuses an email past the mailbox's cap for the day or the domain's, and a mailbox whose cap was not set today; the sending code sets it under the row lock it already took. A cap refusal reschedules; it never stops the person.
+23. **Guarantee 8 is in the database.** (The cap itself moved into the database too: see 34.) The send trigger refuses an email past the mailbox's cap for the day or the domain's, and a mailbox whose cap was not set today; the sending code sets it under the row lock it already took. A cap refusal reschedules; it never stops the person.
 
 24. **The MCP server is read-only by construction.** Five tools, each in a read-only transaction, none returning money; built on the official MCP Python SDK, version 2.
 
@@ -73,3 +73,7 @@ Each entry: what was decided, why, and what it costs. Newest last.
 35. **In flight is its own page.** Opening the desk should answer what is in motion: every open play, each person's sequence and the next step. It replaces Accounts in the phone bar, since Accounts is a lookup and In flight is a daily view.
 
 36. **Account Desk, and LinkedIn events from the LinkedIn tool.** Renamed from Outbound Desk: the desk does account-based outbound only. HeyReach's webhooks (connection accepted, first reply) call `/api/webhooks/linkedin/{token}`, since HeyReach cannot sign them; the person is found by their LinkedIn profile, every event is safe to receive twice, and with the tool connected the manual "accepted" button goes away. Later replies in the same conversation are still pasted, because HeyReach only reports the first.
+
+37. **Costs are shown whole.** The cost page lists every vendor and source, paid, metered or free, connected or not, and adds flat monthly fees (seats, seed tests, senders, paid feeds) to what the desk meters, prorated by the day. Prices the desk cannot know are kept as assumptions, flagged, until a manager enters the figure from a bill; the demo's prices are assumptions in the range public price lists show. A real vendor is named only where the desk really connects to it (Claude, HeyReach).
+
+38. **The database refuses a send however it is written.** The send guard runs on an insert of a message already marked sending or sent, not only on a status change. And the server applies any pending migrations when it starts, so code never runs against an older schema.

@@ -40,6 +40,7 @@ from .. import (  # noqa: F401
     sdr_steps,
     sending,
     signals,
+    vendors,
     views,
 )
 from ..config import CONFIG
@@ -48,6 +49,11 @@ log = logging.getLogger("outbound.api")
 WEB = Path(__file__).resolve().parents[3] / "web" / "dist"
 @asynccontextmanager
 async def lifespan(_app):
+    # The code and the schema ship together: a desk that starts on an older database brings it up to date first,
+    # instead of serving pages that call functions the database does not have yet.
+    applied = db.migrate()
+    if applied:
+        log.info("applied migrations at start: %s", ", ".join(applied))
     start_worker()
     yield
 
@@ -288,6 +294,14 @@ def deliverability(u: dict = Depends(current_user)) -> dict:
 def results(u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
         return views.results(cur, money=money(u))
+
+
+@app.get("/api/vendors")
+def vendor_costs(u: dict = Depends(current_user)) -> dict:
+    """Every vendor and source, paid or free, connected or not, and what this month cost."""
+    need(u, "gtm", "manager")
+    with db.tx() as cur:
+        return vendors.costs(cur)
 
 
 @app.get("/api/ops")

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, useLayoutEffect } from "react";
 import { api } from "./api";
 import { STATUS_ICONS } from "./statusIcons";
+import { STATUS_MEANING } from "./statusMeaning";
 import { CheckCircle, Clock, PauseCircle, WarningCircle, type Icon } from "@phosphor-icons/react";
 
 // ---------------------------------------------------------------- routing: the path is the state
@@ -154,11 +155,17 @@ const FALLBACK: Partial<Record<Glyph, Icon>> = { wait: Clock, stop: WarningCircl
 // The accent is for what can be pressed (Instrument T1), so states never wear it. Ink by default; colour only where
 // someone must act (amber on hold, red stopped or failed); green for a healthy, working state.
 const TONE: Partial<Record<Glyph, string>> = { wait: "var(--ink-2)", stop: "var(--stop)", hold: "var(--wait)", ok: "var(--ok)" };
-export function Status({ kind, children }: { kind: Glyph; children: ReactNode }) {
+// Running states: something is happening right now, so they read as on air instead of as a still icon.
+const LIVE = new Set(["Live", "Sending mail", "In sequence", "Reaching out", "Watching"]);
+export function Status({ kind, children, title }: { kind: Glyph; children: ReactNode; title?: string }) {
   const word = typeof children === "string" ? children : "";
+  const meaning = title ?? STATUS_MEANING[word];
+  if (LIVE.has(word)) {
+    return <span className="status live" title={meaning}><i className="pulse" aria-hidden="true" />{children}</span>;
+  }
   const Ic = STATUS_ICONS[word] || FALLBACK[kind];
   return (
-    <span className="status">
+    <span className="status" title={meaning}>
       {Ic ? <Ic size={15} weight={kind === "wait" || kind === "stop" ? "bold" : "regular"} aria-hidden="true"
         style={{ color: TONE[kind] || "var(--mute)", flex: "none" }} /> : null}
       {children}
@@ -166,8 +173,34 @@ export function Status({ kind, children }: { kind: Glyph; children: ReactNode })
   );
 }
 
+/** A number that counts to its value: "$1,234.50", "56", "12%". Anything else is shown as it is. */
+export function Count({ value }: { value: ReactNode }) {
+  const text = typeof value === "number" ? value.toLocaleString("en-US") : typeof value === "string" ? value : null;
+  const m = text?.match(/^([^0-9-]*)(-?[0-9][0-9,]*(?:\.[0-9]+)?)(.*)$/);
+  const target = m ? Number(m[2].replace(/,/g, "")) : NaN;
+  const decimals = m && m[2].includes(".") ? m[2].split(".")[1].length : 0;
+  const [shown, setShown] = useState(() => (reduced() ? target : 0));
+  const from = useRef(0);
+  useEffect(() => {
+    if (!m || Number.isNaN(target) || reduced()) { setShown(target); return; }
+    const start = performance.now(), a = from.current, dur = 520;
+    let raf = 0;
+    const step = (t: number) => {
+      const k = Math.min(1, (t - start) / dur), e = 1 - Math.pow(1 - k, 3);
+      setShown(a + (target - a) * e);
+      if (k < 1) raf = requestAnimationFrame(step); else from.current = target;
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!m || Number.isNaN(target)) return <>{value}</>;
+  const body = shown.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  return <span className="count-up" aria-label={text!}>{m[1]}{body}{m[3]}</span>;
+}
+const reduced = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
 export function Fig({ value, label, unit, onClick, sm }: { value: ReactNode; label: string; unit?: string; onClick?: () => void; sm?: boolean }) {
-  const inner = <><b>{value}{unit ? <small>{unit}</small> : null}</b><span>{label}</span></>;
+  const inner = <><b><Count value={value} />{unit ? <small>{unit}</small> : null}</b><span>{label}</span></>;
   if (onClick) {
     return <button type="button" className={`fig go${sm ? " sm" : ""}`} onClick={onClick}
       style={{ background: "none", border: 0, borderLeft: "1px solid var(--line)", textAlign: "left", font: "inherit", color: "inherit" }}>{inner}</button>;
@@ -217,8 +250,21 @@ export function Section({ title, count, right, icon: Ic, children }: { title: st
 }
 
 export function Seg<T extends string>({ value, options, onChange, label }: { value: T; options: [T, string][]; onChange: (v: T) => void; label: string }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [thumb, setThumb] = useState<{ left: number; width: number } | null>(null);
+  const place = useCallback(() => {
+    const on = box.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]');
+    if (on) setThumb({ left: on.offsetLeft, width: on.offsetWidth });
+  }, []);
+  useLayoutEffect(place, [value, options.length, place]);
+  useEffect(() => {
+    if (!box.current || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(place); ro.observe(box.current);
+    return () => ro.disconnect();
+  }, [place]);
   return (
-    <div className="seg" role="group" aria-label={label}>
+    <div className="seg" role="group" aria-label={label} ref={box}>
+      {thumb ? <i className="seg-thumb" aria-hidden="true" style={{ transform: `translateX(${thumb.left - 3}px)`, width: thumb.width }} /> : null}
       {options.map(([v, l]) => <button key={v} type="button" aria-pressed={v === value} onClick={() => onChange(v)}>{l}</button>)}
     </div>
   );
