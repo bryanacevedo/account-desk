@@ -49,8 +49,19 @@ def test_spam_at_one_provider_pauses_the_mailbox(cur, box):
     assert db.val(cur, "select count(*) from placement_tests where mailbox_id = %s", box["id"]) == 2
 
 
-def test_middling_placement_holds_capacity_without_pausing(cur, box):
-    truth(cur, box["id"], gmail=0.97, outlook=0.65)
+class FixedSeeds:
+    """A seed-test vendor that returns exactly these results, so the rule is tested, not the sampling."""
+    def __init__(self, gmail: int, outlook: int):
+        self.r = {"gmail": gmail, "outlook": outlook}
+
+    def placement(self, cur, mailbox):
+        from outbound.adapters import PlacementResult
+        return [PlacementResult(p, 20, n, 20 - n, 0) for p, n in self.r.items()]
+
+
+def test_middling_placement_holds_capacity_without_pausing(cur, box, monkeypatch):
+    from outbound import adapters
+    monkeypatch.setattr(adapters.get(), "telemetry", FixedSeeds(gmail=19, outlook=13))  # 65% at Outlook
     sending.placement_tests(cur, {"mailbox_id": box["id"]})
     m = mailbox(cur, box["id"])
     assert m["status"] == "active"

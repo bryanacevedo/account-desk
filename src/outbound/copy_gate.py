@@ -188,8 +188,11 @@ def assemble(draft: dict, *, sender_name: str, footer: str) -> str:
 
 
 def footer(*, company: str, address: str, unsubscribe_url: str, privacy_url: str | None) -> str:
-    lines = ["--", address,
-             f"If this isn't relevant, reply \"no thanks\" or use {unsubscribe_url} and I won't write again."]
+    """Two short lines under a signature break: who is writing and where (anti-spam law asks for a postal address),
+    then how to stop. A reply of "no thanks" is honoured as an opt-out, so the link is the second way, not the only."""
+    lines = ["--", f"{company} \u00b7 {address}",
+             f"Reply \"no thanks\" and I won't write again, or unsubscribe: {unsubscribe_url}"]
     if privacy_url:
-        lines.append(f"How we found your details and your rights: {privacy_url}")
+        lines.append(f"Where we found your details: {privacy_url}")
     return "\n".join(lines)
+

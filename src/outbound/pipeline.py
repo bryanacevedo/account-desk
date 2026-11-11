@@ -189,6 +189,40 @@ def deliver_alert(cur, payload: dict) -> None:
         raise RuntimeError("alert not delivered")
 
 
+def apply_owner(cur, account_id: int, owner_email: str) -> str:
+    """The CRM says who owns the account. The account, its open play and that play's open work move to them;
+    sequences already under way finish from the original sender, so a thread never changes voice halfway.
+    Returns what happened: moved, unchanged, or not_on_desk."""
+    email = owner_email.strip().lower()
+    a = db.one(cur, "select id, name, owner_id from accounts where id = %s for update", account_id)
+    db.run(cur, "update accounts set crm_owner_email = %s where id = %s", email, account_id)
+    new = db.one(cur, "select id, name, role from users where email = %s", email)
+    if new is None or new["role"] != "sdr":
+        alerts.raise_alert(cur, kind="owner_not_on_desk", severity="info", channel="#outbound-ops",
+                           title=f"{a['name']} now belongs to {email} in the CRM",
+                           body="They are not an SDR on the desk, so the account and its play stay where they are.",
+                           object_kind="account", object_id=account_id, dedup_key=f"owner:{account_id}:{email}")
+        return "not_on_desk"
+    if a["owner_id"] == new["id"]:
+        return "unchanged"
+    old = a["owner_id"]
+    db.run(cur, "update accounts set owner_id = %s where id = %s", new["id"], account_id)
+    for ap in db.all(cur, """select id, owner_id from account_plays where account_id = %s and state in
+                             ('proposed','accepted','researching','approving','active','engaged','meeting')""", account_id):
+        db.run(cur, "update account_plays set owner_id = %s where id = %s", new["id"], ap["id"])
+        db.run(cur, "update tasks set owner_id = %s where account_play_id = %s and status = 'open'", new["id"], ap["id"])
+        db.run(cur, "update meetings set owner_id = %s where account_play_id = %s and status = 'booked'", new["id"], ap["id"])
+    db.run(cur, """update tasks t set owner_id = %s from replies r where t.reply_id = r.id and r.account_id = %s
+                   and t.status = 'open'""", new["id"], account_id)
+    for uid in {old, new["id"]} - {None}:
+        alerts.raise_alert(cur, kind="owner_changed", severity="info", channel="#outbound-ops", target_user=uid,
+                           title=f"{a['name']} moved to {new['name']} in the CRM",
+                           body="Its open play and tasks moved too. Emails already under way finish from the original sender.",
+                           object_kind="account", object_id=account_id, dedup_key=f"owner:{account_id}:{email}:{uid}")
+    audit.log(cur, "desk", "owner_changed", "account", account_id, {"from": old, "to": new["id"], "via": "crm"})
+    return "moved"
+
+
 @jobs.handler("crm_sync")
 def crm_sync(cur, payload: dict) -> None:
     """Read every deal the CRM changed since the last read, oldest first, and keep a cursor so a failed read
@@ -211,6 +245,21 @@ def crm_sync(cur, payload: dict) -> None:
     if unknown:
         db.run(cur, """insert into settings (key, value) values ('crm_unknown_accounts', %s)
                        on conflict (key) do update set value = excluded.value""", J(unknown))
+    # Owners, with their own cursor.
+    from . import signals as _s
+    owner_since = db.val(cur, "select value #>> '{}' from settings where key = 'crm_owner_cursor'")
+    while True:
+        batch = crm.owners_changed(cur, owner_since, 200)
+        for o in batch:
+            aid, _ = _s.resolve_account(cur, o.account_domain, None)
+            if aid:
+                apply_owner(cur, aid, o.owner_email)
+            owner_since = o.updated_at.isoformat() if hasattr(o.updated_at, "isoformat") else str(o.updated_at)
+        if len(batch) < 200:
+            break
+    if owner_since:
+        db.run(cur, """insert into settings (key, value) values ('crm_owner_cursor', %s)
+                       on conflict (key) do update set value = excluded.value""", J(owner_since))
     signals.first_party_from_crm(cur)
 
 

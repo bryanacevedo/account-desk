@@ -382,7 +382,7 @@ def pick_mailbox(cur, owner_id: int, account_play_id: int) -> int | None:
 
 def footer_for(person: dict, message_id_hint: str) -> str:
     token = unsubscribe_token(person["id"])
-    url = f"{CONFIG.public_url}/u/{person['id']}/{token}"
+    url = f"{CONFIG.public_url}/u/{person['id']}-{token[:12]}"
     privacy = CONFIG.privacy_url if (person.get("country") or "") in EU_UK else None
     return copy_gate.footer(company=CONFIG.sender_company, address=CONFIG.sender_address, unsubscribe_url=url,
                             privacy_url=privacy)

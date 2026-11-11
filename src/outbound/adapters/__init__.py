@@ -127,9 +127,18 @@ class CrmDeal:
     contact_email: str | None = None
 
 
+@dataclass
+class CrmOwner:
+    """An account's owner as the CRM holds it."""
+    account_domain: str
+    owner_email: str
+    updated_at: object
+
+
 class Crm(Protocol):
     def push(self, cur, kind: str, payload: dict, idempotency_key: str) -> str: ...
     def deals_changed(self, cur, since, limit: int) -> list[CrmDeal]: ...  # oldest change first
+    def owners_changed(self, cur, since, limit: int) -> list[CrmOwner]: ...  # oldest change first
 
 
 @dataclass

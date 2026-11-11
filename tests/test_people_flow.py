@@ -68,3 +68,23 @@ def test_an_emptied_role_is_refilled_from_people_on_record(cur, scene):  # noqa:
                          returning id""", scene["account"], f"dana{id(cur)}@x.example")
     outreach.replace_person(cur, {"account_play_id": scene["ap"], "persona_key": "cfo"})
     assert db.val(cur, "select count(*) from enrollments where person_id = %s and account_play_id = %s", nxt, scene["ap"]) == 1
+
+
+def test_a_crm_owner_change_moves_the_account_and_its_open_work(cur, scene):  # noqa: F811
+    from outbound import pipeline
+    new = db.val(cur, "insert into users (name, email, role) values ('Nia Park', %s, 'sdr') returning id", f"nia{id(cur)}@x.example")
+    tid = db.val(cur, """insert into tasks (account_play_id, person_id, kind, title, due_at, owner_id)
+                         values (%s, %s, 'call', 'Call', now(), %s) returning id""", scene["ap"], scene["person"], scene["user"])
+    assert pipeline.apply_owner(cur, scene["account"], f"NIA{id(cur)}@x.example".lower()) == "moved"
+    assert db.val(cur, "select owner_id from accounts where id = %s", scene["account"]) == new
+    assert db.val(cur, "select owner_id from account_plays where id = %s", scene["ap"]) == new
+    assert db.val(cur, "select owner_id from tasks where id = %s", tid) == new
+    # The sequence under way keeps its sender: the enrollment's mailbox is untouched.
+    assert db.val(cur, "select mailbox_id from enrollments where id = %s", scene["enrollment"]) == scene["mailbox"]
+
+
+def test_an_owner_who_is_not_on_the_desk_moves_nothing(cur, scene):  # noqa: F811
+    from outbound import pipeline
+    assert pipeline.apply_owner(cur, scene["account"], "ae@elsewhere.example") == "not_on_desk"
+    assert db.val(cur, "select owner_id from account_plays where id = %s", scene["ap"]) == scene["user"]
+    assert db.val(cur, "select crm_owner_email from accounts where id = %s", scene["account"]) == "ae@elsewhere.example"

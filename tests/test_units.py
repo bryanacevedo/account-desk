@@ -271,3 +271,21 @@ def test_draft_sentences_keep_names_articles_and_never_repeat_the_company():
         "Brightwave Apps posted a job for an Accounts Receivable Lead"
     assert article("Accounts Receivable Lead") == "an" and article("Billing Specialist") == "a"
     assert article("18") == "an" and article("25") == "a"
+
+
+def test_a_no_thanks_reply_is_an_opt_out_as_the_footer_promises():
+    from outbound import replies
+    for text in ("No thanks.", "no thank you", "No, thanks. Please take us off.", "Thanks but no thanks"):
+        assert replies.rules_label("a@b.example", "Re: billing", text) == ("unsubscribe", 0.96), text
+    assert replies.rules_label("a@b.example", "Re: billing", "Thanks, this is helpful. Can we talk Tuesday?") is None
+
+
+def test_the_footer_is_two_short_lines_with_the_address_and_the_way_out():
+    from outbound import copy_gate
+    f = copy_gate.footer(company="Lumen Ledger", address="400 Market Street, Philadelphia, PA 19106, USA",
+                         unsubscribe_url="https://x.example/u/7-abcdef123456", privacy_url=None)
+    lines = f.split("\n")
+    assert lines[0] == "--" and len(lines) == 3
+    assert "400 Market Street" in lines[1] and "no thanks" in lines[2] and "won't write again" in lines[2]
+    assert all(len(line) <= 120 for line in lines)
+

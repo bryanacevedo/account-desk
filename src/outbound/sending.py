@@ -19,7 +19,7 @@ WATCH_SIZE = 20
 
 def headers_for(message: dict, person: dict, play_key: str) -> dict:
     token = outreach.unsubscribe_token(person["id"])
-    url = f"{CONFIG.public_url}/u/{person['id']}/{token}"
+    url = f"{CONFIG.public_url}/u/{person['id']}-{token[:12]}"
     return {
         "List-Unsubscribe": f"<{url}>, <mailto:unsubscribe@{CONFIG.public_url.split('//')[-1].split('/')[0]}?subject=unsubscribe-{person['id']}>",
         "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

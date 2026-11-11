@@ -26,7 +26,7 @@ SIGNATURE = [re.compile(r"^--\s*$", re.M), re.compile(r"^Sent from my (iPhone|iP
                         re.M | re.I)]
 LEGAL = re.compile(r"(this (e-?mail|message) and any attachments? (is|are) confidential|if you (have )?received this "
                    r"(e-?mail|message) in error)", re.I)
-OPT_OUT = re.compile(r"\b(unsubscribe|remove me|stop emailing|take me off|opt[ -]?out|do not (contact|email) me|"
+OPT_OUT = re.compile(r"\b(unsubscribe|remove me|stop emailing|take me off|opt[ -]?out|do not (contact|email) me|no,? thanks?|"
                      r"keine weiteren e-?mails|abmelden|no me envíen|darme de baja|ne plus me contacter|"
                      r"désinscri|não quero receber|remover meu e-?mail)\b", re.I)
 OOO = re.compile(r"\b(out of (the )?office|on (annual )?leave|automatic reply|auto-?reply|abwesenheit\w*|"

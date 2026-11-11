@@ -858,8 +858,28 @@ async def webhook_signal(request: Request) -> dict:
 # ---------------------------------------------------------------- one-click unsubscribe (RFC 8058)
 
 def _check_token(person_id: int, token: str) -> None:
-    if not hmac.compare_digest(outreach.unsubscribe_token(person_id), token):
+    """The short form (12 characters) is in today's footers; the long one (24) in emails already sent, which must
+    keep working for as long as they sit in an inbox."""
+    full = outreach.unsubscribe_token(person_id)
+    if len(token) not in (12, 24) or not hmac.compare_digest(full[:len(token)], token):
         raise HTTPException(404, "This link is not valid.")
+
+
+def _split(slug: str) -> tuple[int, str]:
+    pid, _, token = slug.partition("-")
+    if not pid.isdigit():
+        raise HTTPException(404, "This link is not valid.")
+    return int(pid), token
+
+
+@app.get("/u/{slug}", response_class=HTMLResponse)
+def unsubscribe_page_short(slug: str) -> str:
+    return unsubscribe_page(*_split(slug))
+
+
+@app.post("/u/{slug}", response_class=HTMLResponse)
+def unsubscribe_short(slug: str) -> str:
+    return unsubscribe(*_split(slug))
 
 
 @app.get("/u/{person_id}/{token}", response_class=HTMLResponse)

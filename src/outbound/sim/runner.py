@@ -280,6 +280,17 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
                    STAGES[STAGES.index(d["stage"]) + 1], at, d["id"])
     if at.hour == 15:
         _organic(cur, rng, at)
+    if at.hour == 16 and at.weekday() == 0 and rng.random() < 0.5:
+        _rebalance(cur, rng, at)
+
+
+def _rebalance(cur, rng: random.Random, at: datetime) -> None:
+    """Sales ops moves a few accounts between SDRs in the CRM, and once in a while to an AE who is not on the desk."""
+    sdrs = [r["email"] for r in db.all(cur, "select email from users where role = 'sdr' order by id")]
+    for a in db.all(cur, """select a.id, u.email from accounts a left join users u on u.id = a.owner_id
+                            where a.lifecycle = 'prospect' order by a.id offset %s limit 3""", rng.randint(0, 400)):
+        to = "ae.team@lumenledger.example" if rng.random() < 0.15 else rng.choice([e for e in sdrs if e != a["email"]] or sdrs)
+        db.run(cur, "insert into sim_crm_owner_changes (account_id, owner_email, updated_at) values (%s,%s,%s)", a["id"], to, at)
 
 
 def _organic(cur, rng: random.Random, at: datetime) -> None:

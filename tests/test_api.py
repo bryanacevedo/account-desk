@@ -84,6 +84,18 @@ def test_unsubscribe_get_does_nothing_post_suppresses(client):
         assert db.val(cur, "select exists (select 1 from suppressions where kind = 'email' and value = %s)", p["email"])
 
 
+def test_the_short_link_in_todays_footer_works_and_guesses_do_not(client):
+    with db.tx() as cur:
+        p = db.one(cur, "select id, email from people where email is not null order by id desc limit 1")
+    short = outreach.unsubscribe_token(p["id"])[:12]
+    assert client.get(f"/u/{p['id']}-{short}").status_code == 200
+    assert client.get(f"/u/{p['id']}-{short[:11]}x").status_code == 404
+    assert client.get(f"/u/{p['id'] + 1}-{short}").status_code == 404
+    assert client.post(f"/u/{p['id']}-{short}").status_code == 200
+    with db.tx() as cur:
+        assert db.val(cur, "select exists (select 1 from suppressions where kind = 'person' and value = %s)", str(p["id"]))
+
+
 def test_an_sdr_cannot_approve_another_sdrs_email_or_change_a_play(client):
     with db.tx() as cur:
         m = db.one(cur, """select m.id, ap.owner_id from messages m join enrollments e on e.id = m.enrollment_id
@@ -133,7 +145,7 @@ def test_opt_out_links_in_sent_emails_still_open(client):
     from outbound import outreach as o
     with db.tx() as cur:
         body = db.val(cur, "select body from messages where body like '%%/u/%%' order by id limit 1")
-    path = re.search(r"/u/\d+/[0-9a-f]+", body).group(0)
+    path = re.search(r"/u/\d+[-/][0-9a-f]+", body).group(0)
     o._unsub_secret = None  # a fresh process
     assert client.get(path).status_code == 200
 
@@ -196,6 +208,10 @@ def test_a_play_without_emails_runs_on_calls_and_linkedin(client):
             cur, """insert into signals (type_key, source, external_id, account_id, observed_at, strength, evidence, status)
                     values ('hiring_function', 'jobs_feed', 'test-noemail', %s, app_now(), 0.8,
                             '{"summary": "x", "url": "https://x"}', 'matched') returning id""", acct)
+        # A reachable controller of its own, so the test does not depend on who the simulated world left free.
+        db.run(cur, """insert into people (account_id, full_name, first_name, title, linkedin_url, phone, phone_status, source)
+                       values (%s, 'Test Controller', 'Test', 'Corporate Controller', %s, '+1 555 0100', 'valid', 'test')""",
+               acct, f"https://www.linkedin.com/in/test-controller-{acct}")
         play = db.one(cur, "select * from plays where id = %s", pid)
         score = {"priority": 60, "inputs": {"signals": []}}
         signal = db.one(cur, """select s.id, s.type_key, s.observed_at, s.strength, s.evidence, s.person_id, t.label,
