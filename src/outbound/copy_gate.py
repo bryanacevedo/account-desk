@@ -66,7 +66,7 @@ def similarity(a: str, b: str) -> float:
 
 
 def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int, str], our_names: list[str],
-          other_bodies: list[str]) -> Verdict:
+          other_bodies: list[str], private_ids: set[int] | None = None) -> Verdict:
     f: list[dict] = []
     w: list[dict] = []
     sentences = draft["sentences"]
@@ -99,6 +99,8 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
         bad = [i for i in ids if i not in facts]
         if bad:
             fail("unknown_fact", f"Cites facts that do not exist for this account: {bad}")
+        if private_ids and any(i in private_ids for i in ids):
+            fail("private_signal", "Cites something we only know from tracking (a visit or research data)")
         if s["kind"] == "claim":
             if not ids:
                 fail("uncited_claim", f"A claim with no source: \"{s['text'][:80]}\"")

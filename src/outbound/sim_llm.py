@@ -30,23 +30,25 @@ def brief(p: dict) -> dict:
     return {"findings": findings, "angle": f"{p['company']}: {_lower_first(lead).rstrip('.')}." if lead else p["company"]}
 
 
-OPEN_CLAIM = [
-    "Saw that {company} {fact}.", "Noticed {company} {fact}.", "{Company_poss} {fact_noun}.",
-]
-WHY = [
-    "When that happens, the billing work usually lands on finance before anyone plans for it.",
-    "Teams in that spot tend to find month-end close is where it hurts first.",
-    "That is usually the point where invoices and the ledger start to disagree.",
-]
+WHY = {
+    "cfo": ["New leaders usually find the gap between what was sold and what was invoiced in their first close.",
+            "That tends to show up first as a longer month-end close."],
+    "controller": ["That is usually when revenue recognition moves back into spreadsheets.",
+                   "It tends to land on the controller's team before anyone plans for it."],
+    "revops": ["That is usually where billing and the CRM stop agreeing on what was sold.",
+               "It tends to mean more manual invoice fixes each month."],
+    "data": ["That usually means finance and product start reporting two different usage numbers.",
+             "It tends to put a new pipeline between the product data and the ledger."],
+}
 ASK = [
-    "Worth a 20-minute look at how teams like yours handled it?",
-    "Open to comparing notes on how you plan to handle invoicing?",
-    "Would a short call next week be useful?",
+    "Worth 20 minutes to compare how other finance teams handled it?",
+    "Open to a short call next week?",
     "Is this on your list for this quarter?",
+    "Would it help to see how a team your size set this up?",
 ]
 FOLLOW = [
-    "One more thought on {fact_short}: the teams that moved early kept their close under five days.",
-    "Following up in case this got buried. {fact_short} is usually where the manual work starts.",
+    "Following up on {fact}. Teams that moved early kept month-end close from growing.",
+    "One more note on {fact}: this is usually where the manual invoice work starts.",
 ]
 BREAKUP = [
     "I'll stop here. If billing comes up later this year, I'm easy to find.",
@@ -54,38 +56,52 @@ BREAKUP = [
 ]
 
 
-def _fact_phrase(text: str) -> str:
-    t = text.rstrip(".")
-    t = re.sub(r"^(Posted|Raised|Appointed|Started|Stopped|Left|Created|Announced)", lambda m: m.group(1).lower(), t)
-    return _lower_first(t)
+def _claim(company: str, f: dict) -> str | None:
+    """Turn a stored fact into a sentence that keeps its proper nouns as written."""
+    t = f["text"].rstrip(".")
+    kind = f["kind"]
+    if kind.startswith("signal:"):
+        verb = t.split(" ", 1)
+        if verb[0] in ("Posted", "Raised", "Appointed", "Started", "Stopped", "Created", "Announced", "Left"):
+            return f"Saw that {company} {verb[0].lower()} {verb[1]}." if len(verb) > 1 else None
+        if t.startswith(company):
+            return f"Saw that {t}."
+        return f"Noticed this about {company}: {t[0].lower() + t[1:]}."
+    if kind == "page:billing":
+        return f"Your docs say {t[0].lower() + t[1:]}."
+    if kind == "page:careers":
+        return f"Your careers page lists {t[len('Open roles include '):] if t.startswith('Open roles include') else t}."
+    return None
 
 
 @sim("draft")
 def draft(p: dict) -> dict:
     r = _rng(p["person"]["id"], p["step"]["index"], p.get("attempt", 1))
     first = p["person"]["first_name"]
+    company = p["company"]
     facts = p["facts"]
-    lead = next((f for f in facts if f["kind"].startswith("signal:")), facts[0] if facts else None)
-    support = next((f for f in facts if f is not lead and not f["kind"].startswith("signal:")), None)
+    signal_facts = [f for f in facts if f["kind"].startswith("signal:")]
+    page_facts = [f for f in facts if f["kind"] in ("page:billing", "page:careers")]
+    lead = signal_facts[0] if signal_facts else (page_facts[0] if page_facts else None)
+    support = next((f for f in page_facts if f is not lead), None)
+    persona = (p.get("persona_key") or "cfo")
     job = p["step"]["job"]
-    s: list[dict] = []
+    s: list[dict] = [{"text": f"{first},", "kind": "courtesy", "fact_ids": []}]
     if job == "open":
-        s.append({"text": f"{first},", "kind": "courtesy", "fact_ids": []})
-        if lead:
-            s.append({"text": f"Saw that {p['company']} {_fact_phrase(lead['text'])}.", "kind": "claim", "fact_ids": [lead["id"]]})
-        if support and r.random() < 0.7:
-            s.append({"text": f"I also read that {_fact_phrase(support['text'])}.", "kind": "claim", "fact_ids": [support["id"]]})
-        s.append({"text": r.choice(WHY), "kind": "courtesy", "fact_ids": []})
-        s.append({"text": p["angle"], "kind": "courtesy", "fact_ids": []})
+        c = _claim(company, lead) if lead else None
+        if c:
+            s.append({"text": c, "kind": "claim", "fact_ids": [lead["id"]]})
+        c2 = _claim(company, support) if support else None
+        if c2 and r.random() < 0.75:
+            s.append({"text": c2, "kind": "claim", "fact_ids": [support["id"]]})
+        s.append({"text": r.choice(WHY.get(persona, WHY["cfo"])), "kind": "courtesy", "fact_ids": []})
         s.append({"text": r.choice(ASK), "kind": "ask", "fact_ids": []})
     elif job == "follow_up":
-        s.append({"text": f"{first},", "kind": "courtesy", "fact_ids": []})
-        short = _fact_phrase(lead["text"]) if lead else "your billing setup"
-        s.append({"text": r.choice(FOLLOW).format(fact_short=short[:1].upper() + short[1:]), "kind": "claim",
-                  "fact_ids": [lead["id"]] if lead else []})
+        short = lead["text"].rstrip(".") if lead else "your billing setup"
+        short = short[0].lower() + short[1:] if not short.startswith(company) else short
+        s.append({"text": r.choice(FOLLOW).format(fact=short), "kind": "claim", "fact_ids": [lead["id"]] if lead else []})
         s.append({"text": r.choice(ASK), "kind": "ask", "fact_ids": []})
     else:
-        s.append({"text": f"{first},", "kind": "courtesy", "fact_ids": []})
         s.append({"text": r.choice(BREAKUP), "kind": "courtesy", "fact_ids": []})
     # Real drafts go wrong sometimes. Only on a first attempt, so a redraft with the failures listed comes back clean.
     if p.get("attempt", 1) == 1 and not p.get("failures"):
@@ -93,12 +109,12 @@ def draft(p: dict) -> dict:
         if roll < 0.04:
             s.insert(2, {"text": "Most teams cut close time by 43% in the first quarter.", "kind": "claim", "fact_ids": []})
         elif roll < 0.07:
-            s[-1]["text"] = s[-1]["text"].rstrip("?.") + " — no pressure?"
+            s[-1]["text"] = s[-1]["text"].rstrip("?.") + " \u2014 no pressure?"
         elif roll < 0.09:
             s.insert(1, {"text": "I hope this email finds you well.", "kind": "courtesy", "fact_ids": []})
     subjects = {"open": ["billing at {company}", "{company} and month-end", "question on invoicing", "your close process"],
                 "follow_up": ["re: {prev}"], "bump": ["re: {prev}"], "break_up": ["closing the loop"]}
-    subj = r.choice(subjects.get(job, ["note"])).format(company=p["company"], prev=p.get("previous_subject") or "billing")
+    subj = r.choice(subjects.get(job, ["note"])).format(company=company, prev=p.get("previous_subject") or "billing")
     return {"subject": subj, "sentences": s}
 
 

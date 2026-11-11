@@ -29,7 +29,7 @@ LEGAL = re.compile(r"(this (e-?mail|message) and any attachments? (is|are) confi
 OPT_OUT = re.compile(r"\b(unsubscribe|remove me|stop emailing|take me off|opt[ -]?out|do not (contact|email) me|"
                      r"keine weiteren e-?mails|abmelden|no me envíen|darme de baja|ne plus me contacter|"
                      r"désinscri|não quero receber|remover meu e-?mail)\b", re.I)
-OOO = re.compile(r"\b(out of (the )?office|on (annual )?leave|automatic reply|auto-?reply|abwesenheit|"
+OOO = re.compile(r"\b(out of (the )?office|on (annual )?leave|automatic reply|auto-?reply|abwesenheit\w*|"
                  r"fuera de la oficina|absent du bureau|ausente)\b", re.I)
 BOUNCE_FROM = re.compile(r"^(mailer-daemon|postmaster)@", re.I)
 LEFT = re.compile(r"\b(no longer (with|at)|has left the company|left the company|is no longer employed)\b", re.I)

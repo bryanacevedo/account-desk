@@ -16,6 +16,9 @@ log = logging.getLogger("outbound.outreach")
 SENIORITY_RANK = {"c_suite": 4, "vp": 3, "director": 2, "manager": 1, "ic": 0}
 EU_UK = {"GB", "DE", "FR", "NL", "ES", "IE", "IT", "BE", "SE", "DK", "PL", "AT", "PT", "FI"}
 OUR_NAMES = [CONFIG.sender_company]
+# Signals the desk acts on but never mentions to the buyer: they came from tracking, not from anything the
+# company published. Citing them reads as surveillance.
+PRIVATE_SIGNALS = ("pricing_visit", "site_visit", "intent_topic", "product_signup", "social_engaged", "event_attended")
 
 
 # ---------------------------------------------------------------- research
@@ -40,15 +43,17 @@ def _research_facts(cur, account: dict) -> None:
            account["primary_domain"], J([pg.__dict__ for pg in pages]))
 
 
-def account_facts(cur, account_id: int, limit: int = 14) -> list[dict]:
+def account_facts(cur, account_id: int, limit: int = 14, *, citable_only: bool = True) -> list[dict]:
+    private = [f"signal:{k}" for k in PRIVATE_SIGNALS] if citable_only else []
     return db.all(cur, """
         (select id, kind, text, source_url, observed_at from facts
           where account_id = %s and kind like 'signal:%%' and observed_at > app_now() - interval '90 days'
+            and kind <> all(%s)
           order by observed_at desc limit 8)
         union all
         (select id, kind, text, source_url, observed_at from facts
           where account_id = %s and kind not like 'signal:%%' order by observed_at desc limit 8)""",
-        account_id, account_id)[:limit]
+        account_id, private, account_id)[:limit]
 
 
 def write_brief(cur, ap: dict, account: dict) -> dict:
@@ -145,10 +150,10 @@ def build_committee(cur, ap: dict, play: dict, account: dict) -> list[dict]:
                 if existing:
                     continue
                 pid = db.val(cur, """insert into people (account_id, full_name, first_name, last_name, title, seniority,
-                                                         linkedin_url, country, timezone, source)
-                                     values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'people_search') returning id""",
+                                                         linkedin_url, country, timezone, source, photo_url)
+                                     values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'people_search',%s) returning id""",
                              account["id"], c.full_name, c.first_name, c.last_name, c.title, c.seniority, c.linkedin_url,
-                             c.country, c.timezone)
+                             c.country, c.timezone, c.photo_url)
                 ad.people.saved(cur, c, pid)
             candidates = [c for c in db.all(cur, "select * from people where account_id = %s and status = 'active' "
                                                  "and source = 'people_search' order by id", account["id"])
@@ -163,7 +168,7 @@ def build_committee(cur, ap: dict, play: dict, account: dict) -> list[dict]:
                 continue
             rule = _record_basis(cur, c, play)
             if rule == "consent_required":
-                last_reason = f"Email in {c['country']} needs consent first; the rep can call or connect instead"
+                last_reason = f"Email in {c['country']} needs consent first; the SDR can call or connect instead"
                 continue
             status = _ensure_email(cur, c, account)
             if status != "valid":
@@ -281,13 +286,15 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
                    "play_angle": play["angle"], "brief": (ap["brief"] or {}).get("findings", []),
                    "person": {"id": person["id"], "first_name": copy_gate.clean_first_name(person["first_name"], person["full_name"]),
                               "title": person["title"]},
-                   "step": {"index": step_index, "job": step["job"]},
+                   "step": {"index": step_index, "job": step["job"]}, "persona_key": e["persona_key"],
                    "facts": [{"id": f["id"], "kind": f["kind"], "text": f["text"]} for f in facts],
                    "previous_subject": prev["subject"] if prev else None, "attempt": attempt,
                    "failures": [x["message"] for x in failures]}
         out = llm.run(cur, "draft", payload, account_id=account["id"])
+        private_ids = {r["id"] for r in db.all(cur, "select id from facts where account_id = %s and kind = any(%s)",
+                                              account["id"], [f"signal:{k}" for k in PRIVATE_SIGNALS])}
         verdict = copy_gate.check(out, job=step["job"], person=person, account=account, facts=fact_map,
-                                  our_names=OUR_NAMES, other_bodies=others)
+                                  our_names=OUR_NAMES, other_bodies=others, private_ids=private_ids)
         attempts.append({"attempt": attempt, "passed": verdict.passed, "failures": verdict.failures})
         if verdict.passed:
             break
@@ -471,7 +478,7 @@ def due_steps(cur, payload: dict) -> None:
         if e["step_index"] >= len(e["sequence"]):
             continue
         step = e["sequence"][e["step_index"]]
-        if step["by"] == "rep":
+        if step["by"] == "sdr":
             kind = {"linkedin_connect": "linkedin_connect", "linkedin_message": "linkedin_message", "call": "call"}[step["channel"]]
             title = {"linkedin_connect": f"Connect with {e['full_name']} on LinkedIn",
                      "linkedin_message": f"Message {e['full_name']} on LinkedIn",

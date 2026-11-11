@@ -22,7 +22,7 @@ def reset(url: str | None = None) -> None:
     db.migrate(url)
 
 
-def setup(*, start: datetime, seed: int = 7, n_accounts: int = 320) -> dict:
+def setup(*, start: datetime, seed: int = 7, n_accounts: int = 460) -> dict:
     clock.set_sim(start)
     with db.tx() as cur:
         load.load_catalog(cur, start=start)
@@ -84,7 +84,7 @@ def _working(at: datetime, tzname: str) -> bool:
 
 
 def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None:
-    reps = db.all(cur, "select * from users where role in ('rep', 'manager')")
+    reps = db.all(cur, "select * from users where role in ('sdr', 'manager')")
     for u in reps:
         if not _working(at, u["timezone"]) or rng.random() > eagerness:
             continue
@@ -134,7 +134,7 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
                 if r["label"] in ("meeting_request", "interested") and rng.random() < 0.72 or rng.random() < 0.3:
                     starts = timeutil.add_business_days(at, rng.randint(2, 7))
                     pipeline.book_meeting(cur, account_id=r["account_id"], person_id=r["person_id"], starts_at=starts,
-                                          source="rep", owner_id=u["id"])
+                                          source="sdr", owner_id=u["id"])
                     replies.handle(cur, r["id"], user_id=u["id"], outcome="meeting_booked")
                 else:
                     replies.handle(cur, r["id"], user_id=u["id"], outcome="answered")
@@ -187,7 +187,7 @@ def _hour(cur_rng: random.Random, at: datetime, eagerness: float, totals: dict) 
     totals["jobs"] += jobs.run_ready(limit=2000)
 
 
-def run(days: int, *, seed: int = 11, slow_last_days: int = 2) -> dict:
+def run(days: int, *, seed: int = 11, slow_last_days: int = 2, idle_hours: int = 40) -> dict:
     rng = random.Random(seed)
     with db.tx() as cur:
         start = clock.now(cur)
@@ -198,7 +198,9 @@ def run(days: int, *, seed: int = 11, slow_last_days: int = 2) -> dict:
             totals["signals"] += _queue_day_signals(cur, rng, day.replace(hour=0, minute=0, second=0, microsecond=0))
         eagerness = 0.55 if d < days - slow_last_days else 0.12
         for h in range(24):
-            _hour(rng, day + timedelta(hours=h), eagerness, totals)
+            # The reps stop a day before the demo opens, so it opens on a morning with work waiting.
+            idle = (days - d) * 24 - h <= idle_hours
+            _hour(rng, day + timedelta(hours=h), 0.0 if idle else eagerness, totals)
         log.info("simulated day %s: %s", d + 1, totals)
     with db.tx() as cur:
         db.run(cur, "update sim_clock set at = %s", start + timedelta(days=days))

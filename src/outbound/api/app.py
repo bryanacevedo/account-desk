@@ -45,7 +45,7 @@ async def headers_and_errors(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; "
+        "default-src 'self'; img-src 'self' data: https://randomuser.me https://media.licdn.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; "
         "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
     ms = (time.perf_counter() - started) * 1000
     if request.url.path.startswith("/api/"):
@@ -80,7 +80,7 @@ def current_user(request: Request) -> dict:
             raw = request.headers.get("X-Acting-As") or request.query_params.get("as")
             u = db.one(cur, "select * from users where id = %s and active", int(raw)) if raw and raw.isdigit() else None
             if u is None:
-                u = db.one(cur, "select * from users where role = 'rep' and active order by id limit 1")
+                u = db.one(cur, "select * from users where role = 'sdr' and active order by id limit 1")
     if u is None:
         raise HTTPException(401, "Sign in to use the desk.")
     return u
@@ -131,11 +131,11 @@ def me(u: dict = Depends(current_user)) -> dict:
         counts = {
             "today": db.val(cur, """select (select count(*) from account_plays where state = 'proposed' and (owner_id = %s or %s))
                                          + (select count(*) from tasks where status = 'open' and owner_id = %s and kind in ('reply','review_reply'))""",
-                            u["id"], u["role"] != "rep", u["id"]),
+                            u["id"], u["role"] != "sdr", u["id"]),
             "approvals": db.val(cur, """select count(*) from messages m join enrollments e on e.id = m.enrollment_id
                                         join account_plays ap on ap.id = e.account_play_id
                                         where m.status in ('awaiting_approval','failed_gate') and (ap.owner_id = %s or %s)""",
-                                u["id"], u["role"] != "rep"),
+                                u["id"], u["role"] != "sdr"),
             "replies": db.val(cur, "select count(*) from replies where needs_review and handled_at is null"),
         }
         now = db.val(cur, "select app_now()")
@@ -241,7 +241,7 @@ def decide(ap_id: int, body: Decide, u: dict = Depends(writer)) -> dict:
         ap = db.one(cur, "select owner_id, state from account_plays where id = %s", ap_id)
         if ap is None:
             raise HTTPException(404, "No such proposal.")
-        if u["role"] == "rep" and ap["owner_id"] != u["id"]:
+        if u["role"] == "sdr" and ap["owner_id"] != u["id"]:
             raise HTTPException(403, "This account belongs to someone else.")
         try:
             plays.decide(cur, ap_id, accept=body.accept, user_id=u["id"], reason=body.reason)
@@ -262,8 +262,8 @@ def _own_message(cur, message_id: int, u: dict) -> None:
                            join account_plays ap on ap.id = e.account_play_id where m.id = %s""", message_id)
     if owner is None:
         raise HTTPException(404, "No such message.")
-    if u["role"] == "rep" and owner != u["id"]:
-        raise HTTPException(403, "This email belongs to another rep's account.")
+    if u["role"] == "sdr" and owner != u["id"]:
+        raise HTTPException(403, "This email belongs to another SDR's account.")
 
 
 @app.post("/api/messages/{message_id}/approve")
@@ -310,7 +310,7 @@ def handle_reply(reply_id: int, body: Handle, u: dict = Depends(writer)) -> dict
                 raise HTTPException(422, "This reply is not tied to an account.")
             at = body.meeting_at or (db.val(cur, "select app_now()") + timedelta(days=3))
             pipeline.book_meeting(cur, account_id=r["account_id"], person_id=r["person_id"], starts_at=at,
-                                  source="rep", owner_id=u["id"])
+                                  source="sdr", owner_id=u["id"])
         replies.handle(cur, reply_id, user_id=u["id"], outcome=body.outcome, label=body.label)
         return views.reply(cur, reply_id)
 
@@ -319,7 +319,7 @@ def handle_reply(reply_id: int, body: Handle, u: dict = Depends(writer)) -> dict
 def task_done(task_id: int, skipped: bool = False, u: dict = Depends(writer)) -> dict:
     with db.tx() as cur:
         n = db.run(cur, "update tasks set status = %s, done_at = app_now() where id = %s and status = 'open' "
-                        "and (owner_id = %s or %s)", "skipped" if skipped else "done", task_id, u["id"], u["role"] != "rep")
+                        "and (owner_id = %s or %s)", "skipped" if skipped else "done", task_id, u["id"], u["role"] != "sdr")
     if not n:
         raise HTTPException(404, "No open task with that id for you.")
     return {"ok": True}

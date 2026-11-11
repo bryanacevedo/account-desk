@@ -60,11 +60,12 @@ def _band(employees: int, rng: random.Random) -> str:
 
 def build(cur, *, seed: int = 7, n_accounts: int = 260, start: datetime) -> dict:
     rng = random.Random(seed)
-    reps = [r["id"] for r in db.all(cur, "select id from users where role = 'rep' order by id")]
-    rep_tz = {r["id"]: r["timezone"] for r in db.all(cur, "select id, timezone from users where role = 'rep'")}
+    reps = [r["id"] for r in db.all(cur, "select id from users where role = 'sdr' order by id")]
+    rep_tz = {r["id"]: r["timezone"] for r in db.all(cur, "select id, timezone from users where role = 'sdr'")}
     used_names: set[str] = set()
     used_people: set = set()
     used_emails: set[str] = set()
+    portraits = N.Portraits(random.Random(seed + 1))
     accounts: list[int] = []
     for i in range(n_accounts):
         while True:
@@ -168,22 +169,24 @@ def build(cur, *, seed: int = 7, n_accounts: int = 260, start: datetime) -> dict
             phone = f"+1 {rng.randint(201, 989)} {rng.randint(200, 999)} {rng.randint(1000, 9999)}" if rng.random() < 0.7 else None
             resp = round(rng.uniform(0.3, 1.0), 3)
             champion = lifecycle == "customer" and persona in ("controller", "cfo", "revops") and rng.random() < 0.6
+            photo = portraits.url(first)
             if known:
                 pid = db.val(cur, """
                     insert into people (account_id, full_name, first_name, last_name, title, seniority, email,
                                         email_status, linkedin_url, country, timezone, source, crm_id, created_at,
-                                        is_champion)
-                    values (%s,%s,%s,%s,%s,%s,%s,'unknown',%s,%s,%s,'crm',%s,%s,%s) returning id""",
+                                        is_champion, photo_url)
+                    values (%s,%s,%s,%s,%s,%s,%s,'unknown',%s,%s,%s,'crm',%s,%s,%s,%s) returning id""",
                     aid, full, first, last, title, seniority, email, linkedin, country, tz,
-                    f"CRM-C{aid}-{len(used_people)}", start - timedelta(days=rng.randint(10, 700)), champion)
+                    f"CRM-C{aid}-{len(used_people)}", start - timedelta(days=rng.randint(10, 700)), champion, photo)
                 db.run(cur, "insert into sim_people (person_id, true_email, email_truth, responsiveness, phone_truth) "
                             "values (%s,%s,%s,%s,%s)", pid, email, truth, resp, phone)
             else:
                 db.run(cur, """insert into sim_hidden_people (account_id, full_name, first_name, last_name, title, seniority,
                                  linkedin_url, country, timezone, true_email, email_truth, responsiveness, phone_truth,
-                                 is_champion)
-                               values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                       aid, full, first, last, title, seniority, linkedin, country, tz, email, truth, resp, phone, champion)
+                                 is_champion, photo_url)
+                               values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                       aid, full, first, last, title, seniority, linkedin, country, tz, email, truth, resp, phone, champion,
+                       photo)
         if lifecycle in ("customer", "churned"):
             db.run(cur, """insert into opportunities (account_id, crm_id, name, amount_cents, stage, created_at, closed_at,
                                                       won, attribution)

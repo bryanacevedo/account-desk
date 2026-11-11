@@ -15,8 +15,8 @@ def _iso(rows: list[dict]) -> list[dict]:
 
 def today(cur, user: dict) -> dict:
     uid = user["id"]
-    mine = "ap.owner_id = %s" if user["role"] == "rep" else "true"
-    args = (uid,) if user["role"] == "rep" else ()
+    mine = "ap.owner_id = %s" if user["role"] == "sdr" else "true"
+    args = (uid,) if user["role"] == "sdr" else ()
     proposals = db.all(cur, f"""
         select ap.id, ap.proposed_at, ap.why_now, a.id as account_id, a.name, a.primary_domain, a.fit_tier,
                sc.priority, p.name as play, p.urgent, u.name as owner
@@ -24,28 +24,28 @@ def today(cur, user: dict) -> dict:
         left join account_scores sc on sc.account_id = a.id left join users u on u.id = ap.owner_id
         where ap.state = 'proposed' and {mine} order by p.urgent desc, sc.priority desc nulls last limit 40""", *args)
     approvals = db.all(cur, f"""
-        select m.id, m.subject, m.step_index, m.status, m.created_at, pe.full_name, pe.title, a.name as company,
+        select m.id, m.subject, m.step_index, m.status, m.created_at, pe.full_name, pe.photo_url, pe.title, a.name as company,
                a.id as account_id, p.name as play
         from messages m join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
         join people pe on pe.id = e.person_id join accounts a on a.id = ap.account_id join plays p on p.id = ap.play_id
         where m.status in ('awaiting_approval', 'failed_gate') and {mine} order by m.created_at limit 60""", *args)
     hot = db.all(cur, f"""
-        select r.id, r.received_at, r.label, r.cleaned, r.sla_due_at, pe.full_name, pe.title, a.name as company,
+        select r.id, r.received_at, r.label, r.cleaned, r.sla_due_at, pe.full_name, pe.photo_url, pe.title, a.name as company,
                a.id as account_id
         from replies r join accounts a on a.id = r.account_id left join people pe on pe.id = r.person_id
         join tasks t on t.reply_id = r.id and t.status = 'open' and t.kind in ('reply', 'review_reply')
         left join account_plays ap on ap.id = t.account_play_id
         where (t.owner_id = %s or %s) order by r.sla_due_at nulls last, r.received_at limit 40""",
-        uid, user["role"] != "rep")
+        uid, user["role"] != "sdr")
     tasks = db.all(cur, """
-        select t.id, t.kind, t.title, t.due_at, t.note, pe.full_name, pe.title as person_title, pe.phone,
+        select t.id, t.kind, t.title, t.due_at, t.note, pe.full_name, pe.photo_url, pe.title as person_title, pe.phone,
                pe.linkedin_url, a.name as company, a.id as account_id
         from tasks t left join people pe on pe.id = t.person_id
         left join account_plays ap on ap.id = t.account_play_id left join accounts a on a.id = coalesce(ap.account_id, pe.account_id)
         where t.status = 'open' and t.kind not in ('reply', 'review_reply') and t.owner_id = %s and t.due_at <= app_now() + interval '1 day'
         order by t.due_at limit 50""", uid)
     meetings = db.all(cur, """
-        select m.id, m.starts_at, m.status, a.name as company, a.id as account_id, pe.full_name
+        select m.id, m.starts_at, m.status, a.name as company, a.id as account_id, pe.full_name, pe.photo_url
         from meetings m join accounts a on a.id = m.account_id left join people pe on pe.id = m.person_id
         where m.owner_id = %s and m.starts_at between app_now() - interval '1 day' and app_now() + interval '7 days'
         order by m.starts_at""", uid)
@@ -71,13 +71,18 @@ def accounts(cur, *, q: str | None, view: str, owner: int | None, limit: int = 2
     return db.all(cur, f"""
         select a.id, a.name, a.primary_domain, a.industry, a.employees, a.hq_country, a.fit_tier, a.lifecycle,
                sc.priority, sc.fit, sc.intent, sc.engagement, u.name as owner, ap.state as play_state, p.name as play,
-               rs.label as reason, rs.observed_at as reason_at, coalesce(sh.delta, 0) as week_change
+               rs.label as reason, rs.observed_at as reason_at, coalesce(sh.delta, 0) as week_change,
+               lp.state as last_state, hd.until as hold_until
         from accounts a left join account_scores sc on sc.account_id = a.id
         left join users u on u.id = a.owner_id
         left join account_plays ap on ap.account_id = a.id and ap.state in {OPEN}
         left join plays p on p.id = ap.play_id
         left join lateral (select t.label, s.observed_at from signals s join signal_types t on t.key = s.type_key
                            where s.id = sc.reason_signal_id) rs on true
+        left join lateral (select state from account_plays x where x.account_id = a.id
+                           order by x.proposed_at desc limit 1) lp on true
+        left join lateral (select max(until) as until from holds h where h.account_id = a.id
+                           and h.person_id is null and h.until > app_now()) hd on true
         left join lateral (select sum(priority - coalesce(previous, 0)) as delta from score_history h
                            where h.account_id = a.id and h.at > app_now() - interval '7 days') sh on true
         where {' and '.join(where)}
@@ -108,7 +113,7 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
                             from account_plays ap join plays p on p.id = ap.play_id left join users u on u.id = ap.owner_id
                             where ap.account_id = %s order by ap.proposed_at desc""", account_id)
     current = next((x for x in plays_ if x["state"] in OPEN), None)
-    people = db.all(cur, """select p.id, p.full_name, p.title, p.persona_key, p.email, p.email_status, p.status, p.country,
+    people = db.all(cur, """select p.id, p.full_name, p.photo_url, p.title, p.persona_key, p.email, p.email_status, p.status, p.country,
                                    p.is_champion, p.linkedin_url, p.phone, e.state as enrollment, e.step_index,
                                    e.stop_reason, e.pause_reason, e.next_at
                             from people p left join lateral (select * from enrollments e where e.person_id = p.id
@@ -116,15 +121,15 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
                             where p.account_id = %s order by p.persona_key nulls last, p.full_name""", account_id)
     gaps = db.all(cur, """select g.persona_key, g.reason, pe.label from committee_gaps g join personas pe on pe.key = g.persona_key
                           where g.account_play_id = %s""", current["id"]) if current else []
-    messages = db.all(cur, """select m.id, m.step_index, m.subject, m.status, m.sent_at, m.scheduled_for, pe.full_name,
+    messages = db.all(cur, """select m.id, m.step_index, m.subject, m.status, m.sent_at, m.scheduled_for, pe.full_name, pe.photo_url,
                                      m.approval_mode
                               from messages m join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
                               join people pe on pe.id = e.person_id where ap.account_id = %s
                               order by coalesce(m.sent_at, m.scheduled_for, m.created_at) desc limit 60""", account_id)
-    reps = db.all(cur, """select r.id, r.received_at, r.label, r.cleaned, r.hot, pe.full_name from replies r
+    reps = db.all(cur, """select r.id, r.received_at, r.label, r.cleaned, r.hot, pe.full_name, pe.photo_url from replies r
                           left join people pe on pe.id = r.person_id where r.account_id = %s order by r.received_at desc""",
                   account_id)
-    meetings = db.all(cur, """select m.id, m.starts_at, m.status, pe.full_name from meetings m
+    meetings = db.all(cur, """select m.id, m.starts_at, m.status, pe.full_name, pe.photo_url from meetings m
                               left join people pe on pe.id = m.person_id where m.account_id = %s order by m.starts_at desc""",
                       account_id)
     opps = db.all(cur, "select id, name, stage, created_at, won, attribution" + (", amount_cents" if money else "") +
@@ -134,7 +139,7 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
     calendar = []
     if current:
         calendar = db.all(cur, """
-            select pe.full_name, e.persona_key, e.state, e.step_index, e.next_at, m.step_index as msg_step,
+            select pe.full_name, pe.photo_url, e.persona_key, e.state, e.step_index, e.next_at, m.step_index as msg_step,
                    coalesce(m.sent_at, m.scheduled_for) as at, m.status
             from enrollments e join people pe on pe.id = e.person_id
             left join messages m on m.enrollment_id = e.id
@@ -272,7 +277,7 @@ def promotion_check(cur, play: dict) -> dict:
 # ---------------------------------------------------------------- approvals and replies
 
 def message(cur, message_id: int) -> dict | None:
-    m = db.one(cur, """select m.*, pe.full_name, pe.first_name, pe.title, pe.email, pe.country, a.name as company,
+    m = db.one(cur, """select m.*, pe.full_name, pe.photo_url, pe.first_name, pe.title, pe.email, pe.country, a.name as company,
                               a.id as account_id, p.name as play, p.autonomy, ap.why_now, ap.brief, u.name as owner,
                               mb.address as mailbox
                        from messages m join enrollments e on e.id = m.enrollment_id
@@ -292,13 +297,13 @@ def replies_page(cur, *, view: str) -> list[dict]:
              "hot": "r.hot", "all": "true"}.get(view, "true")
     return db.all(cur, f"""select r.id, r.received_at, r.label, r.confidence, r.classified_by, r.cleaned, r.hot,
                                   r.needs_review, r.review_reason, r.handled_at, r.outcome, r.sla_due_at, r.same_person,
-                                  r.language, pe.full_name, pe.title, a.name as company, a.id as account_id
+                                  r.language, pe.full_name, pe.photo_url, pe.title, a.name as company, a.id as account_id
                            from replies r left join people pe on pe.id = r.person_id left join accounts a on a.id = r.account_id
                            where {where} order by r.received_at desc limit 200""")
 
 
 def reply(cur, reply_id: int) -> dict | None:
-    r = db.one(cur, """select r.*, pe.full_name, pe.title, pe.first_name, a.name as company, m.subject as our_subject,
+    r = db.one(cur, """select r.*, pe.full_name, pe.photo_url, pe.title, pe.first_name, a.name as company, m.subject as our_subject,
                               m.body as our_body
                        from replies r left join people pe on pe.id = r.person_id left join accounts a on a.id = r.account_id
                        left join messages m on m.id = r.message_id where r.id = %s""", reply_id)

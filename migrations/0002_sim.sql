@@ -33,3 +33,4 @@ create table sim_hidden_people (
   found_person_id bigint references people on delete set null
 );
 create index on sim_hidden_people (account_id);
+alter table sim_hidden_people add column photo_url text;

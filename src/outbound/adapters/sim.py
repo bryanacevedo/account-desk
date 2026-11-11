@@ -20,7 +20,7 @@ class SimPeopleSearch:
         hits = [r for r in rows if pat is None or pat.search(r["title"])]
         return [Candidate(full_name=r["full_name"], first_name=r["first_name"], last_name=r["last_name"], title=r["title"],
                           seniority=r["seniority"], linkedin_url=r["linkedin_url"], country=r["country"],
-                          timezone=r["timezone"], vendor_ref=str(r["id"])) for r in hits[:limit]]
+                          timezone=r["timezone"], vendor_ref=str(r["id"]), photo_url=r["photo_url"]) for r in hits[:limit]]
 
     def saved(self, cur, candidate: Candidate, person_id: int) -> None:
         h = db.one(cur, "select * from sim_hidden_people where id = %s", int(candidate.vendor_ref))

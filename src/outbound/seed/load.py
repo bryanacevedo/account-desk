@@ -42,7 +42,7 @@ def load_catalog(cur, *, start: datetime) -> dict:
         db.run(cur, "insert into region_rules (country, rule) values (%s,%s)", country, rule)
     for vendor, cap in C.BUDGETS:
         db.run(cur, "insert into budgets (vendor, monthly_cap_cents) values (%s,%s)", vendor, cap)
-    reps = db.all(cur, "select id, name, email from users where role = 'rep' order by id")
+    reps = db.all(cur, "select id, name, email from users where role = 'sdr' order by id")
     for d_i, (domain, age_days) in enumerate(C.SENDING_DOMAINS):
         young = age_days < 30
         db.run(cur, """insert into sending_domains (domain, spf, dkim, dmarc, dmarc_policy, dmarc_aligned, registered_at,

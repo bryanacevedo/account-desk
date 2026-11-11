@@ -22,3 +22,22 @@ COUNTRY = {
     "BR": ("Latin America", "America/Sao_Paulo"), "AU": ("APAC", "Australia/Sydney"), "SG": ("APAC", "Asia/Singapore"),
 }
 US_TZ = ["America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles"]
+FEMALE = set("""Aaliyah Ada Aiko Amara Ana Anika Astrid Ayesha Beatriz Camila Carmen Chiara Clara Dalia Deepa Elif Emma Esther
+Fatima Freya Grace Hana Hannah Ines Ivy Jia Julia Kamala Katarzyna Kemi Laila Leila Lucia Mariana Mei Mina Nadia Nia Noor
+Olga Pilar Rania Rhea Rosa Saanvi Samira Sara Seo-yeon Shreya Sofia Thandiwe Valentina Yara Zara Zeynep Blessing""".split())
+
+
+class Portraits:
+    """Stock portraits for the demo, from randomuser.me, handed out in turn so faces repeat as rarely as possible."""
+
+    def __init__(self, rng) -> None:
+        self.rng = rng
+        self.next = {"women": rng.randrange(100), "men": rng.randrange(100)}
+
+    def url(self, first: str) -> str | None:
+        if self.rng.random() < 0.14:  # plenty of real profiles have no photo
+            return None
+        g = "women" if first in FEMALE else "men"
+        n = self.next[g]
+        self.next[g] = (n + 1) % 100
+        return f"https://randomuser.me/api/portraits/{g}/{n}.jpg"

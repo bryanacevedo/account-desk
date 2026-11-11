@@ -23,6 +23,7 @@ class Candidate:
     country: str | None = None
     timezone: str | None = None
     vendor_ref: str | None = None
+    photo_url: str | None = None
 
 
 @dataclass

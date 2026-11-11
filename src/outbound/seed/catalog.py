@@ -24,10 +24,10 @@ SETTINGS = {
 
 USERS = [
     # name, email, role, timezone
-    ("Maya Okafor", "maya.okafor@lumenledger.example", "rep", "America/New_York"),
-    ("Daniel Reyes", "daniel.reyes@lumenledger.example", "rep", "America/Chicago"),
-    ("Priya Natarajan", "priya.natarajan@lumenledger.example", "rep", "Europe/London"),
-    ("Tom Whitaker", "tom.whitaker@lumenledger.example", "rep", "America/Los_Angeles"),
+    ("Maya Okafor", "maya.okafor@lumenledger.example", "sdr", "America/New_York"),
+    ("Daniel Reyes", "daniel.reyes@lumenledger.example", "sdr", "America/Chicago"),
+    ("Priya Natarajan", "priya.natarajan@lumenledger.example", "sdr", "Europe/London"),
+    ("Tom Whitaker", "tom.whitaker@lumenledger.example", "sdr", "America/Los_Angeles"),
     ("Elena Duarte", "elena.duarte@lumenledger.example", "manager", "America/New_York"),
     ("Sam Kowalski", "sam.kowalski@lumenledger.example", "gtm", "America/New_York"),
 ]
@@ -115,9 +115,9 @@ ICP = {
 def _seq(*steps):
     return [dict(zip(("day", "channel", "job", "by"), s)) for s in steps]
 
-STANDARD = _seq((0, "email", "open", "desk"), (2, "linkedin_connect", "connect", "rep"), (4, "email", "follow_up", "desk"),
-                (7, "call", "call", "rep"), (10, "email", "break_up", "desk"))
-SHORT = _seq((0, "email", "open", "desk"), (3, "email", "follow_up", "desk"), (6, "call", "call", "rep"),
+STANDARD = _seq((0, "email", "open", "desk"), (2, "linkedin_connect", "connect", "sdr"), (4, "email", "follow_up", "desk"),
+                (7, "call", "call", "sdr"), (10, "email", "break_up", "desk"))
+SHORT = _seq((0, "email", "open", "desk"), (3, "email", "follow_up", "desk"), (6, "call", "call", "sdr"),
              (9, "email", "break_up", "desk"))
 
 PLAYS = [

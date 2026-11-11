@@ -28,7 +28,7 @@ create table users (
   id bigint generated always as identity primary key,
   name text not null,
   email text not null unique,
-  role text not null check (role in ('rep', 'manager', 'gtm')),
+  role text not null check (role in ('sdr', 'manager', 'gtm')),
   slack_id text,
   timezone text not null default 'America/New_York',
   heyreach_consent boolean not null default false,

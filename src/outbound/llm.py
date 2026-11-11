@@ -88,11 +88,11 @@ class Learnings(BaseModel):
 
 TASKS: dict[str, dict[str, Any]] = {
     "brief": {"schema": Brief, "effort": "medium", "model": "claude-opus-5-5", "max_tokens": 4000, "system": (
-        "You write account briefs for a B2B sales rep. You get facts about one company, each with an id. Write 3 to 5 "
+        "You write account briefs for a B2B SDR. You get facts about one company, each with an id. Write 3 to 5 "
         "findings that matter for selling billing and revenue software to its finance team. Every finding cites the "
         "fact ids it rests on. Use only the facts given; if a fact is not there, do not say it. Plain words, no hype.")},
     "draft": {"schema": Draft, "effort": "medium", "model": "claude-opus-5-5", "max_tokens": 4000, "system": (
-        "You draft one short sales email from a named rep to one person. Return it as sentences. Mark each sentence "
+        "You draft one short sales email from a named SDR to one person. Return it as sentences. Mark each sentence "
         "claim (says something about their company), ask (asks for something) or courtesy. A claim must cite the fact "
         "ids it relies on; use only facts given. Open with the person's first name. No greeting clichés, no hype, no "
         "em dashes, no exclamation marks, no links. Write like a person who did their homework: specific, brief, "
@@ -103,10 +103,10 @@ TASKS: dict[str, dict[str, Any]] = {
         "return date when given. A referral names another person; include an email only if it appears in the text. "
         "same_person is false when the writer says they are an assistant, a colleague, or a successor.")},
     "suggest_reply": {"schema": SuggestedReply, "effort": "low", "model": "claude-opus-5-5", "max_tokens": 2000, "system": (
-        "Suggest a short reply a rep could send to a prospect's reply. Answer what they asked. Propose two concrete "
+        "Suggest a short reply an SDR could send to a prospect's reply. Answer what they asked. Propose two concrete "
         "times if they want to meet. Under 80 words. No hype, no em dashes.")},
     "extract": {"schema": Learnings, "effort": "low", "model": "claude-opus-5-5", "max_tokens": 4000, "system": (
-        "Extract atomic learnings from a rep's call notes: objections, competitors named, reasons to buy, reasons not "
+        "Extract atomic learnings from an SDR's call notes: objections, competitors named, reasons to buy, reasons not "
         "to, and memorable quotes. Every item carries the exact words from the notes it rests on.")},
 }
 

@@ -16,7 +16,7 @@ Sources checked 2026-11-11 (vendor blogs, so figures are treated as unverified; 
 | Personalization only works when it rests on something true and recent. | Every claim in a draft cites a fact id from the account's evidence. Code rejects a draft with an uncited claim or a number that is not in the evidence. |
 | A signal is only useful when it matches the offer (Autobound). | Every signal type carries its written "because" and a weight. The desk measures each type's signal-to-meeting rate against a holdout and shows which ones earn their weight. |
 | Signal plus ICP fit is the trigger, not either alone. | A play fires on a matching signal at an account above the fit floor. |
-| Plays are owned by one person (the "outbound quarterback", most often in growth or marketing, a GTM engineer at larger teams), reps own replies and human steps (Unify). | Roles: GTM (owns plays, settings), Manager (approves launches, sees money), Rep (accepts accounts, approves copy, works replies and tasks). |
+| Plays are owned by one person (the "outbound quarterback", most often in growth or marketing, a GTM engineer at larger teams), SDRs own replies and human steps (Unify). | Roles: GTM (owns plays, settings), Manager (approves launches, sees money), SDR (accepts accounts, approves copy, works replies and tasks). |
 | Buying committees are large; orchestration coordinates people and channels on one account calendar. | One account calendar per account in play. Each person's steps are staggered, capped and stopped together. |
 | Contact data decays roughly 2% a month, mostly from job changes (real-world review). | Verification has an age. An address older than the limit is re-verified before its first send. |
 | Gmail and Yahoo require SPF, DKIM, DMARC and one-click unsubscribe (RFC 8058) from bulk senders and hold complaint rates under 0.3% (target 0.1%); Microsoft enforces authentication but publishes no spam-rate threshold (Red Sift). | Domain checks block a mailbox from sending; every email carries a List-Unsubscribe and List-Unsubscribe-Post header; complaint and bounce thresholds pause a mailbox automatically. |
@@ -38,7 +38,7 @@ Every step belongs to whichever of the three is good at it. A step that does not
 | Decide whether a person may be contacted now | | | The contact gate, at every moment |
 | When and from which inbox | | | Account calendar, send window, holidays, mailbox health and caps |
 | Read a reply | Classifies when the model is unsure; answers every hot reply | Labels from a fixed list, extracts dates, referrals, new companies | Stops first, cleans, applies the rules, routes, starts the SLA clock |
-| Talk to a buyer | Owns it: calls, LinkedIn, replies, meetings | Suggests a reply the rep may use | Creates the tasks, logs the touches |
+| Talk to a buyer | Owns it: calls, LinkedIn, replies, meetings | Suggests a reply the SDR may use | Creates the tasks, logs the touches |
 | Learn from calls | Decides which notes are worth learning from | Extracts objections, competitors, reasons from the notes | Aggregates by play and signal (a GROUP BY a person can audit) |
 | Know whether it works | Changes weights and plays | | Funnel, holdout lift, signal performance, monitors |
 
@@ -55,7 +55,7 @@ From a previous system Bryan ran (ideas only, nothing copied):
 
 ## 2. Who uses it
 
-- **Rep** (account executive or SDR). Owns a book of accounts. Sees Today: accounts proposed to them, drafts to approve, replies to answer, tasks due. Never sees company money.
+- **SDR** (or an account executive who prospects). Owns a book of accounts. Sees Today: accounts proposed to them, drafts to approve, replies to answer, tasks due. Never sees company money.
 - **Manager.** Sees the team, approves play launches, sees results and money.
 - **GTM** (GTM engineer, RevOps). Owns signals, scoring, plays, mailboxes, settings, monitors. Sees everything.
 
@@ -77,7 +77,7 @@ signal sources -> ingest -> resolve to account -> score (fit x intent x engageme
 
 All tables are in `migrations/`. Every state column has a CHECK constraint naming its allowed values. Every stop, drop or rejection has a non-null reason enforced by CHECK. Money is stored in integer cents.
 
-- **users** (id, name, role rep|manager|gtm, email, slack_id, timezone).
+- **users** (id, name, role sdr|manager|gtm, email, slack_id, timezone).
 - **accounts** (id, name, primary_domain, industry, employees, revenue_band, hq_country, region, tech[], description, lifecycle prospect|customer|open_opp|churned|competitor|partner, owner_id, crm_id, fit_score, fit_tier A|B|C|X, fit_breakdown jsonb, fit_icp_version).
 - **account_domains** (domain primary key, account_id). Resolution reads this, so aliases and acquired domains map to one account.
 - **people** (id, account_id, full_name, first_name, last_name, title, seniority, function, persona_key, email, email_status unknown|valid|risky|invalid, email_verified_at, linkedin_url, country, timezone, status active|left|unreachable, source, crm_id). Unique on lower(email) and on linkedin_url.
@@ -158,7 +158,7 @@ A play is: a hypothesis, a trigger, who to reach, the sequence, the angle, its a
 
 **Matching** runs after each rescore. For an account with no open account play: pick the highest-priority live play whose trigger matches. Before proposing, the **account gate** runs (section 10). Then the holdout draw: a deterministic hash of (play, account) puts `holdout_pct` of accounts in the holdout arm, recorded, never contacted, and measured.
 
-**Proposal** goes to the account owner (or round-robin among reps when there is none) with the why-now: the triggering signal's evidence and the top three score contributions. The owner accepts or skips with a reason. A proposal expires after `proposal_ttl_days` (default 5).
+**Proposal** goes to the account owner (or round-robin among SDRs when there is none) with the why-now: the triggering signal's evidence and the top three score contributions. The owner accepts or skips with a reason. A proposal expires after `proposal_ttl_days` (default 5).
 
 ## 8. Research, committee and drafting
 
@@ -178,7 +178,7 @@ A play is: a hypothesis, a trigger, who to reach, the sequence, the angle, its a
 7. At most one link, none in step 1; no attachments; no images.
 8. Spam-trigger word score under the limit.
 9. Not a near-duplicate (shingle similarity) of another draft sent to the same account.
-A failing draft is re-drafted once with the failures listed; failing twice, it goes to the rep marked "failed gate" to write or skip.
+A failing draft is re-drafted once with the failures listed; failing twice, it goes to the SDR marked "failed gate" to write or skip.
 
 ## 9. Approval and autonomy stages
 
@@ -223,7 +223,7 @@ An approval stores `approved_hash = sha256(subject + body)`. Sending refuses any
 
 **Headers.** Every email carries `List-Unsubscribe` (mailto and https) and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. The https endpoint suppresses the address immediately.
 
-**Channels** are adapters with one contract: `send(message, mailbox) -> SendResult(sent|failed|unknown, provider_id)`. Shipped: simulated email (with a simulated recipient world that replies, bounces and complains), an SMTP/Gmail-API email adapter, Instantly and Smartlead (single-send API), and HeyReach for LinkedIn. LinkedIn steps default to a **task for the rep** (connect, message) because LinkedIn's terms prohibit automation; the HeyReach adapter needs a per-sender consent flag. Call steps are always tasks.
+**Channels** are adapters with one contract: `send(message, mailbox) -> SendResult(sent|failed|unknown, provider_id)`. Shipped: simulated email (with a simulated recipient world that replies, bounces and complains), an SMTP/Gmail-API email adapter, Instantly and Smartlead (single-send API), and HeyReach for LinkedIn. LinkedIn steps default to a **task for the SDR** (connect, message) because LinkedIn's terms prohibit automation; the HeyReach adapter needs a per-sender consent flag. Call steps are always tasks.
 
 **Unknown outcomes.** A send that times out is `send_unknown`. It is never retried blindly; a reconcile job asks the provider by idempotency key, and a person resolves it if the provider cannot say.
 
@@ -231,9 +231,9 @@ An approval stores `approved_hash = sha256(subject + body)`. Sending refuses any
 
 **Stop first.** Any inbound message matched to a person stops that enrollment and pauses every other active enrollment at the account, in the same transaction, before anything else happens. Classification second.
 
-**Side facts.** Beside its label a reply carries `same_person` (false when an assistant, successor or forward wrote it; such a reply goes to the rep, never auto-actions the contact) and an optional referral (name, title, relationship; an email only when the reply itself contains it).
+**Side facts.** Beside its label a reply carries `same_person` (false when an assistant, successor or forward wrote it; such a reply goes to the SDR, never auto-actions the contact) and an optional referral (name, title, relationship; an email only when the reply itself contains it).
 
-**Cross-channel.** A reply, connection acceptance or LinkedIn message from a person stops their email steps, and the reverse. Every touch on every channel, including the rep's calls and manual emails, is one row in `touches` (account, person, channel, direction, kind, at, source, dedup key).
+**Cross-channel.** A reply, connection acceptance or LinkedIn message from a person stops their email steps, and the reverse. Every touch on every channel, including the SDR's calls and manual emails, is one row in `touches` (account, person, channel, direction, kind, at, source, dedup key).
 
 **Matching.** By thread key, then by sender email, then by sender domain to the account; an unmatched reply is kept and shown to GTM, never dropped.
 
@@ -242,21 +242,21 @@ An approval stores `approved_hash = sha256(subject + body)`. Sending refuses any
 **Classification.** Rules first: bounce notifications (DSN), auto-replies (headers and phrasing), explicit opt-out phrases in English, Spanish, Portuguese, French and German. Then the model, which can only return a label from a fixed list plus extracted fields: `interested`, `meeting_request`, `question`, `not_now` (return date), `not_interested`, `referral` (name, email, title), `left_company` (new company if stated), `out_of_office` (return date), `unsubscribe`, `wrong_person`, `bounce`, `auto_reply`, `other`. Confidence below 0.7, or text that tries to instruct the system, goes to a person.
 
 **Actions.**
-- interested, meeting_request, question: hot. Alert the owner in the team channel with an @-mention; the SLA clock starts (default 4 business hours); a missed SLA escalates to the manager. A suggested reply is drafted for the rep, who sends it from their own inbox.
+- interested, meeting_request, question: hot. Alert the owner in the team channel with an @-mention; the SLA clock starts (default 4 business hours); a missed SLA escalates to the manager. A suggested reply is drafted for the SDR, who sends it from their own inbox.
 - not_now: hold the person and account until the date (default 90 days), then the account may be proposed again.
 - not_interested: stop the account play (`lost`, reason), hold the account 180 days.
-- referral: create the referred person (if an email is given) and propose adding them to the account play with a referral angle; the rep approves.
+- referral: create the referred person (if an email is given) and propose adding them to the account play with a referral angle; the SDR approves.
 - left_company: mark the person left; if the new company is named, raise a `champion_moved` signal.
 - out_of_office: pause the enrollment until the return date plus one business day, then resume at the same step. The account's other enrollments resume too.
 - unsubscribe: suppress the email permanently; stop all their enrollments.
 - wrong_person: stop that person; propose the next person for that persona.
 - bounce: mark the email invalid, record the delivery event, propose the next person for that persona.
 
-**Meetings** come from a booking adapter (simulated; Calendly/Chili Piper-shaped webhook) or are logged by the rep. A meeting moves the account play to `meeting` and stops all its enrollments. Held or no-show is recorded after the start time.
+**Meetings** come from a booking adapter (simulated; Calendly/Chili Piper-shaped webhook) or are logged by the SDR. A meeting moves the account play to `meeting` and stops all its enrollments. Held or no-show is recorded after the start time.
 
 **Opportunities** sync from the CRM. An opportunity created within 90 days after a meeting from an account play is `sourced` by that play; one created at an account that had an active play in the 90 days before is `influenced`. One opportunity has one attribution.
 
-**Learning from calls.** A rep pastes or uploads notes for a held meeting. A person marks them worth learning from. The model extracts atomic facts (objection, competitor named, reason to buy, reason not to, quote), each with the line it came from; code checks the quote is in the notes. Results aggregates them by play and signal type. Nothing the model extracts changes a play by itself.
+**Learning from calls.** An SDR pastes or uploads notes for a held meeting. A person marks them worth learning from. The model extracts atomic facts (objection, competitor named, reason to buy, reason not to, quote), each with the line it came from; code checks the quote is in the notes. Results aggregates them by play and signal type. Nothing the model extracts changes a play by itself.
 
 ## 13. CRM, Slack and security
 
@@ -311,7 +311,7 @@ Each item below is labelled **[enforced]** (cannot happen) or **[monitor]** (det
 - Funnel by play and by signal type: proposed, accepted, contacted, replied, positive, meeting, opportunity, pipeline.
 - **Lift against holdout**: meeting rate treated vs holdout per play, with a 90% interval (Wilson), labelled "too few to call" under 30 accounts per arm.
 - Signal type performance: meetings per 100 accounts triggered, against the weight it carries. A suggestion to move a weight is shown; a person applies it.
-- Rep SLA: median time to first response on hot replies; misses.
+- SDR SLA: median time to first response on hot replies; misses.
 - Deliverability: bounce, complaint and reply rates per mailbox and domain.
 - Cost: spend per meeting and per opportunity (managers and GTM only).
 
@@ -319,7 +319,7 @@ Each item below is labelled **[enforced]** (cannot happen) or **[monitor]** (det
 
 React and Vite, served by the API. Pages by job:
 
-- **Today** (rep): proposed accounts to accept, drafts to approve, hot replies with their SLA, tasks due.
+- **Today** (SDR): proposed accounts to accept, drafts to approve, hot replies with their SLA, tasks due.
 - **Accounts**: ranked by priority, why now, change this week, owner, stage.
 - **Account** (side sheet and full page): who they are, score with its breakdown, signal timeline, committee by persona with gaps, the play and its calendar, messages and replies, meetings and pipeline.
 - **Signals**: the feed, unmatched signals, source health, type performance.
@@ -365,7 +365,7 @@ Open states (the partial unique index): `proposed, accepted, researching, approv
 | proposed | owner accepts | accepted, and the research job is queued |
 | proposed | owner skips (reason) / TTL passes | skipped / expired |
 | accepted | research job starts | researching |
-| researching | brief and committee done, autonomy is `research` | active (no desk sends; call, LinkedIn and email tasks for the rep) |
+| researching | brief and committee done, autonomy is `research` | active (no desk sends; call, LinkedIn and email tasks for the SDR) |
 | researching | brief and committee done, autonomy above `research` | approving (step 1 drafts exist) |
 | researching | nobody reachable for any persona | stopped (reason `no_reachable_people`) |
 | approving | first step 1 message approved | active (that enrollment goes active, the others follow the calendar) |
@@ -382,11 +382,11 @@ Open states (the partial unique index): `proposed, accepted, researching, approv
 An inbound message sets that person's enrollment to `paused` (reason `reply_received`) and every other active enrollment at the account to `paused` (reason `account_reply`), in the same transaction. Classification then decides:
 
 - out_of_office and auto_reply: the person resumes at the same step after the return date plus one business day (default 5 business days when no date is given); the account's other enrollments resume at once.
-- interested, meeting_request, question: the person is stopped (`replied_positive`); the others stay paused until the rep resolves the reply, then resume or stop by the rep's choice.
+- interested, meeting_request, question: the person is stopped (`replied_positive`); the others stay paused until the SDR resolves the reply, then resume or stop by the SDR's choice.
 - not_now, not_interested, unsubscribe, wrong_person, bounce, left_company, referral: the person is stopped with the label as reason; the others resume unless the label also ends the account play (not_interested).
 - needs review: everything stays paused until a person classifies it.
 
-The promise "no desk send after a reply" means: no message sent by the desk to a person after an inbound touch from them, unless every inbound touch since was classified out_of_office or auto_reply. A rep's own emails and calls are touches, not desk sends.
+The promise "no desk send after a reply" means: no message sent by the desk to a person after an inbound touch from them, unless every inbound touch since was classified out_of_office or auto_reply. A SDR's own emails and calls are touches, not desk sends.
 
 ### 22.3 Templates and the watched batch
 
@@ -451,7 +451,7 @@ A step is scheduled only once approved. It goes to the next valid slot at or aft
 
 ### 22.14 Terms, once
 
-- **Touched** (cooldown, gate rule 7): a desk send to that person in the last 90 days. Rep calls and the rep's own emails do not count.
+- **Touched** (cooldown, gate rule 7): a desk send to that person in the last 90 days. SDR calls and the SDR's own emails do not count.
 - **Account gate**: gate rules 1, 3 and 4, plus no open account play and no holdout hold. It runs before a proposal. The full contact gate runs per person.
 - **Active account play**, for attribution: any open state.
 - **Attribution**: an opportunity is `sourced` when created within 90 days after a meeting from an account play; else `influenced` when the account had an open account play in the 90 days before; sourced wins.
@@ -503,11 +503,11 @@ Cooldowns are written as rows in `holds` with the close reason, so the account g
 
 **Approvals** made by the desk under `supervised` or `autonomous` count as approvals for every transition.
 
-**Paused enrollments.** Pauses use `enrollments.pause_reason` (not `stop_reason`). When the rep has not resolved a positive reply within 3 business days, the account's other paused enrollments resume. On resume, the remaining steps keep their spacing, counted from the resume time. The 5-day approval lapse in 22.13 applies only to steps not yet approved.
+**Paused enrollments.** Pauses use `enrollments.pause_reason` (not `stop_reason`). When the SDR has not resolved a positive reply within 3 business days, the account's other paused enrollments resume. On resume, the remaining steps keep their spacing, counted from the resume time. The 5-day approval lapse in 22.13 applies only to steps not yet approved.
 
 **Replies that need no person.** out_of_office and auto_reply are marked handled by the classifier, so gate rule 9 does not wait 72 hours on them. Rule 9 counts only replies that need a person.
 
-**LinkedIn and calls.** A connection acceptance is a touch, not a reply: it pauses nothing. A LinkedIn message from the person is a reply. An inbound call or email the rep logs stops that person's desk steps (`rep_in_conversation`) and counts as handled.
+**LinkedIn and calls.** A connection acceptance is a touch, not a reply: it pauses nothing. A LinkedIn message from the person is a reply. An inbound call or email the SDR logs stops that person's desk steps (`rep_in_conversation`) and counts as handled.
 
 **A gate block at send time.** A permanent reason (suppressed, unsubscribed, invalid email, person left, lifecycle, region blocked) stops the enrollment with `gate:<rule>`. A temporary reason (hold, outside the window, no mailbox capacity, verification due) leaves it active and moves `next_at` to the next time the rule could pass; verification due queues a re-verification job.
 

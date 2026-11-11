@@ -82,7 +82,7 @@ def send_one(cur, payload: dict) -> None:
         if mailbox is None:
             later(now + timedelta(hours=12), "no healthy mailbox")
             alerts.raise_alert(cur, kind="no_mailbox", severity="warn", channel="#outbound-ops",
-                               title="A rep has no healthy mailbox", body="Sends are waiting for a mailbox.",
+                               title="An SDR has no healthy mailbox", body="Sends are waiting for a mailbox.",
                                target_user=ap["owner_id"], dedup_key=f"no_mailbox:{ap['owner_id']}:{now:%Y-%m-%d}")
             return
         db.run(cur, "update enrollments set mailbox_id = %s where id = %s", mailbox["id"], e["id"])

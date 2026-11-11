@@ -39,7 +39,7 @@ def main(argv: list[str]) -> int:
     elif cmd == "simulate":
         from . import outreach, pipeline, replies, scoring, sending, monitors, scheduler  # noqa: F401
         from .sim import runner
-        print(runner.run(int(argv[2]) if len(argv) > 2 else 1, slow_last_days=0))
+        print(runner.run(int(argv[2]) if len(argv) > 2 else 1, slow_last_days=0, idle_hours=0))
     elif cmd == "monitors":
         from . import monitors
         with db.tx() as cur:
