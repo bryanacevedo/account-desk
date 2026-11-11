@@ -289,3 +289,19 @@ def test_the_footer_is_two_short_lines_with_the_address_and_the_way_out():
     assert "400 Market Street" in lines[1] and "no thanks" in lines[2] and "won't write again" in lines[2]
     assert all(len(line) <= 120 for line in lines)
 
+
+
+def test_fit_leaves_unknown_fields_out_instead_of_counting_them_as_misses():
+    from outbound import scoring
+    from outbound.seed import catalog
+    known = {"industry": "Software", "employees": 300, "region": "Europe", "revenue_band": None, "tech": []}
+    f = scoring.fit(catalog.ICP, known)
+    assert f["tier"] == "A" and f["score"] == 100  # every known factor matches
+    assert [x["matched"] for x in f["factors"] if x["key"] in ("revenue", "stack")] == [None, None]
+    thin = scoring.fit(catalog.ICP, {"industry": "Software", "employees": 300})  # 55% of the profile known
+    assert thin["tier"] == "C" and "Too little known" in thin["excluded"]
+
+
+def test_import_derives_region_from_the_country():
+    from outbound.setup_desk import region_of
+    assert (region_of("us"), region_of("DE"), region_of("BR"), region_of(None)) == ("North America", "Europe", None, None)

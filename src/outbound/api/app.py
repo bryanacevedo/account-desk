@@ -636,6 +636,48 @@ def resolve_signal(signal_id: int, body: Resolve, u: dict = Depends(writer)) -> 
     return {"ok": True, "account_id": aid}
 
 
+class IcpFactor(BaseModel):
+    key: str = Field(min_length=1, max_length=40)
+    field: Literal["industry", "employees", "region", "revenue_band", "tech", "hq_country"]
+    op: Literal["in", "between", "has_any", "has_none"]
+    value: list[str] | list[int]
+    weight: int = Field(ge=0, le=100)
+
+
+class IcpExclude(BaseModel):
+    field: Literal["industry", "employees", "region", "revenue_band", "tech", "hq_country"]
+    op: Literal["in", "between", "has_any", "has_none"]
+    value: list[str] | list[int]
+    reason: str = Field(min_length=3, max_length=200)
+
+
+class IcpRules(BaseModel):
+    factors: list[IcpFactor] = Field(min_length=1)
+    penalties: list[IcpFactor] = []
+    excludes: list[IcpExclude] = []
+    tiers: dict[Literal["A", "B"], int]
+    note: str = Field(min_length=3, max_length=300)
+
+
+@app.put("/api/icp")
+def publish_icp(body: IcpRules, u: dict = Depends(writer)) -> dict:
+    """GTM publishes a new version of the ideal customer profile. Every account is rescored against it; the old
+    version stays, so a score can always be traced to the rules it was computed with."""
+    need(u, "gtm")
+    if not (0 < body.tiers["B"] < body.tiers["A"] <= 100):
+        raise HTTPException(422, "Tier A needs a higher score than tier B, both between 1 and 100.")
+    for f in body.factors + body.penalties:
+        if f.op == "between" and (len(f.value) != 2 or not all(isinstance(x, int) for x in f.value)):
+            raise HTTPException(422, f"{f.key}: a range is two whole numbers.")
+    rules = body.model_dump(exclude={"note"})
+    with db.tx() as cur:
+        vid = db.val(cur, "insert into icp_versions (rules, note, published_by, published_at) values (%s,%s,%s,app_now()) returning id",
+                     db.J(rules), body.note, u["id"])
+        jobs.enqueue(cur, "rescore_all", {"reason": "icp"}, dedupe_key=f"rescore_all:icp:{vid}")
+        audit.log(cur, "person", "icp_published", "icp", vid, {"note": body.note}, actor_id=u["id"])
+    return {"ok": True, "version": vid}
+
+
 class PlayChange(BaseModel):
     status: Literal["live", "paused"] | None = None
     autonomy: Literal["research", "draft", "supervised", "autonomous"] | None = None

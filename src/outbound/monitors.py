@@ -45,11 +45,13 @@ MONITORS: dict[str, dict] = {
                   (select max(started_at) from source_runs r where r.source_key = s.key and r.error is null), '-infinity')
                   < app_now() - (s.cadence_minutes * 2 || ' minutes')::interval"""},
     "source_empty": {
-        "title": "Paid signal sources that ran for 3 days and returned nothing",
+        "title": "Paid signal sources that ran for two weeks and returned nothing",
+        # Two weeks, because some sources (job changes, funding) are quiet for days at a time and that is normal.
         "sql": """select s.key from signal_sources s where s.enabled and s.paid and s.adapter <> 'webhook'
-                  and exists (select 1 from source_runs r where r.source_key = s.key and r.started_at > app_now() - interval '3 days')
+                  and (select count(*) from source_runs r where r.source_key = s.key and r.started_at > app_now() - interval '14 days') >= 5
+                  and (select min(started_at) from source_runs r where r.source_key = s.key) < app_now() - interval '14 days'
                   and not exists (select 1 from source_runs r where r.source_key = s.key
-                                  and r.started_at > app_now() - interval '3 days' and r.fetched > 0)"""},
+                                  and r.started_at > app_now() - interval '14 days' and r.fetched > 0)"""},
     "slow_first_touch": {
         "title": "Accepted accounts not contacted within the play's time limit",
         "sql": """select ap.id from account_plays ap join plays p on p.id = ap.play_id join signals s on s.id = ap.trigger_signal_id

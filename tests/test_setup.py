@@ -55,7 +55,7 @@ def test_a_desk_needs_a_manager():
 def test_imports_link_parents_and_refuse_bad_rows(empty):
     setup_desk.init(empty, cfg())
     a = setup_desk.import_accounts(empty, (ROOT / "examples" / "accounts.example.csv").read_text()
-                                   + "No Domain Co,,Software,10,US,prospect,,,\nBad Life,bad.example,,,US,friend,,,\n")
+                                   + "No Domain Co,,Software,10,US,,,prospect,,,\nBad Life,bad.example,,,US,,,friend,,,\n")
     assert a["imported"] == 2 and [r["row"] for r in a["refused"]] == [4, 5]
     assert db.val(empty, """select p.primary_domain from accounts c join accounts p on p.id = c.parent_id
                             where c.primary_domain = 'exampleanalytics-eu.example'""") == "exampleanalytics.example"
@@ -65,3 +65,20 @@ def test_imports_link_parents_and_refuse_bad_rows(empty):
                                  + "Nobody Here,unknown.example,CFO,,,,,\n")
     assert p["imported"] == 1 and p["refused"][0]["row"] == 3
     assert db.val(empty, "select email_status from people where full_name = 'Sam Rivera'") == "unknown"
+
+
+def test_a_reimport_without_lifecycle_never_unmakes_a_customer(empty):
+    setup_desk.init(empty, cfg())
+    setup_desk.import_accounts(empty, "name,domain,lifecycle\nBig Customer,bigcustomer.example,customer\n")
+    setup_desk.import_accounts(empty, "name,domain,industry\nBig Customer,bigcustomer.example,Software\n")
+    assert db.val(empty, "select lifecycle from accounts where primary_domain = 'bigcustomer.example'") == "customer"
+
+
+def test_imported_accounts_can_reach_a_proposable_tier(empty):
+    from outbound import scoring
+    setup_desk.init(empty, cfg())
+    setup_desk.import_accounts(empty, (ROOT / "examples" / "accounts.example.csv").read_text())
+    a = db.one(empty, "select * from accounts where primary_domain = 'exampleanalytics.example'")
+    rules = db.val(empty, "select rules from icp_versions order by id desc limit 1")
+    assert a["region"] == "North America" and scoring.fit(rules, a)["tier"] in ("A", "B")
+

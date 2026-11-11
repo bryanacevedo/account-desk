@@ -132,6 +132,15 @@ def init(cur, cfg: DeskConfig) -> dict:
 # ---------------------------------------------------------------- imports
 
 LIFECYCLES = {"prospect", "customer", "open_opp", "churned", "competitor", "partner"}
+NORTH_AMERICA = {"US", "CA", "MX"}
+EUROPE = {"GB", "IE", "DE", "FR", "NL", "BE", "LU", "ES", "PT", "IT", "AT", "CH", "SE", "NO", "DK", "FI", "IS", "PL", "CZ",
+          "SK", "HU", "RO", "BG", "GR", "HR", "SI", "EE", "LV", "LT", "CY", "MT"}
+
+
+def region_of(country: str | None) -> str | None:
+    """The region the ICP speaks in, from a two-letter country code. Unknown countries stay unknown."""
+    c = (country or "").upper()
+    return "North America" if c in NORTH_AMERICA else "Europe" if c in EUROPE else None
 
 
 def _rows(text: str) -> list[dict]:
@@ -139,8 +148,9 @@ def _rows(text: str) -> list[dict]:
 
 
 def import_accounts(cur, text: str) -> dict:
-    """Columns: name, domain (required); industry, employees, country, lifecycle, owner_email, crm_id, parent_domain.
-    A domain already on the desk is updated, never duplicated."""
+    """Columns: name, domain (required); industry, employees, country, revenue_band, tech (separated by ';'),
+    lifecycle, owner_email, crm_id, parent_domain. Region comes from the country. A domain already on the desk is
+    updated, never duplicated; a blank cell keeps what the desk has."""
     done, refused, parents = 0, [], []
     for i, r in enumerate(_rows(text), start=2):
         domain = normalize_domain(r.get("domain"))
@@ -157,16 +167,20 @@ def import_accounts(cur, text: str) -> dict:
             continue
         owner = db.val(cur, "select id from users where email = %s", r["owner_email"].lower()) if r.get("owner_email") else None
         aid = db.val(cur, """
-            insert into accounts (name, name_key, primary_domain, industry, employees, hq_country, lifecycle, owner_id, crm_id, source)
-            values (%s,%s,%s,%s,%s,%s,coalesce(%s, 'prospect'),%s,%s,'import')
+            insert into accounts (name, name_key, primary_domain, industry, employees, hq_country, lifecycle, owner_id, crm_id, source,
+                                  region, revenue_band, tech)
+            values (%s,%s,%s,%s,%s,%s,coalesce(%s, 'prospect'),%s,%s,'import',%s,%s,%s)
             on conflict (primary_domain) do update set name = excluded.name, name_key = excluded.name_key,
               industry = coalesce(excluded.industry, accounts.industry), employees = coalesce(excluded.employees, accounts.employees),
               hq_country = coalesce(excluded.hq_country, accounts.hq_country),
               lifecycle = case when %s::text is null then accounts.lifecycle else excluded.lifecycle end,
-              owner_id = coalesce(excluded.owner_id, accounts.owner_id), crm_id = coalesce(excluded.crm_id, accounts.crm_id)
+              owner_id = coalesce(excluded.owner_id, accounts.owner_id), crm_id = coalesce(excluded.crm_id, accounts.crm_id),
+              region = coalesce(excluded.region, accounts.region), revenue_band = coalesce(excluded.revenue_band, accounts.revenue_band),
+              tech = case when cardinality(excluded.tech) > 0 then excluded.tech else accounts.tech end
             returning id""", r["name"], normalize_name(r["name"]), domain, r.get("industry") or None,
                      int(emp) if emp else None, (r.get("country") or "").upper() or None, lifecycle, owner,
-                     r.get("crm_id") or None, lifecycle)
+                     r.get("crm_id") or None, region_of(r.get("country")), r.get("revenue_band") or None,
+                     [t.strip() for t in (r.get("tech") or "").split(";") if t.strip()], lifecycle)
         db.run(cur, "insert into account_domains (domain, account_id) values (%s,%s) on conflict do nothing", domain, aid)
         if r.get("parent_domain"):
             parents.append((aid, normalize_domain(r["parent_domain"])))

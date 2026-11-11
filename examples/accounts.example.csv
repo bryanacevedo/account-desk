@@ -1,3 +1,3 @@
-name,domain,industry,employees,country,lifecycle,owner_email,crm_id,parent_domain
-Example Analytics,exampleanalytics.example,Software,240,US,prospect,riley@yourcompany.example,001EX0001,
-Example Analytics EU,exampleanalytics-eu.example,Software,40,DE,prospect,,001EX0002,exampleanalytics.example
+name,domain,industry,employees,country,revenue_band,tech,lifecycle,owner_email,crm_id,parent_domain
+Example Analytics,exampleanalytics.example,Software,240,US,$20M-$100M,Snowflake;Stripe,prospect,riley@yourcompany.example,001EX0001,
+Example Analytics EU,exampleanalytics-eu.example,Software,40,DE,,,prospect,,001EX0002,exampleanalytics.example

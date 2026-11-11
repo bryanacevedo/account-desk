@@ -34,6 +34,14 @@ def _matches(rule: dict, account: dict) -> bool:
     raise ValueError(f"unknown ICP operator {op}")
 
 
+MIN_KNOWN = 0.6
+
+
+def _known(rule: dict, account: dict) -> bool:
+    v = account.get(rule["field"])
+    return v is not None and v != [] and v != ""
+
+
 def fit(rules: dict, account: dict) -> dict:
     """Returns {score, tier, factors: [{key, matched, weight, contribution}], excluded: reason|None}."""
     if account.get("lifecycle") in ("customer", "open_opp", "competitor"):
@@ -41,13 +49,23 @@ def fit(rules: dict, account: dict) -> dict:
     for ex in rules.get("excludes", []):
         if _matches(ex, account):
             return {"score": 0, "tier": "X", "factors": [], "excluded": ex["reason"]}
+    # A field the desk does not know is left out of the score, not counted as a miss: an imported account with no
+    # technology data is judged on what is known. Below MIN_KNOWN of the profile's weight, fit is not judged at all.
     total = sum(f["weight"] for f in rules["factors"] if f["weight"] > 0) or 1
+    known = [f for f in rules["factors"] if _known(f, account)]
+    known_total = sum(f["weight"] for f in known if f["weight"] > 0) or 1
     factors, got = [], 0.0
     for f in rules["factors"]:
+        if f not in known:
+            factors.append({"key": f["key"], "matched": None, "weight": f["weight"], "contribution": 0.0})
+            continue
         m = _matches(f, account)
-        contribution = 100.0 * f["weight"] / total if m else 0.0
+        contribution = 100.0 * f["weight"] / known_total if m else 0.0
         got += contribution
         factors.append({"key": f["key"], "matched": m, "weight": f["weight"], "contribution": round(contribution, 1)})
+    if known_total / total < MIN_KNOWN:
+        return {"score": 0, "tier": "C", "factors": factors,
+                "excluded": f"Too little known to judge fit ({round(100 * known_total / total)}% of the profile)"}
     for p in rules.get("penalties", []):
         if _matches(p, account):
             got -= p["weight"]
@@ -171,11 +189,13 @@ def _rescore_job(cur, payload: dict) -> None:
 def _rescore_all(cur, payload: dict) -> None:
     """Nightly decay. Splits the work into batches of 500, each its own job and transaction, so one failure does
     not roll back the night and no lock is held for long."""
+    # A new ICP changes every account's fit, so then every account is rescored; the nightly run only touches those
+    # whose score can have moved.
     ids = [r["id"] for r in db.all(cur, """
         select a.id from accounts a
-        where exists (select 1 from signals s where s.account_id = a.id and s.observed_at > app_now() - interval '365 days')
+        where %s or exists (select 1 from signals s where s.account_id = a.id and s.observed_at > app_now() - interval '365 days')
            or exists (select 1 from account_scores sc where sc.account_id = a.id and sc.priority > 0)
-        order by a.id""")]
+        order by a.id""", payload.get("reason") == "icp")]
     stamp = db.val(cur, "select to_char(app_now(), 'YYYYMMDDHH24MI')")
     for i in range(0, len(ids), 500):
         jobs.enqueue(cur, "rescore_batch", {"ids": ids[i:i + 500]}, dedupe_key=f"rescore_batch:{stamp}:{i}")

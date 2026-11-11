@@ -331,6 +331,50 @@ function LiftButton({ id, onDone }: { id: number; onDone: () => void }) {
   return <button className="btn quiet sm" disabled={busy} onClick={() => run(async () => { await api(`/api/suppressions/${id}`, { method: "DELETE" }); onDone(); }, "Lifted.")}>Lift</button>;
 }
 
+/** The ideal customer profile. GTM edits weights, values and tier lines; publishing makes a new version and
+ *  rescores every account. A field the desk does not know about an account is left out of its score. */
+function IcpSection({ icp, canEdit, onDone }: { icp: any; canEdit: boolean; onDone: () => void }) {
+  const [draft, setDraft] = useState<any>(null);
+  const [note, setNote] = useState("");
+  const [busy, run] = useBusy();
+  const r = draft || icp.rules;
+  const setFactor = (i: number, patch: any) => setDraft({ ...r, factors: r.factors.map((f: any, j: number) => (j === i ? { ...f, ...patch } : f)) });
+  const show = (f: any) => (f.op === "between" ? `${f.value[0]} to ${f.value[1]}` : f.value.join(", "));
+  const parse = (f: any, text: string) => (f.op === "between" ? text.split(/\s*(?:to|-|,)\s*/).map((x) => Number(x) || 0).slice(0, 2)
+    : text.split(",").map((x) => x.trim()).filter(Boolean));
+  return (
+    <Section title="Ideal customer profile" right={canEdit && !draft ? <button className="btn quiet sm" onClick={() => setDraft(JSON.parse(JSON.stringify(icp.rules)))}>Edit</button> : null}>
+      <div className="ledger">
+        {r.factors.map((f: any, i: number) => (
+          <div key={f.key} className="row" style={{ gridTemplateColumns: "140px minmax(0,1fr) 72px", minHeight: 36 }}>
+            <span className="strong">{cap(f.key)}</span>
+            {draft ? <input className="input" defaultValue={show(f)} aria-label={`${f.key} values`} onBlur={(e) => setFactor(i, { value: parse(f, e.target.value) })} />
+              : <span className="mute clip">{show(f)}</span>}
+            {draft ? <input className="input num" inputMode="numeric" value={f.weight} aria-label={`${f.key} weight`} onChange={(e) => setFactor(i, { weight: Math.min(100, Number(e.target.value) || 0) })} />
+              : <span className="num">{f.weight}</span>}
+          </div>
+        ))}
+      </div>
+      {draft ? (
+        <>
+          <div className="form-row">
+            <label className="field"><span>Tier A from</span><input className="input num" inputMode="numeric" value={r.tiers.A} onChange={(e) => setDraft({ ...r, tiers: { ...r.tiers, A: Number(e.target.value) || 0 } })} /></label>
+            <label className="field"><span>Tier B from</span><input className="input num" inputMode="numeric" value={r.tiers.B} onChange={(e) => setDraft({ ...r, tiers: { ...r.tiers, B: Number(e.target.value) || 0 } })} /></label>
+            <label className="field" style={{ flex: 2 }}><span>What changed and why</span><input className="input" value={note} maxLength={300} onChange={(e) => setNote(e.target.value)} /></label>
+          </div>
+          <div className="actions" style={{ justifyContent: "flex-end" }}>
+            <button className="btn quiet sm" onClick={() => { setDraft(null); setNote(""); }}>Cancel</button>
+            <button className="btn sm" disabled={busy || note.trim().length < 3} onClick={() => run(async () => {
+              await api("/api/icp", { method: "PUT", body: { ...r, note } });
+              setDraft(null); setNote(""); onDone();
+            }, "Published. Every account is rescored now.")}>Publish</button>
+          </div>
+        </>
+      ) : <div className="small mute">Tier A from {r.tiers.A}, tier B from {r.tiers.B}. A field we do not know is left out of the score. Published {day(icp.published_at)}.</div>}
+    </Section>
+  );
+}
+
 /** Accounts and people from a CSV. Rows the desk refuses come back with the reason, row by row. */
 function ImportBox() {
   const [kind, setKind] = useState<"accounts" | "people">("accounts");
@@ -352,7 +396,7 @@ function ImportBox() {
         <label className="btn line sm" style={{ cursor: "pointer" }}>
           Choose a file<input type="file" accept=".csv,text/csv" className="sr-only" disabled={busy} onChange={(e) => pick(e.target.files?.[0])} />
         </label>
-        <span className="mute small">{kind === "accounts" ? "name, domain, industry, employees, country, lifecycle, owner_email, crm_id, parent_domain" : "full_name, company_domain, title, email, linkedin_url, phone, country, timezone"}</span>
+        <span className="mute small">{kind === "accounts" ? "name, domain, industry, employees, country, revenue_band, tech, lifecycle, owner_email, crm_id, parent_domain" : "full_name, company_domain, title, email, linkedin_url, phone, country, timezone"}</span>
       </div>
       {result ? (
         <div className="ledger" style={{ marginTop: 12 }}>
@@ -408,18 +452,7 @@ export function Settings() {
           <div className="small mute">Legal rules per country are a starting point. Counsel to confirm.</div>
         </Section>
       </div>
-      <Section title="Ideal customer profile">
-        <div className="ledger">
-          {data.icp.rules.factors.map((f: any) => (
-            <div key={f.key} className="row" style={{ gridTemplateColumns: "140px minmax(0,1fr) 60px", minHeight: 36 }}>
-              <span className="strong">{cap(f.key)}</span>
-              <span className="mute clip">{Array.isArray(f.value) ? (f.op === "between" ? `${f.value[0]} to ${f.value[1]}` : f.value.join(", ")) : String(f.value)}</span>
-              <span className="num">{f.weight}</span>
-            </div>
-          ))}
-        </div>
-        <div className="small mute">Tier A from {data.icp.rules.tiers.A}, tier B from {data.icp.rules.tiers.B}. Published {day(data.icp.published_at)}.</div>
-      </Section>
+      <IcpSection icp={data.icp} canEdit={canEdit} onDone={reload} />
       {me && me.user.role !== "sdr" ? <ImportBox /> : null}
       <Section title="Do not contact">
         <AddSuppression onDone={reload} />
