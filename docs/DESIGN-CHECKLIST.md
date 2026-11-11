@@ -15,7 +15,7 @@ corrections during the v2 build, 2026-11-08 to 11-10.
 - [ ] One name for one thing across every screen.
 - [ ] Where a person came from is always named, in its accent: Attendee in green, Prospect in blue.
 - [ ] A value is shown once per view: never as a heading and again in the line under it.
-- [ ] A status is a small icon and a word, never a bare coloured ring or dot. The ring read as "the damn AI giveaway design" (Bryan, Outbound Desk, 2026-11-11); he wants subtle, elegant icons that add flair, not fewer statuses.
+- [ ] A status is a small icon and a word, never a bare coloured ring or dot. The ring read as "the damn AI giveaway design" (Bryan, Account Desk, 2026-11-11); he wants subtle, elegant icons that add flair, not fewer statuses.
 - [ ] Every bar says what it measures, on the bar: a share ("31%"), a share of something named ("28% of Q1"), or used of approved ("44 of 604"). A bar with no number beside it is decoration. The one exception is a timeline drawn on a date axis (the Events runway): the axis is its scale, and a step count on it added nothing (Bryan, 2026-11-10).
 - [ ] Rows in one list share one right edge: amounts, actions and the figure above them line up. An action that appears on hover takes the place of the value it acts on ("Edit" replaces the amount, "Open" replaces the time).
 - [ ] A history or log line that is really counts shows them as figures with a plain label ("Tier mix: 87 tier 1, 133 tier 2"), never a run-on sentence.

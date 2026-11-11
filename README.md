@@ -2,13 +2,13 @@
 
 Signal & Account based outbound.
 
-[![CI](https://github.com/bryanacevedo/outbound-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/bryanacevedo/outbound-desk/actions/workflows/ci.yml)
+[![CI](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml)
 
 Account Desk runs signal-based, account-based outbound for a B2B sales team. It watches for the moments a company that fits your customer profile shows it may need you (a new finance leader, a pricing change, hiring for the team you serve, a past champion joining), decides which accounts are worth working this week and why, finds the people who buy there, drafts outreach grounded in what actually happened at that company, has an SDR approve it, sends it from healthy inboxes at a human pace, and handles every reply through to a meeting and pipeline. It measures which signals turn into meetings against a comparison group nobody contacted.
 
 It is built for a small team that would rather write to 40 companies at the right moment than to 4,000 at random.
 
-**[Try the live demo](https://outbound-desk.onrender.com).** Pick who you are acting as in the sidebar (an SDR, the sales manager, or GTM engineering). The company, its accounts, people and vendors are all invented, and every vendor is simulated. If it has been idle, the first load takes about a minute. Read "What is real and what is simulated" before trusting any number in it.
+**[Try the live demo](https://account-desk-x4ko.onrender.com).** Pick who you are acting as in the sidebar (an SDR, the sales manager, or GTM engineering). The company, its accounts, people and vendors are all invented, and every vendor is simulated. If it has been idle, the first load takes about a minute. Read "What is real and what is simulated" before trusting any number in it.
 
 ## The rules it is built on
 

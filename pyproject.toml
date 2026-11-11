@@ -1,5 +1,5 @@
 [project]
-name = "outbound-desk"
+name = "account-desk"
 version = "0.1.0"
 description = "Signal-based, account-based outbound: from a signal to a meeting, with a person on every send that matters."
 requires-python = ">=3.13,<3.14"

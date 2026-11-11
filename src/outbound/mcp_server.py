@@ -19,9 +19,9 @@ from . import db, views
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 
 server = MCPServer(
-    name="outbound-desk",
+    name="account-desk",
     title="Account Desk",
-    instructions="Read-only questions about a signal-based outbound desk: which accounts are hot and why, what is "
+    instructions="Read-only questions about a signal-based account desk: which accounts are hot and why, what is "
                  "waiting on an SDR, and how plays perform against their held-back comparison group. No money figures.",
 )
 

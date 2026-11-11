@@ -126,13 +126,13 @@ The same brief, a new fresh reviewer, at commit 2382d2c. Its words, unedited apa
 97	- Whether the play editor cost card's worst-case figures match real vendor pricing (they come from `spend.RATES`).
 98	- Whether the full suite passes on the current uncommitted tree. Tests were not run (read-only review); PROJECT-STATUS reports a 79-pass run that predates the current changes.
 99	- Whether the Render demo matches this tree.
-100	# Outbound Desk: project status
+100	# Account Desk: project status
 101	
 102	**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 14. **Working name**, Bryan's to change.
 103	
 104	## Where it stands
 105	
-106	v1 is built end to end on simulated vendors. **Public** at https://github.com/bryanacevedo/outbound-desk since 2026-11-11 (Bryan: keep the name, publish). CI green on the first push (lint, the suite on Postgres 18, the web build). **Live demo** at https://outbound-desk.onrender.com since 2026-11-11 (Render free plan, service `outbound-desk`, Docker with Postgres inside; the 60-day simulation is built into the image, so a start or a wake takes seconds; checked on the live link: every page 200 in under 0.7 s). The first deploy failed because the simulation ran at start and took longer than Render's port wait; fixed by building it into the image.
+106	v1 is built end to end on simulated vendors. **Public** at https://github.com/bryanacevedo/account-desk since 2026-11-11 (Bryan: keep the name, publish). CI green on the first push (lint, the suite on Postgres 18, the web build). **Live demo** at https://account-desk-x4ko.onrender.com since 2026-11-11 (Render free plan, service `account-desk`, Docker with Postgres inside; the 60-day simulation is built into the image, so a start or a wake takes seconds; checked on the live link: every page 200 in under 0.7 s). The first deploy failed because the simulation ran at start and took longer than Render's port wait; fixed by building it into the image.
 107	
 108	Checked on 2026-11-11 by running them:
 109	
@@ -187,19 +187,19 @@ The same brief, a new fresh reviewer, at commit 2382d2c. Its words, unedited apa
 158	- People open a person sheet from an account: how to reach them, their plays, and one history across email, LinkedIn, calls and signals.
 159	- Icons within the Instrument identity (status icons in ink, green for healthy, amber and red only where someone must act); relative times spelled out ("2 days ago"), Bryan's call.
 160	- The flaky monitor test was the slow-first-touch alert catching late approvals by simulated SDRs, which is its job; the test now fails only when a play is stuck inside the desk, and that found a real one (decision 17). Simulator picks now use its seeded generator instead of SQL `random()`.
-161	# Outbound Desk
+161	# Account Desk
 162	
-163	[![CI](https://github.com/bryanacevedo/outbound-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/bryanacevedo/outbound-desk/actions/workflows/ci.yml)
+163	[![CI](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml)
 164	
-165	Outbound Desk runs signal-based, account-based outbound for a B2B sales team. It watches for the moments a company that fits your customer profile shows it may need you (a new finance leader, a pricing change, hiring for the team you serve, a past champion joining), decides which accounts are worth working this week and why, finds the people who buy there, drafts outreach grounded in what actually happened at that company, has an SDR approve it, sends it from healthy inboxes at a human pace, and handles every reply through to a meeting and pipeline. It measures which signals turn into meetings against a comparison group nobody contacted.
+165	Account Desk runs signal-based, account-based outbound for a B2B sales team. It watches for the moments a company that fits your customer profile shows it may need you (a new finance leader, a pricing change, hiring for the team you serve, a past champion joining), decides which accounts are worth working this week and why, finds the people who buy there, drafts outreach grounded in what actually happened at that company, has an SDR approve it, sends it from healthy inboxes at a human pace, and handles every reply through to a meeting and pipeline. It measures which signals turn into meetings against a comparison group nobody contacted.
 166	
 167	It is built for a small team that would rather write to 40 companies at the right moment than to 4,000 at random.
 168	
-169	**[Try the live demo](https://outbound-desk.onrender.com).** Pick who you are acting as in the sidebar (an SDR, the sales manager, or GTM engineering). The company, its accounts, people and vendors are all invented, and every vendor is simulated. If it has been idle, the first load takes about a minute. Read "What is real and what is simulated" before trusting any number in it.
+169	**[Try the live demo](https://account-desk-x4ko.onrender.com).** Pick who you are acting as in the sidebar (an SDR, the sales manager, or GTM engineering). The company, its accounts, people and vendors are all invented, and every vendor is simulated. If it has been idle, the first load takes about a minute. Read "What is real and what is simulated" before trusting any number in it.
 170	
 171	## The rules it is built on
 172	
-173	Autonomous "AI SDRs" mostly failed in 2025 and 2026: shallow or invented personalization, burned sending domains, bad data underneath. The teams getting results use signals plus fit to choose accounts, let AI research and draft, and keep a person on the send decision. Outbound Desk takes that as its design:
+173	Autonomous "AI SDRs" mostly failed in 2025 and 2026: shallow or invented personalization, burned sending domains, bad data underneath. The teams getting results use signals plus fit to choose accounts, let AI research and draft, and keep a person on the send decision. Account Desk takes that as its design:
 174	
 175	| People | AI | Code |
 176	|---|---|---|

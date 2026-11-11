@@ -260,7 +260,7 @@ def test_ordinary_business_terms_are_not_unsourced_names():
 def test_the_public_demo_links_to_itself_not_localhost():
     from pathlib import Path
     docker = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text()
-    assert "PUBLIC_URL=https://outbound-desk.onrender.com" in docker
+    assert "PUBLIC_URL=https://account-desk-x4ko.onrender.com" in docker
 
 
 def test_draft_sentences_keep_names_articles_and_never_repeat_the_company():

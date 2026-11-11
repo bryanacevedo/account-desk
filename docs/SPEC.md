@@ -1,8 +1,8 @@
-# Outbound Desk: spec
+# Account Desk: spec
 
 **Written:** 2026-11-11. **Working name**, Bryan's call to rename. **Status:** v1 spec, before code.
 
-Outbound Desk runs signal-based, account-based outbound from one place. It watches for moments when a company that fits your ideal customer profile (ICP) shows it may need you, decides which accounts are worth working this week and why, maps the people who buy there, drafts outreach grounded in what actually happened at that company, has a person approve it, sends it through healthy inboxes at a pace a human would, and handles every reply, meeting and outcome through to pipeline. It measures which signals turn into meetings and which do not, and feeds that back into the score.
+Account Desk runs signal-based, account-based outbound from one place. It watches for moments when a company that fits your ideal customer profile (ICP) shows it may need you, decides which accounts are worth working this week and why, maps the people who buy there, drafts outreach grounded in what actually happened at that company, has a person approve it, sends it through healthy inboxes at a pace a human would, and handles every reply, meeting and outcome through to pipeline. It measures which signals turn into meetings and which do not, and feeds that back into the score.
 
 It is the opposite of volume outbound. The unit of work is an **account in a play**, never a contact in a list.
 

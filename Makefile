@@ -32,4 +32,4 @@ monitors:         ## run every monitor once
 	$(PY) -m outbound monitors
 
 docker:           ## the same image the hosted demo runs
-	docker build -t outbound-desk . && docker run --rm -p 8800:8800 outbound-desk
+	docker build -t account-desk . && docker run --rm -p 8800:8800 account-desk

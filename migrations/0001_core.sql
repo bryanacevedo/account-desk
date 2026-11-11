@@ -1,4 +1,4 @@
--- Outbound Desk core schema.
+-- Account Desk core schema.
 -- Rules the database enforces live here as constraints and triggers, so the bad state cannot be written.
 -- Everything about time reads app_now(), which is the simulated clock in demo mode and now() otherwise.
 

@@ -3,7 +3,7 @@
 # minutes on the free plan.
 services:
   - type: web
-    name: outbound-desk
+    name: account-desk
     runtime: docker
     plan: free
     healthCheckPath: /api/health
