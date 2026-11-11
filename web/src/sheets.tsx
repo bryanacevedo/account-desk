@@ -717,7 +717,7 @@ export function AccountSheet({ id }: { id: number }) {
         </>
       ) : (
         <>
-          <span className="small mute">Accept to start research and first drafts, or skip with a reason.</span>
+          <span className="small mute">Accept and the desk reads the company, finds the people who buy and drafts first emails for you to approve. Or skip, with a reason.</span>
           <button className="btn line" disabled={busy} onClick={() => setSkipping(true)}>Skip</button>
           <button className="btn" disabled={busy} onClick={() => decide(true)}>Accept</button>
         </>
