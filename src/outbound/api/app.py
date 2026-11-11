@@ -576,6 +576,74 @@ def _sdr_owns(cur, u: dict, account_id: int | None) -> None:
         raise HTTPException(403, "This account belongs to another SDR.")
 
 
+class LogMeeting(BaseModel):
+    person_id: int | None = None
+    starts_at: datetime
+
+
+@app.post("/api/accounts/{account_id}/meetings")
+def log_meeting(account_id: int, body: LogMeeting, u: dict = Depends(writer)) -> dict:
+    """A meeting the SDR booked another way (a call, LinkedIn, a conference): recorded like any other."""
+    with db.tx() as cur:
+        _sdr_owns(cur, u, account_id)
+        if body.person_id and db.val(cur, "select account_id from people where id = %s", body.person_id) != account_id:
+            raise HTTPException(422, "That person is not at this account.")
+        mid = pipeline.book_meeting(cur, account_id=account_id, person_id=body.person_id, starts_at=body.starts_at,
+                                    source="sdr", owner_id=u["id"])
+    return {"ok": True, "meeting_id": mid}
+
+
+class Activity(BaseModel):
+    kind: Literal["they_called", "they_emailed", "i_emailed"]
+    note: str | None = Field(None, max_length=2000)
+
+
+@app.post("/api/people/{person_id}/activity")
+def log_activity(person_id: int, body: Activity, u: dict = Depends(writer)) -> dict:
+    """Contact that happened outside the desk. Any of it means the SDR is in the conversation, so the desk's own
+    steps for this person stop (docs/SPEC.md 22.19)."""
+    with db.tx() as cur:
+        p = db.one(cur, "select id, account_id from people where id = %s", person_id)
+        if p is None:
+            raise HTTPException(404, "No such person.")
+        _sdr_owns(cur, u, p["account_id"])
+        ap = db.val(cur, "select account_play_id from enrollments where person_id = %s order by created_at desc limit 1", person_id)
+        channel, direction = {"they_called": ("call", "in"), "they_emailed": ("email", "in"), "i_emailed": ("email", "out")}[body.kind]
+        db.run(cur, """insert into touches (account_id, person_id, account_play_id, channel, direction, kind, at, source, dedup_key)
+                       values (%s,%s,%s,%s,%s,%s,app_now(),'sdr',%s)""", p["account_id"], person_id, ap, channel, direction,
+               body.kind, f"activity:{person_id}:{db.val(cur, 'select extract(epoch from app_now())')}")
+        sdr_steps.in_conversation(cur, person_id, ap)
+        audit.log(cur, "person", "activity_logged", "person", person_id, {"kind": body.kind, "note": body.note}, actor_id=u["id"])
+    return {"ok": True}
+
+
+class Colleagues(BaseModel):
+    action: Literal["stop", "resume_now"]
+
+
+@app.post("/api/replies/{reply_id}/colleagues")
+def colleagues(reply_id: int, body: Colleagues, u: dict = Depends(writer)) -> dict:
+    """After a positive reply the desk resumes the person's colleagues in 3 business days unless the SDR decides
+    otherwise: stop them (this one conversation is enough) or resume them now."""
+    with db.tx() as cur:
+        r = db.one(cur, "select id, account_id, person_id from replies where id = %s", reply_id)
+        if r is None or not r["account_id"]:
+            raise HTTPException(404, "No such reply.")
+        _sdr_owns(cur, u, r["account_id"])
+        paused = db.all(cur, """select e.id from enrollments e join account_plays ap on ap.id = e.account_play_id
+                                where ap.account_id = %s and e.state = 'paused' and e.pause_reason = 'account_reply'
+                                and e.person_id is distinct from %s""", r["account_id"], r["person_id"])
+        for e in paused:
+            if body.action == "stop":
+                outreach.stop_enrollment(cur, e["id"], "colleague_engaged", close_play=False)
+            else:
+                replies.resume(cur, e["id"])
+        db.run(cur, "update jobs set status = 'done', finished_at = app_now(), last_error = 'decided by the SDR' "
+                    "where dedupe_key = %s and status = 'queued'", f"rap:{reply_id}")
+        audit.log(cur, "person", f"colleagues_{body.action}", "reply", reply_id, {"count": len(paused)}, actor_id=u["id"])
+    return {"ok": True, "colleagues": len(paused)}
+
+
 class Hold(BaseModel):
     until: datetime
     reason: str = Field(min_length=3, max_length=300)

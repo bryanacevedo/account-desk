@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Avatar } from "../marks";
 import { SignalIcon, SignalLabel } from "../signalIcons";
@@ -134,6 +135,29 @@ function Feed({ rows }: { rows: any[] }) {
   );
 }
 
+/** Link a signal to an account the desk has, found by name or domain. */
+function LinkTo({ signalId, hint }: { signalId: number; hint: string }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState(hint || "");
+  const [hits, setHits] = useState<any[]>([]);
+  const [busy, run] = useBusy();
+  useEffect(() => {
+    if (!open || q.trim().length < 2) { setHits([]); return; }
+    const t = window.setTimeout(() => api<any>(`/api/accounts?view=all&q=${encodeURIComponent(q.trim())}`).then((r) => setHits(r.accounts.slice(0, 5))).catch(() => setHits([])), 250);
+    return () => window.clearTimeout(t);
+  }, [q, open]);
+  if (!open) return <button className="btn quiet sm" onClick={() => setOpen(true)}>Link</button>;
+  return (
+    <span className="link-pop">
+      <input className="input" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Account name or domain" aria-label="Find the account" />
+      {hits.map((a) => (
+        <button key={a.id} className="btn quiet sm" disabled={busy} onClick={() => run(() => api(`/api/signals/${signalId}/resolve`, { method: "POST", body: { action: "link", account_id: a.id } }), `Linked to ${a.name}.`)}>{a.name}</button>
+      ))}
+      <button className="btn quiet sm" onClick={() => setOpen(false)}>Cancel</button>
+    </span>
+  );
+}
+
 /** Signals about companies the desk does not know: add the company as an account, or set it aside. */
 function Unmatched({ rows }: { rows: any[] }) {
   const [busy, run] = useBusy();
@@ -149,6 +173,7 @@ function Unmatched({ rows }: { rows: any[] }) {
           <span className="clip hide-sm">{s.evidence.summary}</span>
           <span className="actions">
             <button className="btn quiet sm" disabled={busy} onClick={() => act(s.id, "ignore")}>Set aside</button>
+            <LinkTo signalId={s.id} hint={s.raw_company || (s.raw_domain || "").split(".")[0]} />
             {s.raw_domain ? <button className="btn line sm" disabled={busy} onClick={() => act(s.id, "create")}>Add account</button> : null}
           </span>
         </div>

@@ -257,10 +257,14 @@ def build_committee(cur, ap: dict, play: dict, account: dict, *, exclude: frozen
                                  account_id=account["id"]) as info:
                 found = ad.people.search(cur, account, persona["title_patterns"], 3)
                 info["found"] = len(found)
+            from .privacy import linkedin_hash
             for c in found:
                 existing = db.val(cur, "select id from people where linkedin_url = %s", c.linkedin_url)
                 if existing:
                     continue
+                if c.linkedin_url and db.val(cur, "select exists (select 1 from suppressions where kind = 'linkedin_hash' "
+                                                  "and value = %s)", linkedin_hash(c.linkedin_url)):
+                    continue  # erased on request: never added again
                 pid = db.val(cur, """insert into people (account_id, full_name, first_name, last_name, title, seniority,
                                                          linkedin_url, country, timezone, source, photo_url)
                                      values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'people_search',%s) returning id""",

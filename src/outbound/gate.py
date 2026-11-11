@@ -70,6 +70,11 @@ def person_reasons(cur, person_id: int, channel: str, *, account_play_id: int | 
         p["email"] or "", p["email"], p["email"], str(person_id), p["phone"] or "", channel)
     if sup:
         out.append(Reason("suppressed", True, f"Do not contact: {sup['reason']}"))
+    elif p["linkedin_url"]:
+        from .privacy import linkedin_hash
+        if db.val(cur, """select exists (select 1 from suppressions where kind = 'linkedin_hash' and value = %s
+                          and (expires_at is null or expires_at > app_now()))""", linkedin_hash(p["linkedin_url"])):
+            out.append(Reason("suppressed", True, "Do not contact: erased on request"))
     hold = db.one(cur, """select reason, until from holds where person_id = %s and until > app_now()
                           order by until desc limit 1""", person_id)
     if hold:

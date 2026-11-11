@@ -137,6 +137,23 @@ def test_erasure_removes_the_person_and_keeps_them_out(client):
     assert client.post(f"/api/people/{p['id']}/erase", headers={"X-Acting-As": str(user("sdr"))}).status_code == 403
 
 
+def test_an_erased_person_found_again_by_profile_stays_out(client):
+    from outbound import gate
+    from outbound.privacy import linkedin_hash
+    with db.tx() as cur:
+        p = db.one(cur, "select id, linkedin_url, account_id from people where linkedin_url is not null order by id desc limit 1")
+    client.post(f"/api/people/{p['id']}/erase", headers={"X-Acting-As": str(user("gtm"))})
+    with db.tx() as cur:
+        assert db.val(cur, "select exists (select 1 from suppressions where kind = 'linkedin_hash' and value = %s)",
+                      linkedin_hash(p["linkedin_url"]))
+        # The same profile, written differently, comes back from a people search with no email.
+        again = db.val(cur, """insert into people (account_id, full_name, linkedin_url, source) values (%s, 'Back Again', %s, 'people_search')
+                               returning id""", p["account_id"], p["linkedin_url"].upper().replace("https://www.", "http://") + "/")
+        reasons = gate.person_reasons(cur, again, "linkedin")
+        db.run(cur, "rollback")
+    assert any(r.code == "suppressed" for r in reasons)
+
+
 def test_opt_out_links_in_sent_emails_still_open(client):
     """The link is signed with a secret kept in the database, so it works from any process, not only the one
     that drafted the email."""
@@ -264,3 +281,53 @@ def test_a_live_play_keeps_its_audience_until_a_manager_pauses_it(client):
     client.post(f"/api/plays/{pid}", json={"status": "paused", "reason": "test"}, headers={"X-Acting-As": mgr})
     assert client.put(f"/api/plays/{pid}", json={**PLAY, "name": "Live edit rules", "holdout_pct": 30},
                       headers={"X-Acting-As": gtm}).status_code == 200
+
+
+def test_outside_contact_stops_the_desk_for_that_person(client):
+    with db.tx() as cur:
+        e = db.one(cur, """select e.person_id, ap.owner_id from enrollments e join account_plays ap on ap.id = e.account_play_id
+                           where e.state = 'active' and ap.owner_id is not null order by e.id desc limit 1""")
+    r = client.post(f"/api/people/{e['person_id']}/activity", json={"kind": "they_called"}, headers={"X-Acting-As": str(e["owner_id"])})
+    assert r.status_code == 200
+    with db.tx() as cur:
+        assert db.val(cur, "select count(*) from enrollments where person_id = %s and state in ('pending','active','paused')",
+                      e["person_id"]) == 0
+        assert db.val(cur, "select stop_reason from enrollments where person_id = %s order by id desc limit 1",
+                      e["person_id"]) == "rep_in_conversation"
+
+
+def test_an_sdr_cannot_act_on_another_sdrs_account(client):
+    with db.tx() as cur:
+        r = db.one(cur, """select ap.account_id, ap.owner_id from account_plays ap where ap.state in ('active','engaged')
+                           and ap.owner_id is not null limit 1""")
+        other = db.val(cur, "select id from users where role = 'sdr' and id <> %s limit 1", r["owner_id"])
+    resp = client.post(f"/api/accounts/{r['account_id']}/hold", json={"until": "2027-01-01T12:00:00+00:00", "reason": "partner"},
+                       headers={"X-Acting-As": str(other)})
+    assert resp.status_code == 403
+
+
+def test_unmatched_signals_can_be_linked_added_or_set_aside(client):
+    with db.tx() as cur:
+        ids = [r["id"] for r in db.all(cur, "select id from signals where status = 'unmatched' and raw_domain is not null order by id limit 3")]
+        acct = db.val(cur, "select id from accounts order by id limit 1")
+    if len(ids) < 3:
+        pytest.skip("the simulated world produced fewer than 3 unmatched signals")
+    mgr = {"X-Acting-As": str(user("manager"))}
+    assert client.post(f"/api/signals/{ids[0]}/resolve", json={"action": "link", "account_id": acct}, headers=mgr).json()["account_id"] == acct
+    created = client.post(f"/api/signals/{ids[1]}/resolve", json={"action": "create"}, headers=mgr).json()["account_id"]
+    client.post(f"/api/signals/{ids[2]}/resolve", json={"action": "ignore"}, headers=mgr)
+    with db.tx() as cur:
+        assert [db.val(cur, "select status from signals where id = %s", i) for i in ids] == ["matched", "matched", "ignored"]
+        assert db.val(cur, "select source from accounts where id = %s", created) == "signal"
+
+
+def test_only_a_hand_added_do_not_contact_can_be_lifted(client):
+    mgr = {"X-Acting-As": str(user("manager"))}
+    client.post("/api/suppressions", json={"kind": "domain", "value": "liftable.example", "reason": "partner asked"}, headers=mgr)
+    with db.tx() as cur:
+        mine = db.val(cur, "select id from suppressions where value = 'liftable.example'")
+        theirs = db.val(cur, "select id from suppressions where source in ('link', 'reply') limit 1")
+    assert client.delete(f"/api/suppressions/{mine}", headers=mgr).status_code == 200
+    if theirs:
+        assert client.delete(f"/api/suppressions/{theirs}", headers=mgr).status_code == 409
+    assert client.delete(f"/api/suppressions/{mine}", headers={"X-Acting-As": str(user("sdr"))}).status_code == 403

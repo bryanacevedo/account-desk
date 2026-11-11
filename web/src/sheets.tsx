@@ -102,7 +102,7 @@ const ENROLL: Record<string, [Glyph, string]> = {
 const STOP: Record<string, string> = {
   replied_positive: "Replied", meeting_booked: "Meeting booked", bounced: "Bounced", unsubscribed: "Unsubscribed",
   not_interested: "Not interested", not_now: "Not now", wrong_person: "Wrong person", left_company: "Left",
-  approval_lapsed: "Approval came too late", person_moved: "Changed jobs", referral: "Referred someone",
+  approval_lapsed: "Approval came too late", rep_in_conversation: "SDR talking to them", colleague_engaged: "Colleague talking to us", person_moved: "Changed jobs", referral: "Referred someone",
   reply_received: "Replied, reading it", account_reply: "Colleague replied", out_of_office: "Out of office",
 };
 const stopWord = (r: string | null) => {
@@ -123,6 +123,8 @@ const TOUCH: Record<string, string> = {
   email_sent: "Email sent", reply: "Replied", meeting_booked: "Meeting booked", linkedin_connect: "Connection request sent",
   linkedin_accepted: "Accepted the connection", linkedin_message: "LinkedIn message sent", linkedin_reply: "Replied on LinkedIn",
   call_connected: "Call, spoke", call_voicemail: "Call, left a voicemail", call_no_answer: "Call, no answer",
+  call_wrong_number: "Call, wrong number", they_called: "They called", they_emailed: "They emailed directly",
+  i_emailed: "Emailed them directly", sdr_email: "Email written by the SDR",
 };
 
 export function PersonSheet({ id }: { id: number }) {
@@ -181,6 +183,8 @@ export function PersonSheet({ id }: { id: number }) {
           </div>
         ) : <Empty title="Not in a play" />}
       </Section>
+      <OutsideContact personId={p.id} onDone={reload} />
+      <EraseBox personId={p.id} name={p.full_name} />
       <Section title="History">
         {history.length ? (
           <ul className="timeline">
@@ -325,13 +329,80 @@ function LinkedInLog({ personId, canAccept, onDone }: { personId: number; canAcc
   );
 }
 
+/** Who gets what next in the current play, person by person: the account calendar the desk keeps. */
+function Calendar({ rows }: { rows: any[] }) {
+  const byPerson = new Map<string, any[]>();
+  for (const r of rows) byPerson.set(r.full_name, [...(byPerson.get(r.full_name) || []), r]);
+  return (
+    <div className="section">
+      <h2 style={{ fontSize: 13.5 }}>Calendar</h2>
+      <div className="ledger">
+        {[...byPerson.entries()].map(([name, steps]) => {
+          const e = steps[0];
+          const sent = steps.filter((x) => x.status === "sent").length;
+          const next = e.state === "active" && e.next_at ? (ahead(e.next_at) === "due" ? "due now" : ahead(e.next_at)) : null;
+          return (
+            <div key={name} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }}>
+              <Avatar name={name} photo={e.photo_url} />
+              <div className="cell-main"><span className="t">{name}</span><span className="s">{sent ? `${sent} sent` : "Nothing sent yet"}{next ? `, step ${e.step_index + 1} ${next}` : ""}</span></div>
+              <Status kind={(ENROLL[e.state] || ["off"])[0]}>{(ENROLL[e.state] || ["off", cap(e.state)])[1]}</Status>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function LogMeeting({ accountId, people, onDone }: { accountId: number; people: any[]; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [who, setWho] = useState("");
+  const [when, setWhen] = useState("");
+  const [busy, run] = useBusy();
+  if (!open) return <button className="btn quiet sm" onClick={() => setOpen(true)}>Log a meeting</button>;
+  return (
+    <div className="actions" style={{ flexWrap: "wrap", width: "100%" }}>
+      <select className="select" style={{ width: 200 }} value={who} onChange={(e) => setWho(e.target.value)} aria-label="With whom">
+        <option value="">With whom</option>
+        {people.filter((p: any) => p.status === "active").map((p: any) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+      </select>
+      <input className="input" type="datetime-local" style={{ width: 210 }} value={when} onChange={(e) => setWhen(e.target.value)} aria-label="When" />
+      <button className="btn quiet sm" onClick={() => setOpen(false)}>Cancel</button>
+      <button className="btn sm" disabled={busy || !when} onClick={() => run(async () => {
+        await api(`/api/accounts/${accountId}/meetings`, { method: "POST", body: { person_id: who ? Number(who) : null, starts_at: new Date(when).toISOString() } });
+        setOpen(false); onDone();
+      }, "Meeting logged. The play's sequences stop.")}>Log it</button>
+    </div>
+  );
+}
+
+function ColleaguesChoice({ replyId }: { replyId: number }) {
+  const [busy, run] = useBusy();
+  const [done, setDone] = useState<string | null>(null);
+  const act = (action: string) => run(async () => {
+    const r = await api<any>(`/api/replies/${replyId}/colleagues`, { method: "POST", body: { action } });
+    setDone(r.colleagues ? (action === "stop" ? `Stopped ${r.colleagues}.` : `Resumed ${r.colleagues}.`) : "Nobody else was waiting.");
+  });
+  return (
+    <Section title="Their colleagues">
+      {done ? <div className="small mute">{done}</div> : (
+        <div className="actions" style={{ flexWrap: "wrap" }}>
+          <span className="small mute" style={{ flex: 1, minWidth: 200 }}>Paused while you talk. They resume in 3 business days unless you decide now.</span>
+          <button className="btn quiet sm" disabled={busy} onClick={() => act("stop")}>Stop them</button>
+          <button className="btn line sm" disabled={busy} onClick={() => act("resume_now")}>Resume now</button>
+        </div>
+      )}
+    </Section>
+  );
+}
+
 /** Put the account on hold: a partner is talking to them, legal asked, the timing is wrong. Nothing sends until then. */
 function HoldBox({ accountId, onDone }: { accountId: number; onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [until, setUntil] = useState("");
   const [reason, setReason] = useState("");
   const [busy, run] = useBusy();
-  if (!open) return <div className="actions" style={{ marginTop: 8 }}><button className="btn quiet sm" onClick={() => setOpen(true)}>Hold this account</button></div>;
+  if (!open) return <button className="btn quiet sm" onClick={() => setOpen(true)}>Hold this account</button>;
   return (
     <Section title="Hold this account">
       <div className="form-row">
@@ -434,6 +505,37 @@ export function MeetingSheet({ id }: { id: number }) {
 
 const MEETING: Record<string, string> = { booked: "Meeting booked", held: "Meeting held", no_show: "Meeting, they did not show", cancelled: "Meeting cancelled" };
 
+/** Contact that happened outside the desk. Any of it puts the SDR in the conversation: the desk stops its own steps. */
+function OutsideContact({ personId, onDone }: { personId: number; onDone: () => void }) {
+  const [busy, run] = useBusy();
+  const log = (kind: string) => run(async () => { await api(`/api/people/${personId}/activity`, { method: "POST", body: { kind } }); onDone(); },
+    "Logged. The desk stops its own steps for them.");
+  return (
+    <Section title="Talked outside the desk" right={<span className="mute small">The desk stops its own steps for them</span>}>
+      <div className="actions" style={{ flexWrap: "wrap" }}>
+        <button className="btn line sm" disabled={busy} onClick={() => log("they_called")}>They called me</button>
+        <button className="btn line sm" disabled={busy} onClick={() => log("they_emailed")}>They emailed me directly</button>
+        <button className="btn line sm" disabled={busy} onClick={() => log("i_emailed")}>I emailed them myself</button>
+      </div>
+    </Section>
+  );
+}
+
+/** Erase on request (GDPR Article 17): GTM only, with a second click that says exactly what happens. */
+function EraseBox({ personId, name }: { personId: number; name: string }) {
+  const me = useData<any>("/api/me").data;
+  const [sure, setSure] = useState(false);
+  const [busy, run] = useBusy();
+  if (me?.user.role !== "gtm") return null;
+  return sure ? (
+    <div className="notice">
+      <span style={{ flex: 1 }}>This deletes {name}, their emails, replies and notes, and keeps only a fingerprint so they are never added again. It cannot be undone.</span>
+      <button className="btn quiet sm" onClick={() => setSure(false)}>Cancel</button>
+      <button className="btn ink sm" disabled={busy} onClick={() => run(async () => { await api(`/api/people/${personId}/erase`, { method: "POST" }); closeSheet(); }, "Erased.")}>Erase {name}</button>
+    </div>
+  ) : <div className="actions" style={{ justifyContent: "flex-end" }}><button className="btn quiet sm" onClick={() => setSure(true)}>Erase on request</button></div>;
+}
+
 function Reach({ label, value, state }: { label: string; value: ReactNode; state?: [Glyph, string] | null }) {
   return (
     <div className="row" style={{ gridTemplateColumns: "96px minmax(0,1fr) auto" }}>
@@ -488,7 +590,7 @@ export function AccountSheet({ id }: { id: number }) {
       {tab === "signals" && <SignalTimeline signals={data.signals} />}
       {tab === "outreach" && <AccountOutreach d={data} />}
       {cur ? null : data.holds.length ? <Section title={`Rests until ${day(data.holds[0].until)}`}><div className="small mute">{cap(data.holds[0].reason)}</div></Section> : null}
-      {tab === "overview" ? <HoldBox accountId={id} onDone={reload} /> : null}
+      {tab === "overview" ? <div className="actions" style={{ marginTop: 8 }}><LogMeeting accountId={id} people={data.people} onDone={reload} /><HoldBox accountId={id} onDone={reload} /></div> : null}
     </Frame>
   );
 }
@@ -528,6 +630,7 @@ function AccountOverview({ d }: { d: any }) {
         <Section title="In play" right={<Status kind={PLAY_STATE[cur.state][0]}>{PLAY_STATE[cur.state][1]}</Status>}>
           <div className="small mute">{cur.play}, proposed {ago(cur.proposed_at)}{cur.owner ? `, owned by ${cur.owner}` : ""}</div>
           <WhyNow why={cur.why_now} />
+          {d.calendar?.length ? <Calendar rows={d.calendar} /> : null}
           {cur.brief?.findings?.length ? (
             <div className="section">
               <h2 style={{ fontSize: 13.5 }}>Brief</h2>
@@ -869,9 +972,10 @@ export function ReplySheet({ id }: { id: number }) {
       {ex.referral ? (
         <Section title="Referred to">
           <dl className="kv"><dt>Name</dt><dd>{ex.referral.name}</dd>{ex.referral.title ? <><dt>Role</dt><dd>{ex.referral.title}</dd></> : null}
-            <dt>Email</dt><dd>{ex.referral.email || <span className="mute">Not in the reply; the desk will look it up</span>}</dd></dl>
+            <dt>Email</dt><dd>{ex.referral.email || <span className="mute">Not in the reply; the desk looks it up and enrolls them if it can</span>}</dd></dl>
         </Section>
       ) : null}
+      {r.hot && r.account_id ? <ColleaguesChoice replyId={id} /> : null}
       {ex.suggested && open ? (
         <Section title="A reply you could send" right={<button className="btn quiet sm" onClick={() => { navigator.clipboard?.writeText(ex.suggested); toast("Copied. Paste it into your own inbox."); }}>Copy</button>}>
           <div className="quote ours">{ex.suggested}</div>

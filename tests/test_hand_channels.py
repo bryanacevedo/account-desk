@@ -47,7 +47,7 @@ def test_a_call_where_they_spoke_stops_the_desk_for_that_person(world):
 
 def test_calls_record_outcomes(world):
     kinds = {r["kind"] for r in q("select distinct kind from touches where channel = 'call'")}
-    assert kinds <= {"call_connected", "call_voicemail", "call_no_answer", "call_wrong_number"}
+    assert kinds <= {"call_connected", "call_voicemail", "call_no_answer", "call_wrong_number", "they_called"}
     # Every call the SDR finished (not skipped) left a touch with its outcome.
     assert v("""select count(*) from tasks t where t.kind = 'call' and t.status = 'done' and not exists
                 (select 1 from touches x where x.dedup_key = 'task:' || t.id and x.channel = 'call')""") == 0

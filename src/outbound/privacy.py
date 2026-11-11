@@ -2,7 +2,15 @@
 and leaves a hashed suppression so they are never added again (docs/SPEC.md 22.17)."""
 from __future__ import annotations
 
+import hashlib
+
 from . import audit, db
+
+
+def linkedin_hash(url: str) -> str:
+    """The same profile however it is written: no scheme, no www, no trailing slash, lower case."""
+    u = url.strip().lower().split("://")[-1].removeprefix("www.").rstrip("/")
+    return hashlib.sha256(u.encode()).hexdigest()
 
 
 def erase(cur, person_id: int, *, actor_id: int | None) -> dict:
@@ -20,6 +28,12 @@ def erase(cur, person_id: int, *, actor_id: int | None) -> dict:
     counts["meetings"] = db.run(cur, "delete from meetings where person_id = %s", person_id)
     counts["signals"] = db.run(cur, "update signals set person_id = null, evidence = evidence - 'quote' where person_id = %s",
                                person_id)
+    counts["deals"] = db.run(cur, "update opportunities set contact_email = null where %s <> '' and contact_email = %s", email, email)
+    counts["llm_calls_by_name"] = db.run(cur, "update llm_calls set output = '{}'::jsonb where output::text ilike %s",
+                                         f"%{p['full_name']}%")
+    if p["linkedin_url"]:
+        db.run(cur, "insert into suppressions (kind, value, reason, source) values ('linkedin_hash', %s, 'Erased on request', 'erasure')",
+               linkedin_hash(p["linkedin_url"]))
     if email:
         counts["crm_outbox"] = db.run(cur, "update crm_outbox set payload = payload - 'email' where payload->>'email' = %s", email)
         counts["llm_calls"] = db.run(cur, "update llm_calls set output = '{}'::jsonb where output::text ilike %s", f"%{email}%")
