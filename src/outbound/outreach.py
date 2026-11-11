@@ -322,17 +322,8 @@ def build_committee(cur, ap: dict, play: dict, account: dict, *, exclude: frozen
 # ---------------------------------------------------------------- mailboxes and capacity
 
 def mailbox_capacity(cur, mailbox: dict) -> int:
-    weeks = max(0, int(db.val(cur, "select (app_now()::date - %s) / 7", mailbox["ramp_start"])))
-    cap = min(int(db.val(cur, "select value from settings where key = 'mailbox_max_daily'") or 30), 5 + 5 * weeks)
-    d = db.one(cur, "select * from sending_domains where domain = %s", mailbox["domain"])
-    # Unknown means no reading in the last 7 days, whether there never was one or the last one is old.
-    unknown_long = db.val(cur, "select coalesce(%s::timestamptz, '-infinity') < app_now() - interval '7 days'", d["spam_rate_at"])
-    if unknown_long or d["spam_rate"] is None or float(d["spam_rate"]) >= 0.001:
-        cap = min(cap, 10)  # cannot gain capacity while complaints are unknown or high
-    worst, stale = placement(cur, mailbox["id"])
-    if stale or (worst is not None and worst < float(setting(cur, "placement_hold_below", 0.8))):
-        cap = min(cap, 10)  # nor while we do not know where its mail lands, or know it lands in spam too often
-    return cap
+    """Today's cap for a mailbox. The rule lives in the database (mailbox_cap), where the send trigger enforces it."""
+    return int(db.val(cur, "select mailbox_cap(%s)", mailbox["id"]))
 
 
 def setting(cur, key: str, default):

@@ -342,13 +342,20 @@ def test_production_settings_refuse_unsafe_defaults(monkeypatch):
 
 
 def test_a_mailbox_at_its_daily_cap_cannot_send(cur, scene):
-    db.run(cur, "update mailboxes set cap_today = 0 where id = %s", scene["mailbox"])
+    db.run(cur, "insert into settings (key, value) values ('mailbox_max_daily', '0') "
+                "on conflict (key) do update set value = excluded.value")
     refused(cur, scene["message"], "mailbox at its daily cap")
 
 
-def test_a_mailbox_whose_cap_was_not_set_today_cannot_send(cur, scene):
-    db.run(cur, "update mailboxes set cap_day = app_now()::date - 1 where id = %s", scene["mailbox"])
-    refused(cur, scene["message"], "daily cap not set")
+def test_the_cap_is_the_databases_own_rule_not_a_stored_number(cur, scene):
+    # A new mailbox ramps from 5 a day; a cap value written anywhere else changes nothing.
+    db.run(cur, "update mailboxes set ramp_start = app_now()::date, cap_today = 999 where id = %s", scene["mailbox"])
+    assert db.val(cur, "select mailbox_cap(%s)", scene["mailbox"]) == 5
+    for i in range(5):
+        db.run(cur, """insert into messages (enrollment_id, step_index, channel, subject, body, status, body_hash, approved_hash,
+                       approved_at, approval_mode, sent_at, mailbox_id) values (%s, %s, 'email', 's', 'b', 'sent', 'h', 'h',
+                       now(), 'person', app_now(), %s)""", scene["enrollment"], 10 + i, scene["mailbox"])
+    refused(cur, scene["message"], "mailbox at its daily cap")
 
 
 def test_a_domain_at_its_daily_cap_cannot_send(cur, scene):

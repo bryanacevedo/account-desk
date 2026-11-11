@@ -110,9 +110,6 @@ def send_one(cur, payload: dict) -> None:
         later(timeutil.next_slot(now + timedelta(days=1), timezone=person["timezone"], country=person["country"],
                                  window=window, jitter_key=f"m{m['id']}c"), "mailbox at its daily cap")
         return
-    # Record today's cap where the trigger can check it (guarantee 8), under the lock taken above.
-    db.run(cur, "update mailboxes set cap_today = %s, cap_day = app_now()::date where id = %s",
-           outreach.mailbox_capacity(cur, mailbox), mailbox["id"])
     # In live mode the desk sends only with a configured mail provider and LIVE_SEND set; otherwise it waits,
     # instead of handing mail to nobody and counting it against the cap.
     if CONFIG.mode == "live" and (not CONFIG.live_send or getattr(adapters.get().email, "name", "").startswith("missing:")):
