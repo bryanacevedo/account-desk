@@ -39,7 +39,7 @@ Checked on 2026-11-11 by running them:
 ## Next
 
 1. Bryan: the repo name and the go-ahead to create the public GitHub repo, then the Render service.
-3. A fresh hands-on design review of every screen against `docs/DESIGN-CHECKLIST.md`, including phone width.
-4. Evals: a labelled reply set and a draft set, recorded with a real key.
-5. The MCP server, live adapters vendor by vendor (Apollo, a verifier, Instantly or Smartlead, HeyReach, HubSpot, Slack, Google Postmaster).
-6. A second fresh code review.
+2. A fresh hands-on design review of every screen against `docs/DESIGN-CHECKLIST.md`, including phone width.
+3. Evals: a labelled reply set and a draft set, recorded with a real key.
+4. The MCP server, live adapters vendor by vendor (Apollo, a verifier, Instantly or Smartlead, HeyReach, HubSpot, Slack, Google Postmaster).
+5. A second fresh code review.
