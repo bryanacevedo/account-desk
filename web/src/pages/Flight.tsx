@@ -133,13 +133,13 @@ function Next({ p, mine }: { p: any; mine: boolean }) {
   }
   if (p.draft_id) {
     return <button className="link-row cell-main" onClick={() => openSheet("message", p.draft_id)}>
-      <span className="t"><PencilSimpleLine size={14} style={{ verticalAlign: -2 }} aria-hidden="true" /> Approve Email {(p.draft_step ?? 0) + 1}</span>
+      <span className="t"><PencilSimpleLine size={14} style={{ verticalAlign: -2 }} aria-hidden="true" /> Approve {stepLabel(p.sequence[p.draft_step ?? 0] || { channel: "email" }, p.draft_step ?? 0, p.sequence)}</span>
       <span className="s">Nothing sends until then</span></button>;
   }
   if (p.next) {
     const you = mine && p.next.step.by === "sdr";
     return <div className="cell-main">
-      <span className="t">{stepLabel(p.next.step, p.next.index)} · {p.next.person}{you ? <span className="tag">You</span> : null}</span>
+      <span className="t">{stepLabel(p.next.step, p.next.index, p.sequence)} · {p.next.person}{you ? <span className="tag">You</span> : null}</span>
       <span className="s">{ahead(p.next.at) === "overdue" ? late(p.next.at) : dayTime(p.next.at)}</span></div>;
   }
   if (p.state === "engaged") return <div className="cell-main"><span className="t">In conversation</span><span className="s">The SDR has it from here</span></div>;
@@ -166,7 +166,7 @@ function PersonSteps({ e, sequence, meetingPerson }: { e: any; sequence: any[]; 
           const st = stateOf(i);
           const Ic = s.channel === "email" ? EnvelopeSimple : s.channel === "call" ? Phone : LinkedinLogo;
           return (
-            <span key={i} className={`step ${st.replace(" ", "-")}`} title={`${stepLabel(s, i)}, day ${s.day}: ${st}`}>
+            <span key={i} className={`step ${st.replace(" ", "-")}`} title={`${stepLabel(s, i, sequence)}, day ${s.day}: ${st}`}>
               <Ic size={12} weight={st === "sent" ? "fill" : "regular"} />
             </span>
           );

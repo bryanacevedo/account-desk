@@ -601,3 +601,9 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 }
 /* Names in the Plays and Accounts tables wrap to a second line instead of being cut. */
 .ledger.wrap-names .cell-main .t { white-space: normal; overflow: visible; text-overflow: clip; }
+
+@media (max-width: 900px) {
+  .choice { min-height: 44px; display: inline-flex; align-items: center; gap: 10px; }
+  .choice input { width: 20px; height: 20px; }
+  .ledger > .row:not(.head):not(.group-head) { min-height: 44px; }
+}

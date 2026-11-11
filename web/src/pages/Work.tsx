@@ -94,7 +94,7 @@ export function Today() {
             <div className="ledger">
               {data.approvals.slice(0, 8).map((m: any) => (
                 <button key={m.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => openSheet("message", m.id)}>
-                  <div className="cell-main"><span className="t">{m.full_name}</span><span className="s">{m.company}, Email {m.step_index + 1}</span></div>
+                  <div className="cell-main"><span className="t">{m.full_name}</span><span className="s">{m.company}, Email {m.email_no ?? m.step_index + 1}</span></div>
                   {m.status === "failed_gate" ? <Status kind={MSG[m.status][0]}>{MSG[m.status][1]}</Status> : <span />}
                 </button>
               ))}

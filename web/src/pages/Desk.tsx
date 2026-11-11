@@ -194,8 +194,8 @@ export function Results() {
           </div>
         </Section>
       </div>
-      <Section title="Plays started, against held back">
-        <Comparison rows={[["Meeting within 60 days", data.lift], ["Deal within 90 days", data.deal_lift]]} />
+      <Section title="Offered a play, against held back" right={<span className="mute small">Any meeting or deal, inbound included</span>}>
+        <Comparison rows={[["meeting within 60 days", data.lift], ["deal within 90 days", data.deal_lift]]} />
       </Section>
       <Section title="By channel, last 90 days">
         {data.channels.length ? (
@@ -246,7 +246,7 @@ export function Results() {
                       {rows.map((l: any) => (
                         <li key={l.text} className="said">
                           <div className="said-top">
-                            <span className="said-text">{kind === "competitor" ? l.text : <><span className="qmark" aria-hidden="true">&ldquo;</span>{l.text}</>}</span>
+                            <span className="said-text">{l.text}</span>
                             <span className="num said-n">{l.calls} {l.calls === 1 ? "call" : "calls"}</span>
                           </div>
                           {kind === "competitor" ? <div className="said-quote"><span className="qmark" aria-hidden="true">&ldquo;</span>{l.quote}</div> : null}

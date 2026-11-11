@@ -24,7 +24,7 @@ export function Approvals() {
         <button key={m.id} className="row" style={{ gridTemplateColumns: A_COLS }} onClick={() => openSheet("message", m.id)}>
           <Avatar name={m.full_name} photo={m.photo_url} />
           <div className="cell-main"><span className="t">{m.full_name}</span><span className="s">{m.title}, {m.company}</span><span className="s only-sm">{m.subject}</span></div>
-          <div className="cell-main hide-sm"><span className="t" style={{ fontWeight: 450 }}>{m.subject}</span><span className="s">Email {m.step_index + 1}</span></div>
+          <div className="cell-main hide-sm"><span className="t" style={{ fontWeight: 450 }}>{m.subject}</span><span className="s">Email {m.email_no ?? m.step_index + 1}</span></div>
           <span className="clip mute hide-sm">{m.play}</span>
           <span className="num mute small">{ago(m.created_at)}</span>
         </button>

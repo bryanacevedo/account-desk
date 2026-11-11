@@ -24,7 +24,7 @@ def today(cur, user: dict) -> dict:
         left join account_scores sc on sc.account_id = a.id left join users u on u.id = ap.owner_id
         where ap.state = 'proposed' and {mine} order by p.urgent desc, sc.priority desc nulls last limit 40""", *args)
     approvals = db.all(cur, f"""
-        select m.id, m.subject, m.step_index, m.status, m.created_at, pe.full_name, pe.photo_url, pe.title, a.name as company,
+        select m.id, m.subject, m.step_index, email_no(m.enrollment_id, m.step_index) as email_no, m.status, m.created_at, pe.full_name, pe.photo_url, pe.title, a.name as company,
                a.id as account_id, p.name as play
         from messages m join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
         join people pe on pe.id = e.person_id join accounts a on a.id = ap.account_id join plays p on p.id = ap.play_id
@@ -124,7 +124,7 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
                             where p.account_id = %s order by p.persona_key nulls last, p.full_name""", account_id)
     gaps = db.all(cur, """select g.persona_key, g.reason, pe.label from committee_gaps g join personas pe on pe.key = g.persona_key
                           where g.account_play_id = %s""", current["id"]) if current else []
-    messages = db.all(cur, """select m.id, m.step_index, m.subject, m.status, m.sent_at, m.scheduled_for, pe.full_name, pe.photo_url,
+    messages = db.all(cur, """select m.id, m.step_index, email_no(m.enrollment_id, m.step_index) as email_no, m.subject, m.status, m.sent_at, m.scheduled_for, pe.full_name, pe.photo_url,
                                      m.approval_mode
                               from messages m join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
                               join people pe on pe.id = e.person_id where ap.account_id = %s
@@ -132,7 +132,7 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
     reps = db.all(cur, """select r.id, r.received_at, r.label, r.cleaned, r.hot, pe.full_name, pe.photo_url from replies r
                           left join people pe on pe.id = r.person_id where r.account_id = %s order by r.received_at desc""",
                   account_id)
-    meetings = db.all(cur, """select m.id, m.starts_at, m.status, pe.full_name, pe.photo_url from meetings m
+    meetings = db.all(cur, """select m.id, m.starts_at, m.status, m.person_id, pe.full_name, pe.photo_url from meetings m
                               left join people pe on pe.id = m.person_id where m.account_id = %s order by m.starts_at desc""",
                       account_id)
     opps = db.all(cur, "select id, name, stage, created_at, won, attribution" + (", amount_cents" if money else "") +
@@ -227,7 +227,7 @@ def task(cur, task_id: int) -> dict | None:
     t["why"] = db.one(cur, """select st.label, s.evidence->>'summary' as summary, s.observed_at from account_plays ap
                               join signals s on s.id = ap.trigger_signal_id join signal_types st on st.key = s.type_key
                               where ap.id = %s""", t["account_play_id"]) if t["account_play_id"] else None
-    t["so_far"] = db.all(cur, """select m.step_index, m.channel, m.subject, m.sent_at from messages m
+    t["so_far"] = db.all(cur, """select m.step_index, email_no(m.enrollment_id, m.step_index) as email_no, m.channel, m.subject, m.sent_at from messages m
                                  join enrollments e on e.id = m.enrollment_id
                                  where e.account_play_id = %s and e.person_id = %s and m.status = 'sent'
                                  order by m.sent_at""", t["account_play_id"], t["person_id"]) if t["account_play_id"] else []
@@ -273,7 +273,7 @@ def person(cur, person_id: int) -> dict | None:
                                          where m.account_play_id = ap.id order by m.booked_at desc limit 1) as meeting
                                  from enrollments e join account_plays ap on ap.id = e.account_play_id
                                  join plays pl on pl.id = ap.play_id where e.person_id = %s order by e.created_at desc""", person_id)
-    touches = db.all(cur, """select t.id, t.channel, t.direction, t.kind, t.at, t.source, t.message_id, m.subject, m.step_index
+    touches = db.all(cur, """select t.id, t.channel, t.direction, t.kind, t.at, t.source, t.message_id, m.subject, m.step_index, email_no(m.enrollment_id, m.step_index) as email_no
                              from touches t left join messages m on m.id = t.message_id
                              where t.person_id = %s order by t.at desc limit 100""", person_id)
     reps = db.all(cur, """select id, received_at, label, cleaned, hot, channel from replies where person_id = %s
@@ -297,7 +297,7 @@ def person(cur, person_id: int) -> dict | None:
     waiting = db.all(cur, """select 'task' as kind, t.id, t.kind as what, t.title as label, t.due_at as at from tasks t
                              where t.person_id = %s and t.status = 'open'
                              union all
-                             select 'message', m.id, m.channel, 'Email ' || (m.step_index + 1) || ' to approve', m.created_at
+                             select 'message', m.id, m.channel, 'Email ' || email_no(m.enrollment_id, m.step_index) || ' to approve', m.created_at
                              from messages m join enrollments e on e.id = m.enrollment_id
                              where e.person_id = %s and m.channel = 'email' and m.status in ('awaiting_approval', 'failed_gate')
                              order by at""", person_id, person_id)
@@ -474,7 +474,7 @@ def promotion_check(cur, play: dict) -> dict:
 # ---------------------------------------------------------------- approvals and replies
 
 def message(cur, message_id: int) -> dict | None:
-    m = db.one(cur, """select m.*, pe.full_name, pe.photo_url, pe.first_name, pe.title, pe.email, pe.country, a.name as company,
+    m = db.one(cur, """select m.*, email_no(m.enrollment_id, m.step_index) as email_no, pe.full_name, pe.photo_url, pe.first_name, pe.title, pe.email, pe.country, a.name as company,
                               a.id as account_id, p.name as play, p.autonomy, ap.why_now, ap.brief, u.name as owner,
                               mb.address as mailbox
                        from messages m join enrollments e on e.id = m.enrollment_id
@@ -508,6 +508,8 @@ def reply(cur, reply_id: int) -> dict | None:
                        left join messages m on m.id = r.message_id where r.id = %s""", reply_id)
     if r:
         r["extracted"] = {k: v for k, v in (r["extracted"] or {}).items() if not k.startswith("_")}
+        r["meeting_id"] = db.val(cur, """select id from meetings where account_id = %s and booked_at >= %s
+                                         order by booked_at limit 1""", r["account_id"], r["received_at"]) if r["account_id"] else None
         r["colleagues_waiting"] = db.val(cur, """select count(*) from enrollments e join account_plays ap on ap.id = e.account_play_id
                                                  where ap.account_id = %s and e.state = 'paused' and e.pause_reason = 'account_reply'
                                                  and e.person_id is distinct from %s""", r["account_id"], r["person_id"]) if r["account_id"] else 0

@@ -246,7 +246,7 @@ export function PersonSheet({ id }: { id: number }) {
                   h.t.message_id ? (
                     <button className="cell-main link-row" onClick={() => openSheet("message", h.t.message_id)}>
                       <span className="t">{TOUCH[h.t.kind] || cap(h.t.kind.replace(/_/g, " "))}</span>
-                      <span className="s">{h.t.subject ? `${h.t.subject}, Email ${h.t.step_index + 1}` : ""}</span>
+                      <span className="s">{h.t.subject ? `${h.t.subject}, Email ${h.t.email_no ?? h.t.step_index + 1}` : ""}</span>
                     </button>
                   ) : <div className="cell-main"><span className="t">{TOUCH[h.t.kind] || cap(h.t.kind.replace(/_/g, " "))}</span><span className="s">{h.t.source === "person" ? "Logged by the SDR" : ""}</span></div>
                 ) : h.kind === "reply" ? (
@@ -344,7 +344,7 @@ export function TaskSheet({ id }: { id: number }) {
               <div className="ledger">
                 {t.so_far.map((m: any) => (
                   <div key={m.step_index} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
-                    <span className="cell-main"><span className="t">{m.channel === "email" ? `Email ${m.step_index + 1}` : cap(m.channel)}</span>
+                    <span className="cell-main"><span className="t">{m.channel === "email" ? `Email ${m.email_no ?? m.step_index + 1}` : cap(m.channel)}</span>
                       {m.subject ? <span className="s clip">{m.subject}</span> : null}</span>
                     <span className="mute small num">{day(m.sent_at)}</span>
                   </div>
@@ -414,7 +414,7 @@ function Calendar({ rows }: { rows: any[] }) {
           return (
             <button key={name} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }} onClick={() => openSheet("person", e.person_id)}>
               <Avatar name={name} photo={e.photo_url} />
-              <div className="cell-main"><span className="t">{name}</span><span className="s">{sent ? `${sent} sent` : "Nothing sent yet"}{next ? `, ${e.sequence?.[e.step_index] ? stepLabel(e.sequence[e.step_index], e.step_index) : `Email ${e.step_index + 1}`} ${next}` : ""}</span></div>
+              <div className="cell-main"><span className="t">{name}</span><span className="s">{sent ? `${sent} sent` : "Nothing sent yet"}{next ? `, ${e.sequence?.[e.step_index] ? stepLabel(e.sequence[e.step_index], e.step_index, e.sequence) : `Email ${e.step_index + 1}`} ${next}` : ""}</span></div>
               <Status kind={GOOD_STOPS.has(e.stop_reason) ? "ok" : (ENROLL[e.state] || ["off"])[0]}>{(e.state === "stopped" || e.state === "paused") ? stopWord(e.stop_reason || e.pause_reason) || ENROLL[e.state][1] : (ENROLL[e.state] || ["off", cap(e.state)])[1]}</Status>
             </button>
           );
@@ -552,6 +552,9 @@ export function MeetingSheet({ id }: { id: number }) {
     setNotes("");
   }, status === "held" ? "Saved." : status === "no_show" ? "Saved. A task to rebook is on Today." : "Cancelled.");
   const open = m.status === "booked" && new Date(m.starts_at).getTime() <= useNowIso();
+  // What the desk added: learnings that are not already the notes' own words, shown above.
+  const said = m.notes.map((n: any) => n.text).join(" ");
+  const added = m.learnings.filter((l: any) => !said.includes(l.text));
   return (
     <Frame crumb="Meeting" foot={open ? (
       <div className="actions" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
@@ -592,10 +595,10 @@ export function MeetingSheet({ id }: { id: number }) {
           </>
         ) : null}
       </Section>
-      {m.learnings.length ? (
+      {added.length ? (
         <Section title="What the desk learned">
           <div className="ledger">
-            {m.learnings.map((l: any, i: number) => (
+            {added.map((l: any, i: number) => (
               <div key={i} className="row" style={{ gridTemplateColumns: "minmax(0,1fr)" }}>
                 <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{l.text}</span></div>
               </div>
@@ -623,8 +626,9 @@ const MEETING: Record<string, string> = { booked: "Meeting booked", held: "Meeti
 
 /** The same step names as the play editor. */
 /** A step's name, the same everywhere: an email by its number (as Approvals names it), anything else by what it is. */
-export function stepLabel(step: any, index: number): string {
-  return step.channel === "email" ? `Email ${index + 1}` : STEP_NAME[`${step.channel}:${step.job}`] || cap(step.channel);
+export function stepLabel(step: any, index: number, sequence?: any[]): string {
+  const n = sequence ? sequence.slice(0, index + 1).filter((s: any) => s.channel === "email").length : index + 1;
+  return step.channel === "email" ? `Email ${n}` : STEP_NAME[`${step.channel}:${step.job}`] || cap(step.channel);
 }
 
 export const STEP_NAME: Record<string, string> = {
@@ -839,7 +843,8 @@ function AccountPeople({ d }: { d: any }) {
           <span className="t">{p.full_name}{p.is_champion ? <span className="mute small"> &middot; past champion</span> : null}</span>
           <span className="s">{p.title}{p.persona_key && !(p.title || "").toLowerCase().includes((PERSONA[p.persona_key] || "").toLowerCase()) ? `, ${PERSONA[p.persona_key] || p.persona_key}` : ""}</span>
         </div>
-        {e ? <Status kind={GOOD_STOPS.has(p.stop_reason) ? "ok" : e[0]}>{p.enrollment === "stopped" || p.enrollment === "paused" ? stopWord(p.stop_reason || p.pause_reason) || e[1] : e[1]}</Status>
+        {e ? <Status kind={GOOD_STOPS.has(p.stop_reason) ? "ok" : e[0]}>{p.stop_reason === "meeting_booked" && !(d.meetings || []).some((m: any) => m.person_id === p.id)
+          ? "Colleague's meeting" : p.enrollment === "stopped" || p.enrollment === "paused" ? stopWord(p.stop_reason || p.pause_reason) || e[1] : e[1]}</Status>
           : p.status !== "active" ? <Status kind="off">{cap(p.status)}</Status> : <span className="mute small">{p.email_status === "valid" ? "Verified email" : ""}</span>}
       </button>
     );
@@ -853,7 +858,7 @@ function AccountPeople({ d }: { d: any }) {
             {d.gaps.map((g: any) => (
               <div key={g.persona_key} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr)" }}>
                 <div className="mono-mark sm" style={{ background: "transparent", boxShadow: "inset 0 0 0 1px var(--line-2)" }}>?</div>
-                <div className="cell-main"><span className="t">{g.label}</span><span className="s">{g.reason}</span></div>
+                <div className="cell-main"><span className="t">No {g.label.toLowerCase()} reached</span><span className="s">{g.reason}</span></div>
               </div>
             ))}
           </div>
@@ -892,7 +897,7 @@ function AccountOutreach({ d }: { d: any }) {
           <div className="ledger">
             {d.messages.map((m: any) => (
               <button key={m.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto auto" }} onClick={() => openSheet("message", m.id)}>
-                <div className="cell-main"><span className="t">{m.subject || "(no subject)"}</span><span className="s">{m.full_name}, Email {m.step_index + 1}</span></div>
+                <div className="cell-main"><span className="t">{m.subject || "(no subject)"}</span><span className="s">{m.full_name}, Email {m.email_no ?? m.step_index + 1}</span></div>
                 <Status kind={MSG[m.status][0]}>{MSG[m.status][1]}</Status>
                 <span className="mute small num" style={{ minWidth: 56 }}>{day(m.sent_at || m.scheduled_for)}</span>
               </button>
@@ -999,7 +1004,7 @@ export function MessageSheet({ id }: { id: number }) {
     </>
   ) : undefined;
   return (
-    <Frame kind={m.channel === "email" ? "email" : "linkedin"} crumb={m.channel === "email" ? <>Email {m.step_index + 1}</> : <>LinkedIn note</>} foot={foot}>
+    <Frame kind={m.channel === "email" ? "email" : "linkedin"} crumb={m.channel === "email" ? <>Email {m.email_no ?? m.step_index + 1}</> : <>LinkedIn note</>} foot={foot}>
       <div className="who">
         <Avatar name={m.full_name} photo={m.photo_url} size={44} />
         <div style={{ minWidth: 0 }}>
@@ -1107,7 +1112,7 @@ export function ReplySheet({ id }: { id: number }) {
         <Fig value={<Status kind={l[0]}>{l[1]}</Status>} label="What it says" sm />
         <Fig value={ago(r.received_at)} label="Received" sm />
         {r.hot && open && r.sla_due_at ? <Fig value={ahead(r.sla_due_at)} label="Answer by" sm /> : null}
-        {r.handled_at ? <Fig value={cap(r.outcome || "handled")} label="Done" sm /> : null}
+        {r.handled_at ? <Fig value={r.meeting_id ? <button className="link" onClick={() => openSheet("meeting", r.meeting_id)}>{cap(r.outcome || "handled")}</button> : cap(r.outcome || "handled")} label="Outcome" sm /> : null}
       </div>
       {r.needs_review ? <div className="why" style={{ background: "var(--well)" }}><span className="lbl" style={{ color: "var(--ink-2)" }}>Needs a person</span><div>{r.review_reason}. Nothing has been done with it yet.</div></div> : null}
       <div className="quote">{r.cleaned}</div>
@@ -1215,7 +1220,7 @@ export function PlaySheet({ id }: { id: number }) {
       {p.status === "draft" && isManager && !isAuthor && limits ? <CapForm limits={limits} setLimits={setLimits} worst={worst} /> : null}
       {p.status !== "draft" && p.cap_use?.length ? <CapUse rows={p.cap_use} /> : null}
       {promo.next && p.status !== "draft" ? (
-        <Section title={`Before: ${STAGE[promo.next]}`}>
+        <Section title={`To move to: ${STAGE[promo.next]}`}>
           <div className="ledger">
             {promo.checks.map((c: any) => (
               <div key={c.label} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto", minHeight: 36 }}>
@@ -1319,7 +1324,7 @@ export function LiftBlock({ lift }: { lift: any }) {
   return (
     <div style={{ display: "grid", gap: 14 }}>
       <div className="bars">
-        <Bar label="Play started" value={t.rate || 0} of={1} shown={pct(t.rate, 1)} hint={`${t.meetings} of ${t.accounts}`} tone="accent" />
+        <Bar label="Offered a play" value={t.rate || 0} of={1} shown={pct(t.rate, 1)} hint={`${t.meetings} of ${t.accounts}`} tone="accent" />
         <Bar label="Held back" value={h.rate || 0} of={1} shown={pct(h.rate, 1)} hint={`${h.meetings} of ${h.accounts}`} tone="soft" />
       </div>
       {lift.enough && lift.difference !== null ? (
@@ -1332,15 +1337,15 @@ export function LiftBlock({ lift }: { lift: any }) {
   );
 }
 
-/** Contacted against held back, one row per outcome: each group's rate, then the difference or what is still needed. */
+/** Offered a play against held back (any meeting or deal, inbound included, so not the funnel's outbound count), one row per outcome: each group's rate, then the difference or what is still needed. */
 export function Comparison({ rows }: { rows: [string, any][] }) {
   return (
     <div className="ledger">
-      <div className="row head" style={{ gridTemplateColumns: CMP }}><span>Accounts with a</span><span className="num">Play started</span><span className="num">Held back</span><span className="num">Difference</span></div>
+      <div className="row head" style={{ gridTemplateColumns: CMP }}><span>Accounts with any</span><span className="num">Offered a play</span><span className="num">Held back</span><span className="num">Difference</span></div>
       {rows.map(([label, l]) => (
         <div key={label} className="row" style={{ gridTemplateColumns: CMP }}>
           <span className="cell-main"><span className="t">{label}</span></span>
-          <span className="num" data-label="Play started">{pct(l.treated.rate, 1)} <span className="mute small">{l.treated.meetings} of {l.treated.accounts}</span></span>
+          <span className="num" data-label="Offered a play">{pct(l.treated.rate, 1)} <span className="mute small">{l.treated.meetings} of {l.treated.accounts}</span></span>
           <span className="num" data-label="Held back">{pct(l.holdout.rate, 1)} <span className="mute small">{l.holdout.meetings} of {l.holdout.accounts}</span></span>
           <span className="num" data-label="Difference">{l.enough && l.difference !== null
             ? <>{l.difference >= 0 ? "+" : ""}{pct(l.difference, 1)} <span className="mute small">likely {pct(l.interval[0], 1)} to {pct(l.interval[1], 1)}</span></>

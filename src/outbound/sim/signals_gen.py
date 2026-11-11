@@ -70,11 +70,11 @@ def evidence(rng: random.Random, kind: str, acct: dict, at: datetime, person: di
                 "quote": f"{name} raised ${amt} million in {rnd} funding."}
     if kind == "pricing_visit":
         v = rng.randint(2, 6)
-        return {"summary": f"{v} visits to the pricing page from the company's network this week.",
+        return {"summary": f"{v} visits to the pricing page from the company's network in seven days.",
                 "url": f"https://lumenledger.example/pricing?ref=visits-{n}", "quote": f"{v} sessions on /pricing"}
     if kind == "site_visit":
         v = rng.randint(2, 9)
-        return {"summary": f"{v} visits to product pages this week.", "url": f"https://lumenledger.example/product?ref=visits-{n}",
+        return {"summary": f"{v} visits to product pages in seven days.", "url": f"https://lumenledger.example/product?ref=visits-{n}",
                 "quote": f"{v} sessions on product pages"}
     if kind == "intent_topic":
         t = rng.choice(TOPICS)
