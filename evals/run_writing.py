@@ -26,7 +26,7 @@ from collections import Counter
 from pathlib import Path
 
 from outbound import copy_gate, db, llm, sim_llm  # noqa: F401  (sim_llm registers the stand-in)
-from outbound.outreach import OUR_NAMES, PRIVATE_SIGNALS, limits_for
+from outbound.outreach import PRIVATE_SIGNALS, limits_for
 
 HERE = Path(__file__).resolve().parent
 NOTE_LIMIT = 200
@@ -48,7 +48,7 @@ def draft(cur, c: dict) -> dict:
     linkedin = c["task"] == "draft_linkedin"
     attempts, failures, out, verdict = [], [], None, None
     for attempt in (1, 2):
-        payload = {"company": c["company"], "sender": "Maya Okafor", "angle": "", "play_angle": c["play_angle"], "brief": [],
+        payload = {"company": c["company"], "our_company": "Lumen Ledger", "sender": "Maya Okafor", "angle": "", "play_angle": c["play_angle"], "brief": [],
                    "person": {"id": person["id"], "first_name": person["first_name"], "title": person["title"]},
                    "step": {"index": 0 if c["job"] in ("open", "connect") else 2, "job": c["job"]},
                    "persona_key": c["persona_key"], "facts": shown, "limits": limits_for(c["job"], linkedin, NOTE_LIMIT if c["job"] == "connect" else None), "previous_subject": "billing at " + c["company"]
@@ -56,7 +56,7 @@ def draft(cur, c: dict) -> dict:
         if linkedin:
             payload["max_chars"] = NOTE_LIMIT if c["job"] == "connect" else None
         out = llm.run(cur, c["task"], payload)
-        verdict = copy_gate.check(out, job=c["job"], person=person, account=account, facts=facts, our_names=OUR_NAMES + ["Maya Okafor"],
+        verdict = copy_gate.check(out, job=c["job"], person=person, account=account, facts=facts, our_names=["Lumen Ledger", "Maya Okafor"],
                                   other_bodies=[], private_ids=set(c["private_ids"]),
                                   channel="linkedin" if linkedin else "email",
                                   max_chars=NOTE_LIMIT if c["job"] == "connect" else None)
@@ -123,9 +123,6 @@ def report(drafts: list[dict], briefs: list[dict]) -> str:
         f"| Cites a fact that does not exist | {len(unknown)} {'(' + ', '.join(unknown) + ')' if unknown else ''} |",
         "", "Why first attempts failed: " + (", ".join(f"{k} {v}" for k, v in Counter(c for d in drafts for c in d["first_codes"]).most_common()) or "none") + ".",
         "", "Checks still failing after the redraft: " + (", ".join(f"{k} {v}" for k, v in codes.most_common()) or "none") + ".", "",
-        "Read by a person (2026-11-11): the drafts are specific and cite their facts. One problem code does not catch: "
-        "d06 credits our product to the prospect (\"Quillon Payments runs usage-based billing so finance does not end "
-        "up rebuilding invoices\"). Watch for it in the approval queue.", "",
         "## Briefs", "",
         "| Case | Findings | Kept (cite real facts) | Unfaithful numbers or names |", "|---|---|---|---|",
         *[f"| {b['id']} | {b['findings']} | {b['kept']} | {', '.join(b['unfaithful']) or 'none'} |" for b in briefs], "",

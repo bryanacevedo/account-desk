@@ -305,3 +305,15 @@ def test_fit_leaves_unknown_fields_out_instead_of_counting_them_as_misses():
 def test_import_derives_region_from_the_country():
     from outbound.setup_desk import region_of
     assert (region_of("us"), region_of("DE"), region_of("BR"), region_of(None)) == ("North America", "Europe", None, None)
+
+
+def test_a_sentence_about_their_company_needs_a_source_whatever_it_is_labelled():
+    from outbound import copy_gate
+    d = {"subject": "billing", "sentences": [
+        {"text": "Amara,", "kind": "courtesy", "fact_ids": []},
+        {"text": "Your team removed a legacy billing tool.", "kind": "claim", "fact_ids": [1]},
+        {"text": "Quillon Payments runs usage-based billing so finance does not rebuild invoices.", "kind": "courtesy", "fact_ids": []},
+        {"text": "Worth a short call next week to compare notes on how you invoice today?", "kind": "ask", "fact_ids": []}]}
+    v = copy_gate.check(d, job="open", person={"first_name": "Amara"}, account={"name": "Quillon Payments"},
+                        facts={1: "Removed a legacy billing tool from its stack."}, our_names=["Lumen Ledger"], other_bodies=[])
+    assert any(f["code"] == "uncited_claim" and "Quillon" in f["message"] for f in v.failures)

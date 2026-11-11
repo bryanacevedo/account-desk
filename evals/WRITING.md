@@ -6,16 +6,14 @@
 
 | Check | Result |
 |---|---|
-| Passes the copy checks first time | 15 of 20 |
+| Passes the copy checks first time | 17 of 20 |
 | Passes after the one redraft the desk allows | 19 of 20 |
 | Cites a private signal | 0  |
 | Cites a fact that does not exist | 0  |
 
-Why first attempts failed: unsourced_name 2, opening 2, not_about_them 1.
+Why first attempts failed: not_about_them 1, unsourced_name 1, opening 1.
 
-Checks still failing after the redraft: not_about_them 1.
-
-Read by a person (2026-11-11): the drafts are specific and cite their facts. One problem code does not catch: d06 credits our product to the prospect ("Quillon Payments runs usage-based billing so finance does not end up rebuilding invoices"). Watch for it in the approval queue.
+Checks still failing after the redraft: uncited_claim 1, not_about_them 1.
 
 ## Briefs
 
@@ -23,102 +21,102 @@ Read by a person (2026-11-11): the drafts are specific and cite their facts. One
 |---|---|---|---|
 | b01 | 4 | 4 | none |
 | b02 | 4 | 4 | none |
-| b03 | 4 | 4 | none |
+| b03 | 3 | 3 | none |
 | b04 | 4 | 4 | none |
-| b05 | 1 | 1 | none |
+| b05 | 2 | 2 | none |
 | b06 | 4 | 4 | none |
 
 ## Every draft
 
 **d01** draft, open, passes
 
-Subject: Usage overages at Halvard
+Subject: Monthly overage billing at Halvard
 
-> Marta, I noticed Halvard Analytics prices per seat plus usage overages billed monthly. You also have an opening for a Revenue Operations Manager, which often signals billing is starting to take more hands than it should. In setups like that, the overage line is usually where finance ends up pulling usage exports and rebuilding invoices by hand each month. We help finance teams turn usage data straight into accurate invoices, so month-end close does not depend on spreadsheets. Would a 20-minute call next week be worth it to compare how you handle overages today?
+> Marta, Halvard prices per seat plus usage overages billed monthly, which usually means someone on finance reconciles usage data against invoices every close. I also noticed you are hiring a Revenue Operations Manager. We built Lumen Ledger so usage-based charges flow straight from metered data to invoices, without anyone rebuilding them by hand in spreadsheets. That can let a new RevOps hire focus on pricing and forecasting rather than invoice cleanup. Would you be open to a 20 minute call next week to see whether it fits how Halvard bills today?
 
 **d02** draft, open, passes
 
 Subject: Usage-based billing at Brightline
 
-> Owen, Brightline Freight recently moved its API from flat plans to usage-based pricing. I also noticed you are hiring a Billing Analyst and a Senior Accountant. That combination often means usage data is being reconciled and turned into invoices by hand each month. We help controllers bill on metered usage directly, so the close does not depend on spreadsheets and manual invoice rebuilds. Would you be open to a 20 minute call next week to compare notes on how your team handles it today?
+> Owen, I saw Brightline Freight moved its API from flat plans to usage-based pricing. You are also hiring a Billing Analyst and a Senior Accountant, which suggests the invoicing load is growing. That shift often leaves controllers reconciling usage data and rebuilding invoices by hand each month. We built Lumen Ledger to turn metered usage into accurate invoices automatically, so the close does not depend on spreadsheets. Would you be open to a 20 minute call next week to compare notes on how you are handling usage invoicing today?
 
 **d03** draft, open, passes (numbers: only $40M and Series C are citable)
 
-Subject: Quarterly invoicing after the Series C
+Subject: Quarterly arrears invoicing after Series C
 
-> Ines, congratulations on the $40M Series C led by Northwind Partners. From what I can see, Corvo Health invoices quarterly in arrears. As usage grows after a raise, that cycle often turns into finance pulling usage data together and rebuilding invoices by hand each quarter. We help finance teams run usage-based billing so invoices come straight from metered usage, without the manual rebuild. Would you be open to a 20-minute call next week to see whether it fits how your team bills today?
+> Ines, congratulations on the $40M Series C led by Northwind Partners. I noticed Corvo Health sends invoices quarterly in arrears. As customer counts grow after a raise, that model often means finance spends the end of each quarter reconciling usage and rebuilding invoices by hand. We help finance teams run usage-based billing straight from product data, so invoices go out accurate without manual rework. Would you be open to a 20-minute call next week to see whether this fits how your team bills today?
 
 **d04** draft, open, passes (must not mention the pricing-page visits)
 
 Subject: Billing Operations Lead role
 
-> Kai, I noticed Pellucid Systems is hiring a Billing Operations Lead. When teams open that role, it is often because usage data and invoices have stopped lining up without someone reconciling them by hand. We help revenue operations teams run usage-based billing so finance is not rebuilding invoices at the end of every cycle. That can change what the new hire spends their first months on, from cleanup to process design. Would a 20-minute call next week be worth it to compare notes on how your billing runs today?
+> Kai, I noticed Pellucid Systems is hiring a Billing Operations Lead. That hire often comes up when invoices start needing manual rework as pricing gets more usage-based. We built Lumen Ledger so usage-based billing runs without a finance team rebuilding invoices by hand. Teams usually use us to pull usage data straight into accurate invoices, so the new lead can focus on pricing and process rather than spreadsheet cleanup. Would you be open to a 20 minute call next week to compare how your team handles this today?
 
-**d05** draft, open, fails: not_about_them (only private facts: there is nothing citable, so it should fail rather than cite)
+**d05** draft, open, fails: uncited_claim, not_about_them (only private facts: there is nothing citable, so it should fail rather than cite)
 
 Subject: Usage data to invoices
 
-> Rui, I don't know yet how Talusa Labs handles billing today, so treat this as a question rather than a pitch. With usage-based pricing, the work often lands on the data team first: someone has to turn metering events into numbers finance can invoice from. When that step runs on scripts and spreadsheets, finance ends up rebuilding invoices by hand each month. We built our product so usage data flows straight into accurate invoices without that manual pass. If that hand-off between data and finance sits with you, would a 20 minute call next week be useful?
+> Rui, I'm Maya Okafor at Lumen Ledger, and I'm writing to you because you lead data at Talusa Labs. We help companies bill on usage without a finance team rebuilding invoices by hand. In our work, the data team usually ends up owning the usage pipeline that billing depends on, along with the reconciliation questions when numbers don't match. We take metered events as they are and turn them into invoices finance can trust, so the data team stops being the backstop. Would you be open to a 20 minute call next week to compare notes on how usage reaches billing at Talusa Labs today?
 
 **d06** draft, open, passes (opens with the first name, not the title)
 
-Subject: After the legacy billing tool
+Subject: Billing after the legacy tool
 
-> Amara, it looks like your team recently removed a legacy billing tool from its stack. Your billing page also shows customers paying by card or ACH, so whatever fills that gap has to handle both cleanly. Quillon Payments runs usage-based billing so finance does not end up rebuilding invoices by hand each month. For controllers, that usually means fewer manual adjustments before close and a clearer trail from usage to invoice to payment. Would a 20 minute call next week make sense to see whether it fits how you bill today?
+> Amara, it looks like Quillon recently removed a legacy billing tool from its stack. With customers paying by card or ACH, that usually leaves the controller's team reconciling two payment streams while the replacement settles in. We built Lumen Ledger so usage-based billing runs without finance rebuilding invoices by hand, and payments map back to the right invoice automatically. If invoicing is still partly manual after the change, I can walk you through how other assistant controllers have closed that gap. Would a 20 minute call next week be worth it?
 
 **d07** draft, open, passes
 
-Subject: Revenue Accountant hire at Orbis
+Subject: Usage billing at Orbis Mobility
 
-> Lena, congratulations on joining Orbis Mobility as CFO. I saw that Orbis Mobility has an open Revenue Accountant role. If part of that role will be rebuilding usage-based invoices by hand, that is the work we take off the desk. Usage data flows straight into invoices, so your new Revenue Accountant would review them rather than assemble them. Would a 20-minute call next week be useful to see whether that fits how Orbis bills today?
+> Lena, congratulations on joining Orbis Mobility as CFO. Orbis Mobility currently has an open Revenue Accountant role. We help finance teams run usage-based billing so nobody has to rebuild invoices by hand each cycle. When usage data shifts month to month, that manual work usually lands on the people closing revenue. Would a 20 minute call in the next two weeks be useful to compare notes on how you plan to handle billing as the team grows?
 
 **d08** draft, open, passes
 
-Subject: Invoice errors and the billing hire
+Subject: Billing hire and invoice errors
 
-> Tom, I saw that Sable Robotics is hiring a Senior Billing Specialist. I also read a review from your side of a billing tool that called out invoice errors. Taken together, that often means usage data is not flowing cleanly into invoices and someone is correcting them by hand. We help revenue operations teams run usage-based billing without finance rebuilding invoices manually. It may be worth comparing notes before the new hire spends their first months on cleanup. Would you be open to a 20 minute call next week to see whether this fits how Sable bills today?
+> Tom, I saw that Sable Robotics is hiring a Senior Billing Specialist. I also came across a review from your side of a billing tool that called out invoice errors. Taken together, that often points to usage data and invoices being reconciled by hand. We built Lumen Ledger so usage-based billing flows from metered data to correct invoices, without finance rebuilding them line by line. That could let your new billing hire focus on pricing and collections instead of fixing errors. Would a 20 minute call next week be useful to see how this would fit your current billing setup?
 
 **d09** draft, open, passes (referral: should open with who suggested it)
 
-Subject: Billing your new usage tier
+Subject: Billing for your new usage tier
 
-> Priya, Daniel Moore suggested I write to you. I noticed your enterprise plan now includes a usage tier. My work is making usage-based billing run cleanly, so nobody has to rebuild invoices by hand at month end. Would you be open to a 20 minute call next week to see whether that fits how you plan to bill the new tier?
+> Priya, Daniel Moore suggested I write to you. I saw Ferrovia Cloud added a usage tier to its enterprise plan. Usage pricing tends to put pressure on finance, since invoices built for flat plans often end up being adjusted by hand each cycle. At Lumen Ledger we handle usage-based billing so metered charges flow into accurate invoices without a team rebuilding them manually. Would you be open to a 20 minute call next week to see whether this fits how you plan to bill the new tier?
 
 **d10** draft, open, passes
 
-Subject: Monthly usage invoices at Nimbus
+Subject: Month-end usage invoices at Nimbus
 
-> Sam, congratulations on the seed round. I understand billing at Nimbus runs on the 1st of each month for the prior month's usage. For many controllers, that first week turns into pulling usage exports, reconciling them against contracts, and fixing invoices by hand before they go out. We help finance teams turn metered usage into accurate invoices automatically, so the month-end cycle does not depend on spreadsheets or one person's memory. Would you be open to a 20 minute call next week to compare notes on how your close and billing run today?
+> Sam, congratulations on closing the seed round. I understand Nimbus bills on the 1st of each month for the prior month's usage. For a controller, that usually means the first days of every month go to pulling usage data, checking it, and fixing invoices by hand. We built Lumen Ledger so usage-based billing runs without a finance team rebuilding invoices manually. Usage flows straight into invoices, and you review exceptions instead of every line. Would you be open to a 20-minute call next week to see whether it fits how you close each month?
 
 **d11** draft, open, passes
 
-Subject: Per-event pricing and billing pipelines
+Subject: Per-event billing pipelines at Glasswing
 
-> Yusuf, Glasswing recently launched per-event pricing for its ingest API. You are also hiring a Data Engineer for billing pipelines, which suggests metering and invoicing are landing on your team. That shift often means someone ends up reconciling event counts against invoices by hand each month. We help data platform teams turn raw usage events into accurate invoices without finance rebuilding them manually. Would a 20 minute call next week to compare notes on how you are metering per-event usage be useful?
+> Yusuf, I noticed Glasswing recently launched per-event pricing for its ingest API. You are also hiring a Data Engineer for billing pipelines, which suggests metering and invoicing data is landing on your team. We help data teams turn raw usage events into accurate invoices, so finance does not end up rebuilding them by hand each month. That usually means fewer custom pipelines to maintain and a single source of truth for what each customer used. Would you be open to a 20 minute call next week to compare notes on how you are handling per-event metering today?
 
 **d12** draft, open, passes (the webinar is private, the pricing change is citable)
 
 Subject: Usage pricing and invoicing
 
-> Chloe, I noticed Mirelle Studios moved two plans to usage pricing. That shift usually lands on finance first, because metered usage has to be pulled, reconciled and turned into invoices that customers can actually follow. When that work happens in spreadsheets, month-end close stretches and small errors turn into credit notes and awkward customer calls. We help finance and operations teams bill on usage automatically, so nobody has to rebuild invoices by hand each cycle. Would you be open to a 20-minute call next week to compare how you are handling it today with what we have seen work?
+> Chloe, I noticed Mirelle Studios moved two of its plans to usage pricing. That shift often lands on finance and operations, because invoices that used to be fixed now depend on metered data that has to be pulled, checked and reconciled each cycle. At Lumen Ledger we handle usage-based billing so a finance team does not end up rebuilding invoices by hand in spreadsheets. We take usage data as it comes in, apply each plan's rates and produce invoices that are ready to send. Would you be open to a 20 minute call next week to see whether this fits how you bill those two plans?
 
 **d13** draft, follow up, passes
 
 Subject: Re: billing at Halvard Analytics
 
-> Marta, following up on my note about billing. I noticed Halvard Analytics posted a role for a Revenue Operations Manager. When companies make that hire, a lot of the first months often go to reconciling usage data and fixing invoices by hand. We help finance teams run usage-based billing so invoices come out right without that manual rebuild. Would a 20-minute call next week be worth it to see whether this fits before the new hire starts?
+> Marta, following up on my earlier note. I noticed Halvard Analytics is hiring a Revenue Operations Manager. When companies with usage-based pricing add that role, a good part of the job often ends up being invoice cleanup rather than revenue work. We turn metered usage into accurate invoices automatically, so finance does not rebuild them by hand each month. Would a 20 minute call next week be worth it to see whether that fits how you bill today?
 
 **d14** draft, follow up, passes
 
 Subject: Re: billing at Brightline Freight
 
-> Owen, following up on my earlier note. With Brightline Freight moving its API from flat plans to usage-based pricing, invoices now depend on metered usage rather than a fixed line item. For a controller, that shift often means reconciling usage exports and rebuilding invoices by hand each close. We help teams bill on usage without that manual rework. Would a 20-minute call next week be worth it to see whether this fits how you close the month?
+> Owen, following up on my note from last week. Since Brightline Freight moved its API from flat plans to usage-based pricing, invoices now depend on metered usage rather than a fixed plan price. For a controller, that shift often means month-end turns into reconciling usage exports and rebuilding invoices by hand. We take usage data straight into invoicing, so the numbers your team closes on match what customers are billed. Would a 20-minute call next week be worth it to compare notes on how you are handling this today?
 
 **d15** draft, break up, passes
 
 Subject: Re: billing at Pellucid Systems
 
-> Kai, I'll keep this short since it's my last note. Pellucid Systems is hiring a Billing Operations Lead, which usually means usage-based invoices are getting harder to keep accurate. We help revenue teams bill on usage without finance rebuilding invoices by hand. If that's worth a 15-minute look before the new hire starts, would you reply with a time that suits you?
+> Kai, this is my last note on this. I noticed Pellucid Systems is hiring a Billing Operations Lead. We handle usage-based billing so invoices don't get rebuilt by hand, which can shape what that role spends its time on. If it's worth a 15-minute look before the hire lands, would you reply with a time that works?
 
 **l01** draft linkedin, connect, passes
 
@@ -126,69 +124,69 @@ Subject: Re: billing at Pellucid Systems
 
 **l02** draft linkedin, connect, passes
 
-> Owen, I saw Brightline Freight moved its API from flat plans to usage-based pricing. I work with controllers handling that shift and would like to connect.
+> Owen, I noticed Brightline Freight moved its API from flat plans to usage-based pricing. I work with controllers on that kind of billing shift and would be glad to connect.
 
 **l03** draft linkedin, connect, passes
 
-> Kai, I noticed Pellucid Systems is hiring a Billing Operations Lead. I talk with a lot of RevOps leaders working through billing operations, so it seemed worth connecting.
+> Kai, I noticed Pellucid Systems is hiring a Billing Operations Lead. I spend most of my time with RevOps leaders working through usage-based billing, so it would be good to connect.
 
 **l04** draft linkedin, message, passes
 
-> Ines, thanks for connecting. Congratulations on the $40M Series C led by Northwind Partners. After a raise like that, finance teams often find usage-based billing turns into hours of rebuilding invoices by hand as customer counts grow. I work with finance leaders who want usage-based billing to run without that manual rework. Would you be open to a short call to compare notes on how Corvo Health handles invoicing today?
+> Ines, thanks for connecting. Congrats on the $40M Series C led by Northwind Partners. After a raise like that, growth often means more customers on usage-based pricing, and finance teams can end up rebuilding invoices by hand to keep up. At Lumen Ledger we help finance teams run usage-based billing without that manual rework. Would you be open to a short call to compare notes on how Corvo Health handles billing today?
 
 **l05** draft linkedin, message, passes
 
-> Yusuf, thanks for connecting. Glasswing Telemetry recently launched per-event pricing for its ingest API. When pricing moves to per-event, the metering data often ends up feeding invoices that finance teams reconcile by hand, and the data platform team gets pulled into it. We help teams run usage-based billing straight from that event data so nobody rebuilds invoices manually. Would you be open to a short call to compare notes on how you are handling it today?
+> Yusuf, thanks for connecting. I noticed Glasswing Telemetry launched per-event pricing for its ingest API. That kind of change often puts the data platform team in the middle of metering, since usage counts have to flow cleanly into invoices. At Lumen Ledger we help teams run usage-based billing without finance rebuilding invoices by hand. Would you be open to a short chat about how you are handling event metering today?
 
 ## Every brief
 
 **b01**
 
-- Halvard Analytics has posted a job for a Revenue Operations Manager, which suggests they are building out ownership of revenue processes.
-- Their pricing combines per-seat charges with usage overages billed monthly, a hybrid model that requires metering usage and running a monthly billing cycle.
-- They are also hiring a Billing Analyst, so billing work is growing enough to need dedicated headcount.
-- Hiring for both revenue operations and billing at the same time points to investment in the billing and revenue function, alongside a seat-plus-usage model billed every month.
+- Halvard Analytics has posted a job for a Revenue Operations Manager, which suggests it is building out ownership of its revenue processes.
+- Its pricing combines per-seat charges with usage overages billed monthly. That means every billing cycle needs usage tracking and overage calculation.
+- The careers page lists an open Billing Analyst role, which points to growing billing workload or a team that is adding headcount to handle it.
+- It is hiring for both revenue operations and billing at once. This suggests the finance side is investing in how billing and revenue are run, not just filling a single seat.
 
-Angle: With a seat-plus-overage model billed monthly and new Revenue Operations Manager and Billing Analyst roles open, Halvard is staffing up its billing function now and may be weighing how much of that monthly work to handle with people versus software.
+Angle: With a Revenue Operations Manager and a Billing Analyst being hired to support monthly seat-plus-overage billing, Halvard may be setting up the processes and tools those new hires will run.
 
 **b02**
 
-- Corvo Health raised a $40M Series C led by Northwind Partners.
-- Their billing page says invoices are sent quarterly in arrears, so revenue is billed after the service period ends.
-- They posted a job for a Senior Revenue Accountant, which suggests the finance team is adding revenue accounting capacity.
-- The new revenue accounting hire comes alongside quarterly-in-arrears invoicing, so whoever fills the role will likely own that billing and revenue process.
+- Corvo Health raised a $40M Series C led by Northwind Partners, which often brings more pressure on finance to report revenue cleanly and scale operations.
+- Their billing page says invoices are sent quarterly in arrears, so cash comes in well after the service period and billing runs on a long cycle.
+- They posted a job for a Senior Revenue Accountant, a sign the finance team is building out revenue accounting capacity.
+- Hiring a revenue accountant while billing quarterly in arrears suggests revenue work is growing and may be handled with added headcount rather than tooling.
 
-Angle: Fresh off a $40M Series C and hiring a Senior Revenue Accountant, Corvo Health's finance team may be reviewing how it handles quarterly-in-arrears invoicing and revenue tracking.
+Angle: Fresh off a $40M Series C and hiring a Senior Revenue Accountant, Corvo's finance team is likely reviewing how it handles quarterly-in-arrears billing and revenue work as it scales.
 
 **b03**
 
-- Brightline Freight has moved its API from flat plans to usage-based pricing.
-- Usage-based pricing means bills now depend on how much each customer uses the API, which is a different billing setup from charging the same flat plan price each period.
-- The company is hiring a Billing Analyst and a Senior Accountant.
-- Taken together, the pricing change and the billing and accounting hires suggest the finance team is putting effort into billing right now.
+- Brightline Freight moved its API from flat plans to usage-based pricing.
+- The careers page lists open roles for a Billing Analyst and a Senior Accountant.
+- The pricing change and the billing and accounting job openings point to a finance team adding people as its billing setup changes.
 
-Angle: Brightline Freight just switched its API to usage-based pricing and is hiring for billing and accounting roles, so its finance team is likely working out how to bill on usage now.
+Angle: Brightline Freight just moved its API to usage-based pricing and is hiring billing and accounting staff, so its finance team may be looking at how it handles usage billing and revenue now.
 
 **b04**
 
-- Sable Robotics left a review of a billing tool that mentions invoice errors, which suggests they are not fully satisfied with their current setup.
-- They are hiring a Senior Billing Specialist, so billing work is growing or needs more hands on the finance team.
-- Their billing page describes annual contracts with monthly usage true-ups, a model that adds recurring calculation and invoicing work each month.
-- Invoice errors combined with monthly usage true-ups point to a billing process that may be hard to keep accurate as volume grows.
+- Sable Robotics left a review of a billing tool that mentions invoice errors, so they may be unhappy with how their current billing is working.
+- They posted a job for a Senior Billing Specialist, which suggests billing work is growing or needs more hands.
+- Their billing page describes annual contracts with monthly usage true-ups, a model that mixes fixed and usage charges and can be hard to invoice correctly.
+- Taken together, a usage-based true-up model, reported invoice errors, and a new billing hire point to strain in their billing process.
 
-Angle: Sable Robotics is reviewing a billing tool, reporting invoice errors, and hiring billing staff, so they may be open now to software that handles annual contracts with monthly usage true-ups more accurately.
+Angle: They are reviewing a billing tool, mention invoice errors, and are hiring a billing specialist, so they may be open now to better ways to handle monthly usage true-ups on annual contracts.
 
 **b05** (one thin fact: few findings, none invented)
 
-- Talusa Labs is researching metered billing. This is the only fact we have on the account, so team size, current billing setup, and pricing model are unknown.
+- Talusa Labs is researching metered billing. This is an intent signal, not a confirmed project.
+- This is the only fact on file. Company size, current billing tools, and finance contacts are unknown, so the first conversation should establish them before any pitch.
 
-Angle: Talusa Labs is actively researching metered billing, so outreach on how our software handles usage-based billing fits what they are looking into now.
+Angle: Talusa Labs is researching metered billing, so a short note on how our software handles usage-based billing is relevant now.
 
 **b06**
 
-- Glasswing Telemetry launched per-event pricing for its ingest API, so its revenue now depends on counting usage accurately.
-- Its billing page says usage is metered per million events, so finance has to turn high-volume event counts into invoices.
-- It posted a job for a Data Engineer, Billing Pipelines, which suggests it is building or extending its billing data pipeline in-house.
-- The hiring post came alongside the move to usage pricing, which suggests the billing workload is growing.
+- Glasswing Telemetry recently launched per-event pricing for its ingest API.
+- Its billing page says usage is metered per million events, so invoices depend on accurate usage metering.
+- It is hiring a Data Engineer for Billing Pipelines, which suggests it is building or expanding billing data infrastructure in-house.
+- The new per-event pricing combined with the billing pipeline hire points to more usage data flowing into billing.
 
-Angle: Glasswing just moved its ingest API to per-event pricing metered per million events and is hiring an engineer for billing pipelines, so its finance team may be weighing whether to build usage billing in-house or buy it.
+Angle: Glasswing just moved its ingest API to per-event pricing metered per million events and is hiring to build billing pipelines, so its finance team may be weighing build versus buy for usage-based billing now.

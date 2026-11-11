@@ -470,7 +470,7 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
     out = None
     verdict = None
     for attempt in (1, 2):
-        payload = {"company": account["name"], "sender": owner["name"], "angle": persona["angle"],
+        payload = {"company": account["name"], "our_company": CONFIG.sender_company, "sender": owner["name"], "angle": persona["angle"],
                    "play_angle": play["angle"], "brief": (ap["brief"] or {}).get("findings", []),
                    "person": {"id": person["id"], "first_name": copy_gate.clean_first_name(person["first_name"], person["full_name"]),
                               "title": person["title"]},

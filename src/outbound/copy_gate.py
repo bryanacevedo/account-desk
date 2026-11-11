@@ -106,6 +106,8 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
     if PREFIXES.match(sentences[0]["text"] if sentences else ""):
         fail("opening", "Opens with a title instead of the first name")
     cited_claims = 0
+    # Their company as people write it: the full name, or its first word ("Halvard" for Halvard Analytics).
+    company_name = (account.get("name") or "").split(" ")[0] if account.get("name") else ""
     cited_text = []
     for s in sentences:
         ids = s.get("fact_ids") or []
@@ -114,9 +116,12 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
             fail("unknown_fact", f"Cites facts that do not exist for this account: {bad}")
         if private_ids and any(i in private_ids for i in ids):
             fail("private_signal", "Cites something we only know from tracking (a visit or research data)")
-        if s["kind"] == "claim":
+        # A sentence that names their company says something about them, whatever the model labelled it, so it
+        # needs a source too (it caught a draft crediting our product to the prospect).
+        names_them = s["kind"] != "ask" and bool(company_name and re.search(r"\b" + re.escape(company_name) + r"\b", s["text"]))
+        if s["kind"] == "claim" or names_them:
             if not ids:
-                fail("uncited_claim", f"A claim with no source: \"{s['text'][:80]}\"")
+                fail("uncited_claim", f"Says something about them with no source: \"{s['text'][:80]}\"")
             elif not bad:
                 cited_claims += 1
         cited_text += [facts[i] for i in ids if i in facts]

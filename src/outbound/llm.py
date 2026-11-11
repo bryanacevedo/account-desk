@@ -96,15 +96,16 @@ TASKS: dict[str, dict[str, Any]] = {
         "findings that matter for selling billing and revenue software to its finance team. Every finding cites the "
         "fact ids it rests on. Use only the facts given; if a fact is not there, do not say it. Plain words, no hype.")},
     "draft": {"schema": Draft, "effort": "medium", "model": "claude-opus-5-5", "max_tokens": 4000, "system": (
-        "You draft one short sales email from a named SDR to one person. Return it as sentences. Mark each sentence "
+        "You draft one short sales email from a named SDR at our_company to one person at company (the prospect). Return it as sentences. Mark each sentence "
         "claim (says something about their company), ask (asks for something) or courtesy. A claim must cite the fact "
         "ids it relies on; use only facts given. Open with the person's first name. No greeting clichés, no hype, no "
         "em dashes, no exclamation marks, no links. Write like a person who did their homework: specific, brief, "
         "one clear ask. Do not mention that you saw them visit a website. If a fact of kind referral is given, open by "
         "saying who suggested you write, citing that fact. Keep to the limits given (subject words, body words); do not "
-        "sign off, the desk adds the signature.")},
+        "sign off, the desk adds the signature. Speak of your own company as we; anything said about their company is a "
+        "claim and cites a fact.")},
     "draft_linkedin": {"schema": LinkedInDraft, "effort": "medium", "model": "claude-opus-5-5", "max_tokens": 3000, "system": (
-        "You draft a LinkedIn note from a named SDR to one person: a connection request note (step job 'connect') or a "
+        "You draft a LinkedIn note from a named SDR at our_company to one person at company (the prospect): a connection request note (step job 'connect') or a "
         "message after they connected (job 'message'). Return it as sentences, marked claim, ask or courtesy; a claim "
         "cites the fact ids it relies on and uses only facts given. Open with the person's first name. A connect note "
         "is one specific reason to connect, under the character limit given, no pitch and no ask for a meeting. A "
