@@ -273,15 +273,12 @@ def test_draft_sentences_keep_names_articles_and_never_repeat_the_company():
     assert article("18") == "an" and article("25") == "a"
 
 
-def test_a_no_thanks_reply_is_an_opt_out_as_the_footer_promises():
+def test_no_thanks_means_not_interested_and_never_unsubscribes():
     from outbound import replies
-    for text in ("No thanks.", "no thank you", "No, thanks!", "Thanks but no thanks", "No thanks. Please take us off."):
+    for text in ("No thanks.", "No thanks for now, try us again in Q3.", "Thanks but no thanks"):
+        assert replies.rules_label("a@b.example", "Re: billing", text) is None, text  # the model labels it on meaning
+    for text in ("Please take us off.", "Unsubscribe", "Remove us from your list."):
         assert replies.rules_label("a@b.example", "Re: billing", text) == ("unsubscribe", 0.96), text
-    # More than "no thanks" says something else, and is labelled on what it says (here, not now), never an opt-out.
-    for text in ("No thanks for now, try us again in Q3.", "No thanks, we just signed with someone else. Keep in touch.",
-                 "Thanks, this is helpful. Can we talk Tuesday?"):
-        assert replies.rules_label("a@b.example", "Re: billing", text) is None, text
-
 
 def test_the_footer_is_two_short_lines_with_the_address_and_the_way_out():
     from outbound import copy_gate
@@ -289,7 +286,7 @@ def test_the_footer_is_two_short_lines_with_the_address_and_the_way_out():
                          unsubscribe_url="https://x.example/u/7-abcdef123456", privacy_url=None)
     lines = f.split("\n")
     assert lines[0] == "--" and len(lines) == 3
-    assert "400 Market Street" in lines[1] and "no thanks" in lines[2] and "won't write again" in lines[2]
+    assert "400 Market Street" in lines[1] and "unsubscribe" in lines[2] and "no thanks" not in f
     assert all(len(line) <= 120 for line in lines)
 
 

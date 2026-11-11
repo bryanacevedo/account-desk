@@ -33,7 +33,6 @@ OOO = re.compile(r"\b(out of (the )?office|on (annual )?leave|automatic reply|au
                  r"fuera de la oficina|absent du bureau|ausente)\b", re.I)
 BOUNCE_FROM = re.compile(r"^(mailer-daemon|postmaster)@", re.I)
 LEFT = re.compile(r"\b(no longer (with|at)|has left the company|left the company|is no longer employed)\b", re.I)
-NO_THANKS = re.compile(r"(thanks but )?no,? ?thanks?( you)?( for reaching out)?\s*")
 # Only a company the person actually named: "I'm now at Kestrel Health." Nothing is guessed.
 NEW_CO = re.compile(r"\b(?:now at|now with|joined|moved to)\s+([A-Z][\w&'-]*(?:\s+[A-Z][\w&'-]*){0,3})")
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
@@ -83,10 +82,6 @@ def rules_label(from_addr: str, subject: str | None, cleaned: str) -> tuple[str,
     if OOO.search(cleaned) or (subject or "").lower().startswith(("automatic reply", "out of office", "autoreply")):
         return "out_of_office", 0.97
     if OPT_OUT.search(cleaned) and len(cleaned.split()) <= 25:
-        return "unsubscribe", 0.96
-    # The footer offers "reply no thanks" as a way out, so a reply that is just that is an opt-out. Anything more
-    # ("no thanks for now, try in Q3") says something else and is labelled on what it says.
-    if NO_THANKS.fullmatch(" ".join(re.sub(r"[^a-z ]", " ", cleaned.lower()).split())):
         return "unsubscribe", 0.96
     # The List-Unsubscribe mailto: arrives as an email with that subject and, often, no body at all.
     subj = (subject or "").strip().lower()

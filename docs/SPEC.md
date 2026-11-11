@@ -394,7 +394,7 @@ There are no stored templates; every draft is written per person. The unit that 
 
 ### 22.4 Legal footer and contact basis (Risk: legal, high. Counsel to confirm.)
 
-- Every desk email ends with a footer block the copy gate requires and does not count against length or link limits: the sender's company name and postal address, a plain-text opt-out line ("Reply 'no thanks' and I won't write again, or unsubscribe:" and a short link), with a "no thanks" reply honoured as an opt-out, and for EU, EEA and UK recipients a link to the privacy notice that says where the data came from (GDPR Article 14).
+- Every desk email ends with a footer block the copy gate requires and does not count against length or link limits: the sender's company name and postal address, a plain-text opt-out line ("To stop hearing from us, reply "unsubscribe" or use" and a short link; "no thanks" is a reply meaning not interested, never an opt-out), and for EU, EEA and UK recipients a link to the privacy notice that says where the data came from (GDPR Article 14).
 - The one-click endpoint acts only on POST (RFC 8058); a GET shows a confirm button, so mail scanners cannot unsubscribe people. An opt-out is honoured at once and always within 2 days.
 - `contact_basis` records the basis per person (`legitimate_interest` with the assessment reference for EU and UK, `consent` where a region needs it). Region rules key on the person's country. No basis where one is needed blocks the send.
 

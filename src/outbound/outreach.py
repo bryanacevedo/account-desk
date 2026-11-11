@@ -577,7 +577,7 @@ def _edit_checks(m: dict, cur=None) -> list[str]:
             core = num.strip("$%.,")
             if core and core not in facts.replace(",", "") and not re.search(re.escape(num) + r"[- ]?(min|minutes|hour)", text):
                 out.append(f"The number {num} is not in any fact we hold about them")
-    if "won't write again" not in m["body"]:
+    if "To stop hearing from us" not in m["body"] and "won't write again" not in m["body"]:
         out.append("The opt-out line at the bottom has to stay")
     if any(d in m["body"] for d in copy_gate.DASHES):
         out.append("Long dashes are not allowed")

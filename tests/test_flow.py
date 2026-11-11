@@ -84,7 +84,7 @@ def test_mailbox_caps_were_respected(world):
 
 
 def test_every_email_carries_the_legal_footer(world):
-    assert v("select count(*) from messages where status = 'sent' and channel = 'email' and body not like '%%won''t write again%%'") == 0
+    assert v("select count(*) from messages where status = 'sent' and channel = 'email' and body not like '%%To stop hearing from us%%' and body not like '%%won''t write again%%'") == 0
     assert v("select count(*) from messages where status = 'sent' and channel = 'email' and body not like '%%400 Market Street%%'") == 0
 
 
