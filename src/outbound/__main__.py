@@ -7,6 +7,7 @@
   monitors           run every monitor once and print the result
   init FILE          set up a real desk from a JSON file (see examples/desk.example.json)
   import KIND FILE   import accounts or people from a CSV file
+  mcp                read-only MCP server on stdio (why an account is hot, what is waiting, how a play did)
 """
 from __future__ import annotations
 
@@ -28,6 +29,10 @@ def main(argv: list[str]) -> int:
     CONFIG.validate()
     if cmd == "migrate":
         print(db.migrate())
+    elif cmd == "mcp":
+        logging.getLogger().setLevel(logging.WARNING)  # stdout carries the protocol
+        from . import mcp_server
+        mcp_server.main()
     elif cmd == "init":
         from . import setup_desk
         db.migrate()
