@@ -275,9 +275,12 @@ def test_draft_sentences_keep_names_articles_and_never_repeat_the_company():
 
 def test_a_no_thanks_reply_is_an_opt_out_as_the_footer_promises():
     from outbound import replies
-    for text in ("No thanks.", "no thank you", "No, thanks. Please take us off.", "Thanks but no thanks"):
+    for text in ("No thanks.", "no thank you", "No, thanks!", "Thanks but no thanks", "No thanks. Please take us off."):
         assert replies.rules_label("a@b.example", "Re: billing", text) == ("unsubscribe", 0.96), text
-    assert replies.rules_label("a@b.example", "Re: billing", "Thanks, this is helpful. Can we talk Tuesday?") is None
+    # More than "no thanks" says something else, and is labelled on what it says (here, not now), never an opt-out.
+    for text in ("No thanks for now, try us again in Q3.", "No thanks, we just signed with someone else. Keep in touch.",
+                 "Thanks, this is helpful. Can we talk Tuesday?"):
+        assert replies.rules_label("a@b.example", "Re: billing", text) is None, text
 
 
 def test_the_footer_is_two_short_lines_with_the_address_and_the_way_out():
