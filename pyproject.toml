@@ -27,8 +27,12 @@ packages = ["src/outbound"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -p no:cacheprovider"
 
 [tool.ruff]
 line-length = 110
 target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I"]
+ignore = ["E501", "B008", "UP017", "B905", "E731"]

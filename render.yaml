@@ -1,0 +1,11 @@
+# The public demo: an invented company, simulated vendors, no keys. Postgres lives inside the container, so every
+# restart is a fresh 60-day simulation (about 30 seconds). Sleeps after 15 idle minutes on the free plan.
+services:
+  - type: web
+    name: outbound-desk
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: PUBLIC_DEMO
+        value: "1"

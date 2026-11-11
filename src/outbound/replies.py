@@ -47,7 +47,7 @@ def clean(raw: str) -> str:
         if m:
             cut = min(cut, m.start())
     lines = text[:cut].split("\n")
-    lines = [l for l in lines if not l.lstrip().startswith(">")]
+    lines = [ln for ln in lines if not ln.lstrip().startswith(">")]
     text = "\n".join(lines)
     for rx in SIGNATURE:
         m = rx.search(text)
@@ -90,10 +90,12 @@ def parse_return(text: str | None, received: datetime) -> datetime | None:
     if not text:
         return None
     t = text.lower()
-    try:
-        return datetime.fromisoformat(t).replace(tzinfo=received.tzinfo) if re.match(r"\d{4}-\d{2}-\d{2}", t) else None
-    except ValueError:
-        pass
+    if re.match(r"\d{4}-\d{2}-\d{2}", t):
+        try:
+            d = datetime.fromisoformat(t[:10])
+            return received.replace(year=d.year, month=d.month, day=d.day, hour=9, minute=0)
+        except ValueError:
+            return None
     for name, num in MONTHS.items():
         if name in t:
             day = re.search(r"(\d{1,2})\s+" + name, t)

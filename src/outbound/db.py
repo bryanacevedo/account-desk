@@ -12,10 +12,10 @@ from psycopg.types.json import Jsonb
 from psycopg.types.numeric import FloatLoader
 from psycopg_pool import ConnectionPool
 
+from .config import CONFIG
+
 # Numeric columns come back as float: scores, rates and shares are measurements, not money (money is integer cents).
 psycopg.adapters.register_loader("numeric", FloatLoader)
-
-from .config import CONFIG
 
 log = logging.getLogger("outbound.db")
 MIGRATIONS = Path(__file__).resolve().parents[2] / "migrations"

@@ -27,7 +27,7 @@ def main(argv: list[str]) -> int:
     if cmd == "migrate":
         print(db.migrate())
     elif cmd == "demo":
-        from . import outreach, pipeline, replies, scoring, sending, monitors, scheduler  # noqa: F401 register handlers
+        from . import monitors, outreach, pipeline, replies, scheduler, scoring, sending  # noqa: F401 register handlers
         from .sim import runner
         days = int(argv[2]) if len(argv) > 2 else 60
         t0 = time.time()
@@ -37,7 +37,7 @@ def main(argv: list[str]) -> int:
         print(json.dumps({"world": info, "totals": totals, "seconds": round(time.time() - t0, 1)}))
         db.close()
     elif cmd == "simulate":
-        from . import outreach, pipeline, replies, scoring, sending, monitors, scheduler  # noqa: F401
+        from . import monitors, outreach, pipeline, replies, scheduler, scoring, sending  # noqa: F401
         from .sim import runner
         print(runner.run(int(argv[2]) if len(argv) > 2 else 1, slow_last_days=0, idle_hours=0))
     elif cmd == "monitors":

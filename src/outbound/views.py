@@ -29,7 +29,7 @@ def today(cur, user: dict) -> dict:
         from messages m join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
         join people pe on pe.id = e.person_id join accounts a on a.id = ap.account_id join plays p on p.id = ap.play_id
         where m.status in ('awaiting_approval', 'failed_gate') and {mine} order by m.created_at limit 60""", *args)
-    hot = db.all(cur, f"""
+    hot = db.all(cur, """
         select r.id, r.received_at, r.label, r.cleaned, r.sla_due_at, pe.full_name, pe.photo_url, pe.title, a.name as company,
                a.id as account_id
         from replies r join accounts a on a.id = r.account_id left join people pe on pe.id = r.person_id

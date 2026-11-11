@@ -99,7 +99,15 @@ const STOP: Record<string, string> = {
   approval_lapsed: "Approval came too late", person_moved: "Changed jobs", referral: "Referred someone",
   reply_received: "Replied, reading it", account_reply: "Colleague replied", out_of_office: "Out of office",
 };
-const stopWord = (r: string | null) => (r ? STOP[r] || cap(r.replace(/^play_|^gate:|^rejected: /, "")) : "");
+const stopWord = (r: string | null) => {
+  if (!r) return "";
+  if (STOP[r]) return STOP[r];
+  if (r.startsWith("rejected")) return "Email rejected";
+  if (r.startsWith("gate:") || r.startsWith("refused")) return "Blocked by a contact rule";
+  if (r.startsWith("play_")) return "Play ended";
+  return cap(r);
+};
+const GOOD_STOPS = new Set(["replied_positive", "meeting_booked", "referral"]);
 
 const PERSONA: Record<string, string> = { cfo: "Finance leader", controller: "Controller", revops: "Revenue operations", data: "Data and systems" };
 
@@ -126,7 +134,7 @@ export function AccountSheet({ id }: { id: number }) {
         <Fig value={s?.priority ?? 0} label="Priority" />
         <Fig value={s?.fit ?? a.fit_score ?? 0} label={`Fit, tier ${a.fit_tier}`} />
         <Fig value={s?.intent ?? 0} label="Intent" />
-        <Fig value={a.owner || "Unassigned"} label="Owner" sm />
+        <Fig value={a.owner || cur?.owner || "Unassigned"} label="Owner" sm />
       </div>
       <div className="tabs" role="tablist">
         {tabs.map(([k, l, n]) => <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}{n !== undefined ? <span className="n">{n}</span> : null}</button>)}
@@ -169,7 +177,7 @@ function AccountOverview({ d }: { d: any }) {
               <h2 style={{ fontSize: 13.5 }}>Brief</h2>
               <ul className="facts">
                 {cur.brief.findings.map((f: any, i: number) => (
-                  <li key={i}><span className="id">{i + 1}</span><span>{f.text} <span className="mono faint">{f.fact_ids.map((x: number) => `#${x}`).join(" ")}</span></span></li>
+                  <li key={i}><span className="id">{i + 1}</span><span>{f.text}</span></li>
                 ))}
               </ul>
             </div>
@@ -226,7 +234,7 @@ function AccountPeople({ d }: { d: any }) {
           <span className="t">{p.full_name}{p.is_champion ? <span className="mute small"> &middot; past champion</span> : null}</span>
           <span className="s">{p.title}{p.persona_key ? `, ${PERSONA[p.persona_key] || p.persona_key}` : ""}</span>
         </div>
-        {e ? <Status kind={e[0]}>{p.enrollment === "stopped" || p.enrollment === "paused" ? stopWord(p.stop_reason || p.pause_reason) || e[1] : e[1]}</Status>
+        {e ? <Status kind={GOOD_STOPS.has(p.stop_reason) ? "ok" : e[0]}>{p.enrollment === "stopped" || p.enrollment === "paused" ? stopWord(p.stop_reason || p.pause_reason) || e[1] : e[1]}</Status>
           : p.status !== "active" ? <Status kind="off">{cap(p.status)}</Status> : <span className="mute small">{p.email_status === "valid" ? "Verified email" : ""}</span>}
       </div>
     );

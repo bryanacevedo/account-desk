@@ -167,14 +167,14 @@ def suggest_reply(p: dict) -> dict:
 def extract(p: dict) -> dict:
     items = []
     for line in p["notes"].splitlines():
-        l = line.strip()
-        low = l.lower()
-        if not l:
+        ln = line.strip()
+        low = ln.lower()
+        if not ln:
             continue
         if "chargewise" in low or "meterline" in low:
-            items.append({"kind": "competitor", "text": "Compared us with an incumbent billing tool", "quote": l})
+            items.append({"kind": "competitor", "text": "Compared us with an incumbent billing tool", "quote": ln})
         elif any(w in low for w in ("worried", "concern", "too expensive", "timing", "not sure")):
-            items.append({"kind": "objection", "text": l[:120], "quote": l})
+            items.append({"kind": "objection", "text": ln[:120], "quote": ln})
         elif any(w in low for w in ("need", "want", "close", "audit", "board")):
-            items.append({"kind": "reason_to_buy", "text": l[:120], "quote": l})
+            items.append({"kind": "reason_to_buy", "text": ln[:120], "quote": ln})
     return {"items": items[:8]}

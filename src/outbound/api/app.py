@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -20,13 +21,33 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import (audit, db, gate, jobs, monitors, outreach, pipeline, plays, replies, scheduler, scoring, sending,  # noqa: F401
-                signals, views)
+from .. import (  # noqa: F401
+    audit,
+    db,
+    gate,
+    jobs,
+    monitors,
+    outreach,
+    pipeline,
+    plays,
+    replies,
+    scheduler,
+    scoring,
+    sending,
+    signals,
+    views,
+)
 from ..config import CONFIG
 
 log = logging.getLogger("outbound.api")
 WEB = Path(__file__).resolve().parents[3] / "web" / "dist"
-app = FastAPI(title="Outbound Desk", docs_url="/api/docs", openapi_url="/api/openapi.json")
+@asynccontextmanager
+async def lifespan(_app):
+    start_worker()
+    yield
+
+
+app = FastAPI(title="Outbound Desk", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
 
 
 # ---------------------------------------------------------------- cross-cutting
@@ -246,7 +267,7 @@ def decide(ap_id: int, body: Decide, u: dict = Depends(writer)) -> dict:
         try:
             plays.decide(cur, ap_id, accept=body.accept, user_id=u["id"], reason=body.reason)
         except (ValueError, plays.BadTransition) as exc:
-            raise bad_request(exc)
+            raise bad_request(exc) from exc
     if CONFIG.worker_inline:
         jobs.run_ready(limit=50)
     return {"ok": True}
@@ -273,7 +294,7 @@ def approve(message_id: int, body: Approve, u: dict = Depends(writer)) -> dict:
         try:
             outreach.approve(cur, message_id, user_id=u["id"], subject=body.subject, body=body.body)
         except ValueError as exc:
-            raise bad_request(exc)
+            raise bad_request(exc) from exc
         return views.message(cur, message_id)
 
 
@@ -553,7 +574,6 @@ def spa(path: str):
 
 # ---------------------------------------------------------------- the worker
 
-@app.on_event("startup")
 def start_worker() -> None:
     db.pool()
     if not CONFIG.worker_inline:
