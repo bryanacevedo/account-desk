@@ -78,6 +78,46 @@ def fit(rules: dict, account: dict) -> dict:
 
 # ---------------------------------------------------------------- intent and priority
 
+EVENT_WINDOW_DAYS = 14     # same type within two weeks: the same event, however many sources reported it
+CORROBORATION_BONUS = 0.25  # a second source agreeing makes an event surer, not twice as big
+TYPE_CAP = 1.5             # one type never adds more than one and a half strong events
+
+
+def _events(signals: list[dict]) -> list[tuple[dict, float]]:
+    """Collapse signals into events. Within a type, signals within EVENT_WINDOW_DAYS of each other are one event,
+    worth the strongest of them, plus a bonus when another source agrees. A type's total is capped, so a site visited
+    every day or a role reported by three feeds cannot carry an account on its own."""
+    by_type: dict[str, list[dict]] = {}
+    for s in signals:
+        by_type.setdefault(s["type"], []).append(s)
+    out: list[tuple[dict, float]] = []
+    for rows in by_type.values():
+        rows = sorted(rows, key=lambda s: s["age_days"])
+        clusters: list[list[dict]] = []
+        for s in rows:
+            if clusters and s["age_days"] - clusters[-1][0]["age_days"] <= EVENT_WINDOW_DAYS:
+                clusters[-1].append(s)
+            else:
+                clusters.append([s])
+        values = []
+        for cl in clusters:
+            vals = [(s, s["weight"] * s["strength"] * 0.5 ** (s["age_days"] / s["half_life"])) for s in cl]
+            best, v = max(vals, key=lambda x: abs(x[1]))
+            if len({s.get("source") for s in cl}) > 1:
+                v *= 1 + CORROBORATION_BONUS
+            values.append((best, v))
+        cap = abs(rows[0]["weight"]) * TYPE_CAP
+        total = 0.0
+        for best, v in sorted(values, key=lambda x: -abs(x[1])):
+            room = cap - total
+            if room <= 0:
+                break
+            v = max(-room, min(room, v))
+            total += abs(v)
+            out.append((best, v))
+    return out
+
+
 def compute(inputs: dict) -> dict:
     """inputs = {fit, fit_tier, now, signals: [{id, type, weight, half_life, strength, age_days}],
                  positive_replies_90d, meetings_held_90d}"""
@@ -85,8 +125,7 @@ def compute(inputs: dict) -> dict:
     pos = 0.0
     neg = 0.0
     types: set[str] = set()
-    for s in inputs["signals"]:
-        c = s["weight"] * s["strength"] * 0.5 ** (s["age_days"] / s["half_life"])
+    for s, c in _events(inputs["signals"]):
         contributions.append({"signal_id": s["id"], "type": s["type"], "value": round(c, 3)})
         if s["weight"] >= 0:
             pos += c
@@ -130,7 +169,7 @@ def gather_inputs(cur, account_id: int, at: datetime) -> dict | None:
     icp = _icp(cur)
     f = fit(icp["rules"], a)
     sigs = db.all(cur, """
-        select s.id, s.type_key as type, t.weight::float as weight, t.half_life_days::float as half_life,
+        select s.id, s.type_key as type, s.source, t.weight::float as weight, t.half_life_days::float as half_life,
                s.strength::float as strength,
                greatest(0, extract(epoch from (%s - s.observed_at)) / 86400.0)::float as age_days
         from signals s join signal_types t on t.key = s.type_key
@@ -203,5 +242,10 @@ def _rescore_all(cur, payload: dict) -> None:
 
 @jobs.handler("rescore_batch")
 def _rescore_batch(cur, payload: dict) -> None:
+    from . import plays
     for aid in payload["ids"]:
-        rescore(cur, aid)
+        result = rescore(cur, aid)
+        # A signal that arrived while the account was held or in another play is still live when that ends: look
+        # again every night, not only when a new signal arrives.
+        if result and result["priority"] > 0:
+            plays.match(cur, aid)

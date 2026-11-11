@@ -48,6 +48,7 @@ def _trigger_signal(cur, play: dict, account_id: int) -> dict | None:
         where s.account_id = %s and s.status = 'matched' and s.type_key = any(%s)
           and s.strength >= %s and s.observed_at > app_now() - (%s || ' days')::interval
           and s.observed_at <= app_now()
+          and not exists (select 1 from account_plays used where used.trigger_signal_id = s.id)
         order by t.weight * s.strength desc, s.observed_at desc limit 1""",
         account_id, trig["any_of"], trig.get("min_strength", 0), trig.get("within_days", 30))
 

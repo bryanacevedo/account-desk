@@ -318,8 +318,9 @@ def signal_performance(cur) -> list[dict]:
     comparison group. Aggregates from account plays (thousands), never from all signals (millions)."""
     rows = db.all(cur, """
         with ap as (
-          select s.type_key, ap.arm, ap.account_id, ap.proposed_at
+          select distinct on (s.type_key, ap.account_id) s.type_key, ap.arm, ap.account_id, ap.proposed_at
           from account_plays ap join signals s on s.id = ap.trigger_signal_id
+          order by s.type_key, ap.account_id, ap.proposed_at
         ), outcome as (
           select ap.*, exists (select 1 from meetings m where m.account_id = ap.account_id and m.status <> 'cancelled'
                                and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days') as met,
@@ -337,8 +338,13 @@ def signal_performance(cur) -> list[dict]:
           count(o.*) filter (where o.arm = 'treated' and o.pos) as positive
         from signal_types t left join outcome o on o.type_key = t.key
         group by t.key order by t.weight desc""")
+    from .stats import lift_report
+    triggers = {k for r in db.all(cur, "select trigger from plays where status = 'live'") for k in (r["trigger"] or {}).get("any_of", [])}
     for r in rows:
         r["meeting_rate"] = (r["treated_meetings"] / r["treated"]) if r["treated"] else None
+        r["lift"] = lift_report(r["treated_meetings"], r["treated"], r["holdout_meetings"], r["holdout"]) if r["treated"] else None
+        # A type no live play starts on still moves priority, but its effect is not measured here.
+        r["starts_plays"] = r["key"] in triggers
     return rows
 
 

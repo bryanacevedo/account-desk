@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 43. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 44. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -48,6 +48,8 @@ Checked on 2026-11-11 by running them:
 2. Tests for the time-based play exits, auto-approve and demotion, CRM push retries and SLA escalation.
 
 ## Done since the first review (2026-11-11)
+
+- Signals layer, after a fresh deep review (five real findings, all fixed and tested): enrichment signals are dated by when the event happened (a seat taken 80 days ago reads as 80 days old); the same event from two sources counts once in intent, with a small bonus for agreement, and each type's contribution is capped; accounts are re-checked for a play nightly, so a moment that arrived during a hold is not stranded; a signal starts at most one play; per-signal results count each account once and say "too few to tell" or "not measured" instead of showing a bare rate. Not done: time to first touch is still measured from when a signal arrived, not when its event happened.
 
 - Enrichment made deep after a fresh review of that layer: company data with monthly snapshots and signals from what changed (team growth, open roles, tools added or dropped, funding, someone new in a finance seat); catch-all addresses resolved by a second vendor and never sent unconfirmed (and no longer re-checked every 4 hours); provenance per field; departments in persona matching; role start, city, headline and match confidence kept, low-confidence matches refused; phones typed, do-not-call never dialled; one identity per LinkedIn profile; paid answers kept outside the job so a retry never pays twice; a daily refresh (companies monthly, people quarterly, addresses after 45 days); moves clear stale details; imports record moves. 7 enrichment tests.
 - The database also refuses an email from a paused mailbox, an unauthenticated, blocklisted or new domain, a mailbox still warming up, or a domain at a 0.3% spam rate (0022). Autonomous auto-approval and automatic demotion are now tested.

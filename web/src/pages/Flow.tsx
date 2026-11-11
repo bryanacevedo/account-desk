@@ -196,7 +196,12 @@ function Types({ rows }: { rows: any[] }) {
             <span className="num">{Number(r.weight) > 0 ? `+${Number(r.weight)}` : Number(r.weight)}</span>
             <span className="num">{r.seen}</span>
             <span className="num" data-label="Plays started">{r.treated}</span><span className="num" data-label="Held back">{r.holdout}</span>
-            <div>{r.treated ? <Bar label="" value={r.meeting_rate || 0} of={max} shown={pct(r.meeting_rate)} hint={`${r.treated_meetings} of ${r.treated}`} /> : <span className="faint">No plays yet</span>}</div>
+            <div>{!r.starts_plays ? <span className="faint" title="No live play starts on this signal. It raises an account's priority, but its own effect is not measured.">Not measured: no play starts on it</span>
+              : !r.treated ? <span className="faint">No plays yet</span>
+              : !r.lift?.enough ? <span title={`${pct(r.meeting_rate)} of ${r.treated} contacted accounts met, against ${pct(r.lift?.holdout?.rate)} of ${r.holdout} held back. Too few to tell yet.`}>
+                  <span className="mute">Too few to tell</span> <span className="faint small">{r.lift?.still_needed?.holdout ? `${r.lift.still_needed.holdout} more held back needed` : `${r.lift?.still_needed?.treated} more contacted needed`}</span></span>
+              : <Bar label="" value={r.meeting_rate || 0} of={max} shown={pct(r.meeting_rate)}
+                  hint={`vs ${pct(r.lift.holdout.rate)} held back, ${r.lift.difference >= 0 ? "+" : ""}${pct(r.lift.difference)} (${pct(r.lift.interval[0])} to ${pct(r.lift.interval[1])})`} />}</div>
           </div>
         ))}
       </div>

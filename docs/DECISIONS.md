@@ -88,3 +88,5 @@ Each entry: what was decided, why, and what it costs. Newest last.
 
 43. **Live is shown by the plane, not a dot.** A running state is the paper plane breathing slowly, in keeping with the rule against coloured status dots.
 
+44. **A signal is an event, counted once and dated honestly.** Signals of one type within two weeks are one event, worth the strongest report of it, with a 25% bonus when another source agrees; a type adds at most one and a half strong events. A signal carries the date its event happened, not the date the desk heard of it. A signal starts at most one play, and accounts are re-checked nightly so a hold or an open play does not strand a moment. Per-signal results show a difference only with its interval and enough accounts behind it.
+

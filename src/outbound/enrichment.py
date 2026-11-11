@@ -116,10 +116,11 @@ def _new_in_seat(cur, person_id: int) -> None:
     if p is None or p["status"] != "active":
         return
     from . import signals
+    started = datetime.combine(p["role_started_at"], datetime.min.time(), tzinfo=db.val(cur, "select app_now()").tzinfo)
     signals.ingest(cur, "enrichment", [{
         "type": "new_exec", "external_id": f"seat:{person_id}:{p['role_started_at']}", "domain": p["primary_domain"],
         "account_id": p["account_id"], "person": {"full_name": p["full_name"], "linkedin_url": p["linkedin_url"]},
-        "observed_at": db.val(cur, "select app_now()"), "strength": 0.8,
+        "observed_at": started, "strength": 0.8,  # when they started, so a seat taken 80 days ago reads as 80 days old
         "evidence": {"summary": f"A new {p['title'] or 'finance leader'} started on {p['role_started_at']:%d %b %Y}.",
                      "quote": "From people data: role start date"}}])
 
@@ -172,17 +173,18 @@ def enrich_company(cur, account: dict, *, force: bool = False) -> bool:
             vals.append(parent)
             source(cur, "account", account["id"], "parent", d["parent_domain"], vendor, conf)
     db.run(cur, f"update accounts set {', '.join(sets)} where id = %s", *vals, account["id"])
-    prev = db.one(cur, "select data from account_snapshots where account_id = %s order by at desc limit 1", account["id"])
+    prev = db.one(cur, "select data, at from account_snapshots where account_id = %s order by at desc limit 1", account["id"])
     db.run(cur, "insert into account_snapshots (account_id, vendor, data) values (%s,%s,%s)", account["id"], vendor, J(d))
     if prev:
-        _changes(cur, account, prev["data"], d)
+        _changes(cur, account, prev["data"], d, since=prev["at"])
     from . import scoring
     scoring.rescore(cur, account["id"])  # fit is judged on what is known, and now more is known
     return True
 
 
-def _changes(cur, account: dict, before: dict, after: dict) -> None:
-    """Signals from what changed between two reads of the same company."""
+def _changes(cur, account: dict, before: dict, after: dict, *, since) -> None:
+    """Signals from what changed between two reads of the same company. A change is dated to the earlier read, the
+    latest it can have started, so it is never presented as fresher than it is; a round is dated to its close."""
     from . import signals
     now = db.val(cur, "select app_now()")
     raws = []
@@ -206,12 +208,13 @@ def _changes(cur, account: dict, before: dict, after: dict) -> None:
         raws.append({"type": "tech_removed", "external_id": f"tech-:{account['id']}:{','.join(removed)}",
                      "summary": f"Stopped using {', '.join(removed)}.", "strength": 0.6})
     if after.get("latest_funding_at") and after.get("latest_funding_at") != before.get("latest_funding_at"):
+        closed = datetime.fromisoformat(str(after["latest_funding_at"])).replace(tzinfo=now.tzinfo)
         raws.append({"type": "funding", "external_id": f"round:{account['id']}:{after['latest_funding_at']}",
-                     "summary": f"Raised a {after.get('latest_funding_round') or 'round'}.", "strength": 0.7})
+                     "summary": f"Raised a {after.get('latest_funding_round') or 'round'}.", "strength": 0.7, "at": closed})
     if raws:
         signals.ingest(cur, "enrichment", [{"type": r["type"], "external_id": r["external_id"], "domain": account["primary_domain"],
                                             "account_id": account["id"],
-                                            "observed_at": now, "strength": r["strength"],
+                                            "observed_at": min(r.get("at") or since, now), "strength": r["strength"],
                                             "evidence": {"summary": r["summary"], "quote": f"From company data read {now:%d %b %Y}"}} for r in raws])
 
 

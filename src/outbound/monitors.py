@@ -42,13 +42,13 @@ MONITORS: dict[str, dict] = {
         "python": "scores"},
     "source_silent": {
         "title": "Signal sources that stopped checking in",
-        "sql": """select s.key from signal_sources s where s.enabled and s.adapter <> 'webhook' and coalesce(
+        "sql": """select s.key from signal_sources s where s.enabled and s.adapter not in ('webhook', 'enrichment') and coalesce(
                   (select max(started_at) from source_runs r where r.source_key = s.key and r.error is null), '-infinity')
                   < app_now() - (s.cadence_minutes * 2 || ' minutes')::interval"""},
     "source_empty": {
         "title": "Paid signal sources that ran for two weeks and returned nothing",
         # Two weeks, because some sources (job changes, funding) are quiet for days at a time and that is normal.
-        "sql": """select s.key from signal_sources s where s.enabled and s.paid and s.adapter <> 'webhook'
+        "sql": """select s.key from signal_sources s where s.enabled and s.paid and s.adapter not in ('webhook', 'enrichment')
                   and (select count(*) from source_runs r where r.source_key = s.key and r.started_at > app_now() - interval '14 days') >= 5
                   and (select min(started_at) from source_runs r where r.source_key = s.key) < app_now() - interval '14 days'
                   and not exists (select 1 from source_runs r where r.source_key = s.key
