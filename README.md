@@ -143,7 +143,7 @@ cannot (the model under test never grades itself). Live run on 2026-11-11 with C
 | Learnings from call notes | 20 | 87% of expected learnings found; every quote verbatim; 95% invent nothing |
 
 The first live run found real problems and the prompts were fixed against the eval: suggested replies invented
-integrations and data locations and left placeholders in half the cases (now 1 in 30); drafts stated guesses about the
+integrations and data locations or left placeholders in half the cases (now no placeholders, and 1 in 30 invents something); drafts stated guesses about the
 buyer's billing as fact (faithfulness 40% before, 78% after); briefs stated inferences as findings (10% before, 90%
 after); return dates missed because the model was never told today's date. Reports with every case in full:
 `evals/REPLIES.md`, `WRITING.md`, `SUGGEST.md`, `EXTRACT.md`; the cases' coverage in `evals/CASES_V2.md`.
@@ -154,7 +154,7 @@ make evals
 
 That replays the recorded answers, free, and is what CI checks on every push, along with the recordings matching
 the current prompts. `make evals-live` calls Claude and the judge again (roughly $5 to $10). Each score has a floor in
-`evals/thresholds.json`, set a few points under the baseline; the safety ones (stop requests, private signals, hidden
+`evals/thresholds.json`, set 5 to 12 points under the baseline (wider where the case count is small); the safety ones (stop requests, private signals, hidden
 instructions, invented emails) must stay at 100%. A weekly workflow (`.github/workflows/evals.yml`) runs the live evals
 and fails below a floor, but only once an `ANTHROPIC_API_KEY` secret is added to the repository; this demo does not
 have one, so it never runs here. In the desk itself, a check raises an alert when SDRs start editing many more drafts

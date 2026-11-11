@@ -8,7 +8,7 @@ v1 is built end to end on simulated vendors. **Public** at https://github.com/br
 
 Checked on 2026-11-11 by running them:
 
-- `pytest` on real Postgres 18: 194 passed on 2026-11-11, including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
+- `pytest` on real Postgres 18: 199 passed on 2026-11-11, including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
 - `ruff check src tests`: clean. `tsc --noEmit` and `vite build`: clean.
 - `make demo`: 700 invented accounts, 60 simulated days; opens on 2026-11-11 with work waiting for three of the four SDRs (Maya Okafor has none that morning).
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Since then two fresh design reviews and checks at 375 wide (see below).
