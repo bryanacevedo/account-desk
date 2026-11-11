@@ -5,7 +5,7 @@ import { Avatar, Logo } from "./marks";
 import { SignalIcon, SignalLabel } from "./signalIcons";
 import { PlayEditor, PlayPreview } from "./PlayEditor";
 import {
-  Bar, Empty, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTime, late, money, n0, navigate, pct,
+  Bar, Empty, Seg, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTime, late, money, n0, navigate, pct,
   toast, useBusy, useData, useNowIso, withParam, type Glyph,
 } from "./lib";
 
@@ -1337,23 +1337,58 @@ function CapUse({ rows }: { rows: any[] }) {
   );
 }
 
+const PLAY_GROUP: Record<string, "open" | "held" | "closed"> = {
+  proposed: "open", accepted: "open", researching: "open", approving: "open", active: "open", engaged: "open", meeting: "open",
+  held_out: "held", converted: "closed", lost: "closed", stopped: "closed", skipped: "closed", expired: "closed",
+};
+const PLAY_PAGE = 15;
+
+/** Every account the play was offered: searchable, filtered by where it stands, a page at a time in its own scroll. */
 function PlayAccounts({ id }: { id: number }) {
   const { data } = useData<any>(`/api/plays/${id}/accounts`);
-  if (!data?.accounts?.length) return null;
+  const [q, setQ] = useState("");
+  const [group, setGroup] = useState<"all" | "open" | "held" | "closed">("all");
+  const [page, setPage] = useState(1);
+  const all: any[] = data?.accounts || [];
+  const count = (g: string) => all.filter((a) => PLAY_GROUP[a.state] === g).length;
+  const needle = q.trim().toLowerCase();
+  const shown = all.filter((a) => (group === "all" || PLAY_GROUP[a.state] === group)
+    && (!needle || `${a.name} ${a.primary_domain || ""} ${a.owner || ""}`.toLowerCase().includes(needle)));
+  const pages = Math.max(1, Math.ceil(shown.length / PLAY_PAGE));
+  const p = Math.min(page, pages);
+  if (!all.length) return null;
   return (
-    <Section title="Accounts">
-      <div className="ledger">
-        {data.accounts.slice(0, 40).map((a: any) => {
-          const st = PLAY_STATE[a.state];
-          return (
-            <button key={a.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }} onClick={() => openSheet("account", a.account_id)}>
-              <Logo domain={a.primary_domain} name={a.name} />
-              <div className="cell-main"><span className="t">{a.name}</span><span className="s">{a.owner || "Unassigned"}, {day(a.proposed_at)}</span></div>
-              <Status kind={st[0]}>{st[1]}</Status>
-            </button>
-          );
-        })}
+    <Section title={`Accounts (${n0(all.length)})`}>
+      <div className="pa-tools">
+        <Seg label="Where they stand" value={group} onChange={(v) => { setGroup(v); setPage(1); }}
+          options={[["all", "All"], ["open", `Open ${count("open")}`], ["held", `Held back ${count("held")}`], ["closed", `Closed ${count("closed")}`]]} />
+        <input className="input" type="search" placeholder="Company or SDR" value={q} aria-label="Search this play's accounts"
+          onChange={(e) => { setQ(e.target.value); setPage(1); }} />
       </div>
+      {shown.length === 0 ? <Empty title="No accounts match" /> : (
+        <div className="ledger pa-list">
+          {shown.slice((p - 1) * PLAY_PAGE, p * PLAY_PAGE).map((a: any) => {
+            const st = PLAY_STATE[a.state];
+            return (
+              <button key={a.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }} onClick={() => openSheet("account", a.account_id)}>
+                <Logo domain={a.primary_domain} name={a.name} />
+                <div className="cell-main"><span className="t">{a.name}</span><span className="s">{a.owner || "Unassigned"}, {day(a.proposed_at)}</span></div>
+                <Status kind={st[0]}>{st[1]}</Status>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {shown.length > PLAY_PAGE ? (
+        <nav className="pager" aria-label="Pages of this play's accounts">
+          <span className="mute small">{n0((p - 1) * PLAY_PAGE + 1)} to {n0(Math.min(p * PLAY_PAGE, shown.length))} of {n0(shown.length)}</span>
+          <span className="pager-buttons">
+            <button className="btn line sm" disabled={p <= 1} onClick={() => setPage(p - 1)}>Previous</button>
+            <span className="small">Page {p} of {pages}</span>
+            <button className="btn line sm" disabled={p >= pages} onClick={() => setPage(p + 1)}>Next</button>
+          </span>
+        </nav>
+      ) : null}
     </Section>
   );
 }

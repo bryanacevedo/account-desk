@@ -626,3 +626,8 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .play-line { display: grid; gap: 2px; margin-bottom: 12px; }
 .play-name { justify-self: start; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); text-align: left; }
 .play-name:hover { color: var(--accent); }
+
+/* A play's accounts: filters and search on one line, the list scrolls inside the sheet. */
+.pa-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+.pa-tools .input { flex: 1; min-width: 160px; }
+.pa-list { max-height: 520px; overflow-y: auto; overscroll-behavior: contain; }

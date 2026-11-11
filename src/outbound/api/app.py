@@ -262,7 +262,7 @@ def play_accounts(play_id: int, u: dict = Depends(current_user)) -> dict:
                                            a.primary_domain, u.name as owner
                                     from account_plays ap join accounts a on a.id = ap.account_id
                                     left join users u on u.id = ap.owner_id
-                                    where ap.play_id = %s order by ap.proposed_at desc limit 100""", play_id)}
+                                    where ap.play_id = %s order by ap.proposed_at desc limit 5000""", play_id)}
 
 
 @app.get("/api/messages/{message_id}")
