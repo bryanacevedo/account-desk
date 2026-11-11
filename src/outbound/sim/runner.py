@@ -174,6 +174,19 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
         db.run(cur, "update sim_events set done = true where id = %s", ev["id"])
 
 
+def _hour(cur_rng: random.Random, at: datetime, eagerness: float, totals: dict) -> None:
+    with db.tx() as cur:
+        db.run(cur, "update sim_clock set at = %s", at)
+        totals["events"] += _process_events(cur, at)
+        db.run(cur, "update sim_clock set at = %s", at)
+        scheduler.tick(cur)
+    totals["jobs"] += jobs.run_ready(limit=2000)
+    with db.tx() as cur:
+        act_as_reps(cur, cur_rng, at, eagerness)
+        meetings_and_deals(cur, cur_rng, at)
+    totals["jobs"] += jobs.run_ready(limit=2000)
+
+
 def run(days: int, *, seed: int = 11, slow_last_days: int = 2) -> dict:
     rng = random.Random(seed)
     with db.tx() as cur:
@@ -185,18 +198,23 @@ def run(days: int, *, seed: int = 11, slow_last_days: int = 2) -> dict:
             totals["signals"] += _queue_day_signals(cur, rng, day.replace(hour=0, minute=0, second=0, microsecond=0))
         eagerness = 0.55 if d < days - slow_last_days else 0.12
         for h in range(24):
-            at = day + timedelta(hours=h)
-            with db.tx() as cur:
-                db.run(cur, "update sim_clock set at = %s", at)
-                totals["events"] += _process_events(cur, at)
-                db.run(cur, "update sim_clock set at = %s", at)
-                scheduler.tick(cur)
-            totals["jobs"] += jobs.run_ready(limit=2000)
-            with db.tx() as cur:
-                act_as_reps(cur, rng, at, eagerness)
-                meetings_and_deals(cur, rng, at)
-            totals["jobs"] += jobs.run_ready(limit=2000)
+            _hour(rng, day + timedelta(hours=h), eagerness, totals)
         log.info("simulated day %s: %s", d + 1, totals)
     with db.tx() as cur:
         db.run(cur, "update sim_clock set at = %s", start + timedelta(days=days))
+    return totals
+
+
+def run_hours(hours: int, *, seed: int | None = None) -> dict:
+    """Move the demo forward from the web app. New days get their signals when the clock crosses midnight."""
+    with db.tx() as cur:
+        start = clock.now(cur)
+    rng = random.Random(seed if seed is not None else int(start.timestamp()))
+    totals = {"signals": 0, "events": 0, "jobs": 0}
+    for h in range(1, hours + 1):
+        at = start + timedelta(hours=h)
+        if at.date() != (at - timedelta(hours=1)).date():
+            with db.tx() as cur:
+                totals["signals"] += _queue_day_signals(cur, rng, at.replace(hour=0, minute=0, second=0, microsecond=0))
+        _hour(rng, at, 0.5, totals)
     return totals
