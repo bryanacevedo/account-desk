@@ -160,7 +160,7 @@ def signals_page(cur) -> dict:
                                from signals s join signal_types t on t.key = s.type_key
                                left join accounts a on a.id = s.account_id
                                where s.status = %s order by s.ingested_at desc limit 120""", status)
-    sources = db.all(cur, """select s.key, s.label, s.cadence_minutes, s.paid, s.enabled,
+    sources = db.all(cur, """select s.key, s.label, s.cadence_minutes, s.paid, s.enabled, s.provider,
                                     r.started_at as last_run, r.fetched, r.matched, r.unmatched, r.error,
                                     (select count(*) from signals x where x.source = s.key
                                        and x.ingested_at > app_now() - interval '7 days') as week

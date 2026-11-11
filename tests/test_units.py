@@ -239,3 +239,12 @@ def test_business_hours_for_reply_deadlines():
     due = timeutil.add_business_hours(fri_5pm, 4, timezone="America/New_York")
     local = due.astimezone(timeutil.tz("America/New_York"))
     assert local.weekday() == 0 and local.hour == 12
+
+
+def test_only_first_party_sources_are_free():
+    """Website visits need a de-anonymization vendor; reviews, funding and news come from paid data vendors.
+    Only data the company owns is free."""
+    from outbound.seed.catalog import SIGNAL_SOURCES
+    free = {key for key, _label, _adapter, _cadence, paid, _provider in SIGNAL_SOURCES if not paid}
+    assert free == {"product", "crm", "events", "webhook"}
+    assert all(provider for *_rest, provider in SIGNAL_SOURCES)

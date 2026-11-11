@@ -76,20 +76,21 @@ SIGNAL_TYPES = [
 ]
 
 SIGNAL_SOURCES = [
-    # key, label, adapter, cadence minutes, paid
-    ("jobs_feed", "Job postings", "sim", 360, True),
-    ("funding_feed", "Funding news", "sim", 720, False),
-    ("people_moves", "Job changes", "sim", 720, True),
-    ("web_visits", "Website visits", "sim", 60, False),
-    ("intent_feed", "Category research", "sim", 1440, True),
-    ("reviews_feed", "Software reviews", "sim", 1440, False),
-    ("techstack_feed", "Technology changes", "sim", 1440, True),
-    ("social_feed", "Social engagement", "sim", 360, True),
-    ("product", "Product sign-ups", "sim", 60, False),
-    ("crm", "CRM", "sim", 360, False),
-    ("events", "Events", "sim", 1440, False),
-    ("news_feed", "Company news", "sim", 720, False),
-    ("webhook", "Webhook intake", "webhook", 1440, False),
+    # key, label, adapter, cadence minutes, paid, what it needs. Only first-party data is free.
+    ("jobs_feed", "Job postings", "sim", 360, True, "A job-postings data vendor"),
+    ("funding_feed", "Funding news", "sim", 720, True, "A funding database (for example Crunchbase or Harmonic)"),
+    ("people_moves", "Job changes", "sim", 720, True, "A job-change tracking vendor"),
+    ("web_visits", "Website visits", "sim", 60, True,
+     "A de-anonymization vendor that matches visitors' networks to companies"),
+    ("intent_feed", "Category research", "sim", 1440, True, "A third-party intent data vendor"),
+    ("reviews_feed", "Software reviews", "sim", 1440, True, "Buyer intent from a software review site"),
+    ("techstack_feed", "Technology changes", "sim", 1440, True, "A technology-detection vendor"),
+    ("social_feed", "Social engagement", "sim", 360, True, "A social listening vendor"),
+    ("product", "Product sign-ups", "sim", 60, False, "Your own product's sign-ups"),
+    ("crm", "CRM", "sim", 360, False, "Your own CRM"),
+    ("events", "Events", "sim", 1440, False, "Your own event and webinar registrations"),
+    ("news_feed", "Company news", "sim", 720, True, "A company news or events API"),
+    ("webhook", "Webhook intake", "webhook", 1440, False, "Anything you push to the desk yourself"),
 ]
 
 ICP = {

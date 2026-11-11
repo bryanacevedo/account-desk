@@ -103,7 +103,7 @@ export function Signals() {
           <div className="row head" style={{ gridTemplateColumns: S_COLS }}><span>Source</span><span>Every</span><span className="num">Last run</span><span className="num">Fetched</span><span className="num">Matched</span><span className="num">7 days</span></div>
           {data.sources.map((s: any) => (
             <div key={s.key} className="row" style={{ gridTemplateColumns: S_COLS }}>
-              <div className="cell-main"><span className="t">{s.label}</span><span className="s">{s.paid ? "Paid" : "Free"}</span></div>
+              <div className="cell-main"><span className="t">{s.label}</span><span className="s">{s.paid ? `Paid: ${s.provider.charAt(0).toLowerCase()}${s.provider.slice(1)}` : s.provider}</span></div>
               <span className="mute">{s.cadence_minutes >= 1440 ? "day" : s.cadence_minutes >= 60 ? `${s.cadence_minutes / 60} h` : `${s.cadence_minutes} min`}</span>
               <span className="num">{s.key === "webhook" ? "Pushed to us" : s.error ? <Status kind="stop">Failed</Status> : ago(s.last_run)}</span>
               <span className="num">{s.fetched ?? ""}</span><span className="num">{s.matched ?? ""}</span><span className="num strong">{s.week}</span>
@@ -114,7 +114,7 @@ export function Signals() {
     </div>
   );
 }
-const S_COLS = "minmax(0,1.4fr) 70px 110px 80px 80px 70px";
+const S_COLS = "minmax(0,2fr) 70px 110px 80px 80px 70px";
 
 function Feed({ rows }: { rows: any[] }) {
   if (!rows.length) return <Empty title="Nothing here" />;
