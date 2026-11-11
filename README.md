@@ -135,6 +135,19 @@ make docker
 
 Two of the three misses are calls a reviewer could go either way on ("¿Podemos hablar la semana que viene?" read as a meeting request rather than interest). The labels were left as written. 37 model calls cost $0.25. The answers are recorded in `evals/recordings/`, CI replays them without a key, and a prompt change fails CI until the eval is re-recorded. Full report: [evals/REPLIES.md](evals/REPLIES.md). The set is small and written by the author, so treat it as a regression guard, not a benchmark.
 
+## Drafts and briefs, measured
+
+`evals/run_writing.py` runs 20 draft cases (email first touches, follow-ups, a last email, LinkedIn notes and messages) and 6 briefs, over invented companies, through the desk's real drafting path, graded by code. Recorded from live Claude on 2026-11-11 (about $0.35) and replayed in CI:
+
+| Check | Result |
+|---|---|
+| Drafts passing the copy checks first time | 17 of 20 |
+| After the one redraft the desk allows | 19 of 20; the 20th has only private signals, so nothing citable, and correctly fails |
+| A private signal or an unknown fact cited | none |
+| Briefs: findings that cite real facts, numbers and names traceable to them | all |
+
+The first live run passed 2 of 20 first time. The eval found why: the request never named the sender's company (the model wrote "At Pellucid Systems we...", the prospect's name) and never gave the limits the checks enforce. Both are now in every draft request, and any sentence about the prospect's company needs a source. Every draft and brief is printed in `evals/WRITING.md` for a person to judge what code cannot.
+
 ## What is real and what is simulated
 
 **Real and tested:** the scoring, plays, the contact gate and the database trigger behind it (including mailbox and domain daily caps, and no email after someone engaged on LinkedIn or by phone), the copy checks for email and LinkedIn, the account calendar, send windows and holidays, mailbox and domain health rules, inbox placement rules, stop-first reply handling, reply cleaning and the rules that label replies, referrals and job changes from replies, attribution (recomputed when a meeting falls through), the statistics, signed webhooks for replies, signals and calendar bookings, one-click unsubscribe, erasure, setup from a file with CSV imports, the read-only MCP server, the job queue and the monitors. The DNS check is live: it reads SPF, DKIM and DMARC over DNS-over-HTTPS.

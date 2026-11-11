@@ -63,3 +63,7 @@ Each entry: what was decided, why, and what it costs. Newest last.
 30. **More guarantees live in the database.** The send trigger now also refuses an email to someone who replied since their sequence started (guarantee 6). Customers are never downgraded by a lost expansion or a blank re-import. A live play's trigger, sequence, people and held-back share change only after a manager pauses it.
 
 31. **Measurement counts causes once.** The held-back comparison counts each account once, in the group it was first put in; the watched first batch counts the first 20 sends of each step version, however late a bounce arrives; an email an SDR writes in a research-stage play is outreach.
+
+32. **Administration belongs to managers.** Managers add people, change roles (never removing the last manager) and remove someone by naming the SDR who takes their accounts, plays, tasks and meetings; their mailboxes retire and anyone mid-sequence continues from the successor's mailbox. Sending domains start unauthenticated until DNS checks them; a domain carries at most three mailboxes; pausing or retiring needs a reason.
+
+33. **Drafts are evaluated on the real path, graded by code, and read by a person.** The eval found that drafts did not know the sender's company and were never told the limits they are checked against; both now travel with every request, and a sentence naming the prospect's company is a claim that needs a source, whatever the model labels it.

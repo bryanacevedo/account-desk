@@ -41,13 +41,9 @@ Checked on 2026-11-11 by running them:
 
 ## Next
 
-Two fresh layer reviews (`docs/LAYER-REVIEW.md`) drove the work below. What the second one listed and is still open:
-
 1. Live vendor adapters beyond DNS (people search, finder, verifier, mail provider, seed tests, CRM, Slack), with `docs/INTEGRATIONS.md`; a delivery-event webhook for complaints and soft bounces.
-2. User, mailbox and domain administration after `init`.
-3. Evals with recordings for the brief, drafts and call-note extraction; `EVALS_STRICT`.
-4. Tests for the time-based play exits, auto-approve and demotion, CRM push retries and SLA escalation.
-5. A second fresh code review over everything since the first.
+2. Tests for the time-based play exits, auto-approve and demotion, CRM push retries and SLA escalation.
+3. Whatever the second fresh code review (running 2026-11-11) finds.
 
 ## Done since the first review (2026-11-11)
 
@@ -59,5 +55,7 @@ Two fresh layer reviews (`docs/LAYER-REVIEW.md`) drove the work below. What the 
 - Icons within the Instrument identity (status icons in ink, green for healthy, amber and red only where someone must act); relative times spelled out ("2 days ago"), Bryan's call.
 - After the first layer review (Bryan: "greenlight on deepening all the layers that are thin"): deals read from the CRM with attribution that needs a cause and is recomputed; owners from the CRM; meetings with a sheet, a date, outcomes, notes and a booking webhook; referrals enrolled and job changes as signals; a real desk from `init` and CSV imports; live DNS checks; mailbox and domain caps and replies in the send trigger; do-not-contact, holds, unmatched-signal resolution, resumes and unknown sends in the UI; a read-only MCP server; per-play monthly caps set at launch.
 - After the second layer review: live mode refuses missing vendors instead of simulating them; customers are never downgraded; fit is judged on known fields and the ICP is editable; the watched batch and the comparison count correctly; live plays keep their audience until paused; erasure closes its gaps; the remaining UI dead ends have actions. Decisions 18 to 31.
-- The footer is two lines and "no thanks" is an opt-out (decision 25).
+- The footer is two lines and says "unsubscribe"; "no thanks" means not interested (decision 25, Bryan's correction).
+- Team and sending administration (decision 32). Evals for drafts and briefs from live Claude (decision 33, README table).
+- A second hands-on design review (2026-11-11): 5 phone blockers (pages scrolling sideways) and about 26 majors (contradicting figures, one thing with several names, explaining sentences, jargon, a dead end in the play editor). Blockers and majors fixed; checked at 375 and 1440.
 - The flaky monitor test was the slow-first-touch alert catching late approvals by simulated SDRs, which is its job; the test now fails only when a play is stuck inside the desk, and that found a real one (decision 17). Simulator picks now use its seeded generator instead of SQL `random()`.
