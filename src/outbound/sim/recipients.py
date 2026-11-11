@@ -57,6 +57,13 @@ def _quote(original: str, sender: str, at: datetime) -> str:
     return f"\n\nOn {at:%a, %d %b %Y at %H:%M}, {sender} wrote:\n{quoted}"
 
 
+def _fresh(cur, rng: random.Random, pool: list[str]) -> str:
+    """A reply nobody sent in the last few days, so three buyers never write the same words side by side."""
+    recent = [r["raw"] for r in db.all(cur, "select raw from replies order by id desc limit 12")]
+    options = [t for t in pool if not any(r.startswith(t.split("{")[0][:40]) for r in recent)] or pool
+    return rng.choice(options)
+
+
 def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> None:
     sp = db.one(cur, "select * from sim_people where person_id = %s", person_id)
     if sp is None:
@@ -121,12 +128,12 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
     sender_first = mailbox["display_name"].split()[0]
     if kind == "positive":
         pool = POSITIVE + (ES_POS if p["country"] == "ES" else []) + (DE_POS if p["country"] == "DE" else [])
-        text = rng.choice(pool).format(sender=sender_first, stack=(p["tech"] or ["our stack"])[0])
+        text = _fresh(cur, rng, pool).format(sender=sender_first, stack=(p["tech"] or ["our stack"])[0])
     elif kind == "not_now":
         month = (at + timedelta(days=rng.randint(45, 120))).strftime("%B")
         text = rng.choice(NOT_NOW).format(month=month)
     elif kind == "not_interested":
-        text = rng.choice(NOT_INTERESTED)
+        text = _fresh(cur, rng, NOT_INTERESTED)
     elif kind == "referral":
         pool = db.all(cur, "select full_name, title, true_email from sim_hidden_people where account_id = %s "
                            "and found_person_id is null order by id", p["account_id"])

@@ -248,7 +248,7 @@ def record_delivery_event(cur, message_id: int, event: str, detail: dict | None 
         db.run(cur, "update mailboxes set status = 'paused', pause_reason = 'Spam complaint received' where id = %s "
                     "and status = 'active'", m["mailbox_id"])
         alerts.raise_alert(cur, kind="complaint", severity="urgent", channel="#outbound-ops",
-                           title="A mailbox got a spam complaint and is paused", body="Feedback loop report.",
+                           title="A mailbox got a spam complaint and is paused", body="The recipient's email provider reported it as spam.",
                            object_kind="mailbox", object_id=m["mailbox_id"], dedup_key=f"complaint:{message_id}")
 
 
@@ -307,7 +307,7 @@ def placement_tests(cur, payload: dict) -> None:
         rate, where, today = worst.inbox / worst.seeds, PROVIDER[worst.provider], db.val(cur, "select app_now()::date")
         if rate < pause and mb["status"] == "active":
             db.run(cur, "update mailboxes set status = 'paused', pause_reason = %s where id = %s",
-                   f"Inbox placement {rate:.0%} at {where}", mb["id"])
+                   f"{rate:.0%} inbox at {where} on {db.val(cur, 'select to_char(app_now(), \'FMDD Mon\')')}", mb["id"])
             alerts.raise_alert(cur, kind="placement_pause", severity="urgent", channel="#outbound-ops",
                                title=f"{mb['address']} paused: {rate:.0%} inbox at {where}",
                                body=f"{worst.spam} of {worst.seeds} seed inboxes put it in spam, {worst.missing} never got it.",

@@ -66,6 +66,9 @@ export function PlayEditor({ id }: { id: number | null }) {
   const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   const setStep = (i: number, patch: Partial<Step>) => set({ sequence: d.sequence.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
   const canSave = me?.user.role === "gtm";
+  const missing = [d.name.length < 3 && "a name", d.hypothesis.length < 10 && "who needs us and why (10 characters or more)",
+    d.angle.length < 10 && "what the first touch leads with (10 characters or more)", !d.trigger.any_of.length && "a signal"]
+    .filter(Boolean) as string[];
 
   const save = () => run(async () => {
     if (id) {
@@ -79,7 +82,7 @@ export function PlayEditor({ id }: { id: number | null }) {
 
   return (
     <div className="editor">
-      <Section title="The bet">
+      <Section title="The idea">
         <label className="field"><span>Name</span><input className="input" value={d.name} maxLength={80} onChange={(e) => set({ name: e.target.value })} placeholder="New finance leader, first 90 days" /></label>
         <label className="field"><span>When this happens, these people need us, because</span>
           <textarea className="input" rows={2} value={d.hypothesis} maxLength={400} onChange={(e) => set({ hypothesis: e.target.value })} /></label>
@@ -147,7 +150,7 @@ export function PlayEditor({ id }: { id: number | null }) {
           <Plus size={14} />Add a step</button>
       </Section>
 
-      <PlayPreview pv={pv} error={pvError} />
+      <PlayPreview pv={pv} error={pvError} missing={missing} />
 
       {canSave ? (
         <div className="actions" style={{ justifyContent: "flex-end" }}>
@@ -158,9 +161,9 @@ export function PlayEditor({ id }: { id: number | null }) {
   );
 }
 
-export function PlayPreview({ pv, error }: { pv: any; error: string | null }) {
+export function PlayPreview({ pv, error, missing }: { pv: any; error: string | null; missing?: string[] }) {
   if (error) return <Section title="If it were live today"><div className="mute">{error}</div></Section>;
-  if (!pv) return <Section title="If it were live today"><Empty title="Fill in the bet and pick a signal" /></Section>;
+  if (!pv) return <Section title="If it were live today"><Empty title={missing?.length ? `Still needed: ${missing.join(", ")}` : "Working it out"} /></Section>;
   const p = pv.preview, c = pv.cost;
   return (
     <>
@@ -206,4 +209,4 @@ export function PlayPreview({ pv, error }: { pv: any; error: string | null }) {
 }
 
 const VENDOR: Record<string, string> = { people_search: "People search", email_finder: "Email finder",
-  email_verifier: "Email verification", phone_finder: "Phone finder" };
+  email_verifier: "Email verification", phone_finder: "Phone finder", anthropic: "AI" };

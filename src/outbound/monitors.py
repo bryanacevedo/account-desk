@@ -20,7 +20,7 @@ MONITORS: dict[str, dict] = {
         "sql": """select r.id from replies r where r.hot and r.received_at < app_now() - interval '15 minutes'
                   and not exists (select 1 from alerts a where a.object_kind = 'reply' and a.object_id = r.id)"""},
     "sla_unescalated": {
-        "title": "Unanswered hot replies past their time with no escalation",
+        "title": "Hot replies past their answer time and not escalated",
         "sql": """select id from replies where hot and handled_at is null and sla_due_at < app_now() - interval '1 hour'
                   and escalated_at is null"""},
     "crm_outbox_stuck": {
@@ -32,15 +32,15 @@ MONITORS: dict[str, dict] = {
                   else qty end), 0) from ledger l where l.vendor = b.vendor and l.at >= date_trunc('month', app_now()))
                   > b.monthly_cap_cents"""},
     "paid_call_unledgered": {
-        "title": "Paid calls with no ledger row",
+        "title": "Paid lookups missing from the spend record",
         "sql": """select c.id from adapter_calls c where c.paid and c.ok and c.at > app_now() - interval '7 days'
                   and not exists (select 1 from ledger l where l.adapter_call_id = c.id)"""},
     "score_not_reproducible": {
-        "title": "Stored scores that do not reproduce from their inputs",
+        "title": "Scores that do not match their inputs",
         "sql": "select account_id, priority, inputs from account_scores order by computed_at desc limit 200",
         "python": "scores"},
     "source_silent": {
-        "title": "Signal sources that have not run within twice their cadence",
+        "title": "Signal sources that stopped checking in",
         "sql": """select s.key from signal_sources s where s.enabled and s.adapter <> 'webhook' and coalesce(
                   (select max(started_at) from source_runs r where r.source_key = s.key and r.error is null), '-infinity')
                   < app_now() - (s.cadence_minutes * 2 || ' minutes')::interval"""},

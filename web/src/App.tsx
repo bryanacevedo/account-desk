@@ -26,7 +26,7 @@ const ROUTES: { path: string; label: string; icon: ReactNode; page: () => JSX.El
   { path: "/settings", label: "Settings", icon: <GearSix size={18} />, page: Settings, roles: ["gtm", "manager"] },
 ];
 
-const ROLE: Record<string, string> = { sdr: "SDR", manager: "Sales manager", gtm: "GTM engineering" };
+const ROLE: Record<string, string> = { sdr: "SDR", manager: "Manager", gtm: "GTM" };
 
 export function App() {
   const [path] = usePath();

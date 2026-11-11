@@ -315,7 +315,7 @@ def act(cur, r: dict) -> None:
         return
     if label == "unsubscribe":
         email = db.val(cur, "select email from people where id = %s", pid) if pid else r["from_addr"]
-        db.run(cur, "insert into suppressions (kind, value, reason, source) values ('email', %s, 'Asked to stop', 'reply')",
+        db.run(cur, "insert into suppressions (kind, value, reason, source) values ('email', %s, 'Unsubscribed by reply', 'reply')",
                (email or r["from_addr"]).lower())
         if pid:
             _stop_person(cur, pid, "unsubscribed")

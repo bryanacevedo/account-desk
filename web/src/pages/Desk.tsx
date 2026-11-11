@@ -2,9 +2,9 @@ import { useState } from "react";
 import { EnvelopeSimple, LinkedinLogo, Phone } from "@phosphor-icons/react";
 import { api } from "../api";
 import {
-  Bar, Empty, Failed, Fig, Loading, Section, Status, ago, cap, day, money, n0, pct, useBusy, useData,
+  Bar, Empty, Failed, Fig, Loading, Section, Status, VENDOR_NAME, ago, cap, day, money, n0, pct, useBusy, useData,
 } from "../lib";
-import { LABEL, LiftBlock, openSheet } from "../sheets";
+import { Comparison, LABEL, openSheet } from "../sheets";
 import { SignalLabel } from "../signalIcons";
 
 // ---------------------------------------------------------------- Deliverability
@@ -60,9 +60,9 @@ export function Deliverability() {
         </div>
         {isManager ? <AddSending domains={data.domains} onDone={reload} /> : null}
       </Section>
-      <Section title="Where mail lands" right={<span className="mute small">Seed tests, weekly. Under {pct(data.placement.placement_hold_below, 0)} holds a mailbox at 10 a day, under {pct(data.placement.placement_pause_below, 0)} pauses it.</span>}>
+      <Section title="Where mail lands">
         <div className="ledger">
-          <div className="row head" style={{ gridTemplateColumns: P_COLS }}><span>Mailbox</span><span>Gmail</span><span>Outlook</span><span className="num hide-sm">Tested</span></div>
+          <div className="row head" style={{ gridTemplateColumns: P_COLS }}><span>Mailbox</span><span>Gmail inbox</span><span>Outlook inbox</span><span className="num hide-sm">Tested</span></div>
           {data.mailboxes.map((m: any) => (
             <div key={m.id} className="row" style={{ gridTemplateColumns: P_COLS }}>
               <div className="cell-main"><span className="t">{m.address}</span><span className="s only-sm">{m.placement_at ? `Tested ${ago(m.placement_at)}` : "Not tested yet"}</span></div>
@@ -94,9 +94,9 @@ function Inbox({ r, t }: { r: any; t: { placement_hold_below: number; placement_
   if (!r) return <span className="mute">Not tested</span>;
   const rate = r.inbox / r.seeds;
   const title = `${r.inbox} inbox, ${r.spam} spam, ${r.missing} missing, of ${r.seeds} seed inboxes`;
-  if (rate < t.placement_pause_below) return <span title={title}><Status kind="stop">{pct(rate, 0)} inbox</Status></span>;
-  if (rate < t.placement_hold_below) return <span title={title}><Status kind="hold">{pct(rate, 0)} inbox</Status></span>;
-  return <span title={title}><Status kind="ok">{pct(rate, 0)} inbox</Status></span>;
+  if (rate < t.placement_pause_below) return <span title={title}><Status kind="stop">{pct(rate, 0)}</Status></span>;
+  if (rate < t.placement_hold_below) return <span title={title}><Status kind="hold">{pct(rate, 0)}</Status></span>;
+  return <span title={title}><Status kind="ok">{pct(rate, 0)}</Status></span>;
 }
 
 const C_COLS = "minmax(0,1fr) 120px minmax(0,1.3fr) 170px";
@@ -182,7 +182,7 @@ export function Results() {
         <Fig value={data.sla.median_hours ? `${data.sla.median_hours.toFixed(1)} h` : "None yet"} label="Median time to answer a hot reply" />
         {me?.money && data.cost_per_meeting_cents ? <Fig value={money(data.cost_per_meeting_cents)} label="Data and AI spend per meeting, this month" /> : null}
       </div>
-      <div className="split">
+      <div>
         <Section title="From signal to meeting">
           <div className="funnel">
             <Bar label="Offered to an SDR" value={f.proposed} of={of} />
@@ -193,16 +193,14 @@ export function Results() {
             <Bar label="Meeting from outbound" value={f.meetings} of={of} hint={pct(f.meetings / of)} tone="accent" />
           </div>
         </Section>
-        <div>
-          <Section title="Meetings: contacted against held back"><LiftBlock lift={data.lift} /></Section>
-          <Section title="Deals: contacted against held back"><LiftBlock lift={data.deal_lift} /></Section>
-          <p className="mute small">Any meeting within 60 days or deal within 90, however it started, counted the same way in both groups. Held-back accounts still get inbound requests and deals sales opens on its own.</p>
-        </div>
       </div>
-      <Section title="By channel" right={<span className="mute small">Last 90 days. Someone reached on two channels counts in both.</span>}>
+      <Section title="Contacted against held back">
+        <Comparison rows={[["Meeting within 60 days", data.lift], ["Deal within 90 days", data.deal_lift]]} />
+      </Section>
+      <Section title="By channel, last 90 days">
         {data.channels.length ? (
           <div className="ledger">
-            <div className="row head" style={{ gridTemplateColumns: C_COLS }}><span>Channel</span><span className="num">People reached</span><span className="num">Answered there</span><span className="num hide-sm">Meetings within 30 days</span></div>
+            <div className="row head" style={{ gridTemplateColumns: C_COLS }}><span>Channel</span><span className="num">People reached</span><span className="num">Responded</span><span className="num hide-sm">Meeting within 60 days</span></div>
             {data.channels.map((c: any) => {
               const answered = c.channel === "linkedin" ? c.accepted : c.channel === "call" ? c.spoke : c.replied;
               const word = c.channel === "linkedin" ? "accepted" : c.channel === "call" ? "spoke" : "replied";
@@ -252,7 +250,7 @@ export function Results() {
                             <span className="num said-n">{l.calls} {l.calls === 1 ? "call" : "calls"}</span>
                           </div>
                           {kind === "competitor" ? <div className="said-quote"><span className="qmark" aria-hidden="true">&ldquo;</span>{l.quote}</div> : null}
-                          <div className="said-meta">{names(l.companies)}{l.plays?.length ? `, ${l.plays.join(" and ").toLowerCase()}` : ""}</div>
+                          <div className="said-meta">{names(l.companies)}</div>
                         </li>
                       ))}
                     </ul>
@@ -268,7 +266,7 @@ export function Results() {
           <div className="ledger">
             {data.spend.map((s: any) => (
               <div key={s.vendor + s.unit} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 160px 100px" }}>
-                <span>{cap(s.vendor)}</span>
+                <span>{VENDOR_NAME[s.vendor] || cap(s.vendor)}</span>
                 <span className="num">{n0(s.qty)} {s.unit}</span>
                 <span className="num strong">{money(s.cost_cents)}</span>
               </div>
@@ -327,14 +325,15 @@ export function Ops() {
       <div className="two">
         <Section title="Spend against monthly caps">
           <div className="bars">
-            {data.budgets.map((b: any) => <Bar key={b.vendor} label={cap(b.vendor)} value={Number(b.used)} of={Number(b.cap)} shown={n0(b.used)} hint={`of ${n0(b.cap)} ${b.vendor === "anthropic" ? "cents" : "credits"}`} />)}
+            {data.budgets.map((b: any) => <Bar key={b.vendor} label={VENDOR_NAME[b.vendor] || cap(b.vendor)} value={Number(b.used)} of={Number(b.cap)}
+              shown={b.vendor === "anthropic" ? `$${n0(Number(b.used) / 100)}` : n0(b.used)} hint={b.vendor === "anthropic" ? `of $${n0(Number(b.cap) / 100)}` : `of ${n0(b.cap)} credits`} />)}
           </div>
         </Section>
         <Section title="Background work">
           {data.jobs.length ? (
             <div className="ledger">{data.jobs.map((j: any) => (
               <div key={j.kind + j.status} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 100px 60px" }}>
-                <span>{cap(j.kind)}</span><Status kind={j.status === "dead" ? "stop" : j.status === "queued" ? "half" : "go"}>{cap(j.status)}</Status><span className="num">{j.n}</span>
+                <span>{JOB[j.kind] || cap(j.kind.replace(/_/g, " "))}</span><Status kind={j.status === "dead" ? "stop" : j.status === "queued" ? "half" : "go"}>{JOB_STATUS[j.status] || cap(j.status)}</Status><span className="num">{j.n}</span>
               </div>))}
             </div>
           ) : <Empty title="Nothing waiting" />}
@@ -485,7 +484,7 @@ function IcpSection({ icp, canEdit, onDone }: { icp: any; canEdit: boolean; onDo
             }, "Published. Every account is rescored now.")}>Publish</button>
           </div>
         </>
-      ) : <div className="small mute">Tier A from {r.tiers.A}, tier B from {r.tiers.B}. A field we do not know is left out of the score. Published {day(icp.published_at)}.</div>}
+      ) : <div className="small mute">Tier A from {r.tiers.A}, tier B from {r.tiers.B}. Published {day(icp.published_at)}.</div>}
     </Section>
   );
 }
@@ -511,7 +510,10 @@ function ImportBox() {
         <label className="btn line sm" style={{ cursor: "pointer" }}>
           Choose a file<input type="file" accept=".csv,text/csv" className="sr-only" disabled={busy} onChange={(e) => pick(e.target.files?.[0])} />
         </label>
-        <span className="mute small">{kind === "accounts" ? "name, domain, industry, employees, country, revenue_band, tech, lifecycle, owner_email, crm_id, parent_domain" : "full_name, company_domain, title, email, linkedin_url, phone, country, timezone"}</span>
+        <a className="btn quiet sm" download={`${kind}-template.csv`}
+          href={`data:text/csv;charset=utf-8,${encodeURIComponent(kind === "accounts"
+            ? "name,domain,industry,employees,country,revenue_band,tech,lifecycle,owner_email,crm_id,parent_domain\n"
+            : "full_name,company_domain,title,email,linkedin_url,phone,country,timezone\n")}`}>Template</a>
       </div>
       {result ? (
         <div className="ledger" style={{ marginTop: 12 }}>
@@ -538,7 +540,7 @@ export function Settings() {
       <div className="head"><div><h1>Settings</h1></div></div>
       <Section title="Signals and their weight">
         <div className="ledger">
-          <div className="row head" style={{ gridTemplateColumns: W_COLS }}><span>Signal</span><span className="num">Weight</span><span className="num">Fades by half in, days</span><span>On</span></div>
+          <div className="row head" style={{ gridTemplateColumns: W_COLS }}><span>Signal</span><span className="num">Weight</span><span className="num">Counts half after, days</span><span>On</span></div>
           {data.signal_types.map((t: any) => <WeightRow key={t.key} t={t} canEdit={canEdit} />)}
         </div>
       </Section>
@@ -548,7 +550,7 @@ export function Settings() {
             <dt>People per account</dt><dd>{s.account_max_active} at once, {s.account_max_active_wide} for tier A</dd>
             <dt>Rest after an email</dt><dd>{s.person_cooldown_days} days before another play</dd>
             <dt>After any reply</dt><dd>Account waits {s.account_reply_pause_hours} hours for an answer</dd>
-            <dt>Email checked within</dt><dd>{s.verify_max_age_days} days of sending</dd>
+            <dt>Re-check an email older than</dt><dd>{s.verify_max_age_days} days</dd>
             <dt>Send hours</dt><dd>{s.send_window.map((w: string[]) => w.join(" to ")).join(", ")}, their time</dd>
             <dt>Per mailbox</dt><dd>Up to {s.mailbox_max_daily} a day, ramped</dd>
             <dt>Hot reply answer</dt><dd>Within {s.sla_business_hours} business hours</dd>
@@ -564,7 +566,7 @@ export function Settings() {
               </div>
             ))}
           </div>
-          <div className="small mute">Legal rules per country are a starting point. Counsel to confirm.</div>
+          <div className="small mute">A starting point. Counsel to confirm.</div>
         </Section>
       </div>
       {me?.user.role === "manager" ? <Team /> : null}
@@ -589,6 +591,20 @@ export function Settings() {
     </div>
   );
 }
+const JOB: Record<string, string> = {
+  send_due: "Sending scheduled emails", send_provider: "Handing emails to the mail provider", due_steps: "Moving sequences to their next step",
+  draft_step: "Drafting emails", research: "Researching accounts", rescore: "Rescoring an account", rescore_all: "Nightly rescoring",
+  rescore_batch: "Rescoring a batch of accounts", classify_reply: "Reading replies", resume: "Resuming after an out-of-office",
+  resume_after_positive: "Resuming colleagues after a positive reply", sla_check: "Checking reply answer times",
+  crm_push: "Writing to the CRM", crm_sync: "Reading the CRM", mailbox_health: "Checking mailbox health",
+  telemetry: "Reading spam rates", placement_tests: "Testing where mail lands", dns_check: "Checking DNS records",
+  monitors: "Running the checks", ingest_source: "Collecting signals", deliver_alert: "Sending alerts to Slack",
+  expire_proposals: "Expiring old proposals", close_stale_plays: "Closing plays that ran their course",
+  autonomy_watch: "Watching autonomy", watch_reset: "Resetting first-batch watches", sweep_sending: "Settling stuck sends",
+  reverify: "Re-checking an email", enroll_referral: "Enrolling a referred person", replace_person: "Finding a replacement",
+};
+const JOB_STATUS: Record<string, string> = { queued: "Waiting", running: "Running", failed: "Will retry", dead: "Gave up" };
+
 const W_COLS = "minmax(0,1.6fr) 90px 120px 60px";
 
 function WeightRow({ t, canEdit }: { t: any; canEdit: boolean }) {
@@ -599,9 +615,9 @@ function WeightRow({ t, canEdit }: { t: any; canEdit: boolean }) {
   const save = (enabled = t.enabled) => run(() => api(`/api/signal-types/${t.key}`, { method: "POST", body: { weight: Number(w), half_life_days: Number(h), enabled } }), "Saved. Scores update shortly.");
   return (
     <div className="row" style={{ gridTemplateColumns: W_COLS }}>
-      <div className="cell-main"><span className="t"><SignalLabel type={t.key} label={t.label} /></span><span className="s" style={{ paddingLeft: 30 }}>{t.because}</span></div>
-      {canEdit ? <input className="input num" style={{ width: 80, justifySelf: "end" }} value={w} onChange={(e) => setW(e.target.value)} onBlur={() => dirty && save()} aria-label={`Weight for ${t.label}`} inputMode="decimal" /> : <span className="num">{Number(t.weight)}</span>}
-      {canEdit ? <input className="input num" style={{ width: 80, justifySelf: "end" }} value={h} onChange={(e) => setH(e.target.value)} onBlur={() => dirty && save()} aria-label={`Half-life for ${t.label}`} inputMode="decimal" /> : <span className="num">{Number(t.half_life_days)}</span>}
+      <div className="cell-main" title={t.because}><span className="t"><SignalLabel type={t.key} label={t.label} /></span></div>
+      {canEdit ? <input className="input num" style={{ width: 80, justifySelf: "end" }} value={w} onChange={(e) => setW(e.target.value)} onBlur={() => dirty && save()} aria-label={`Weight for ${t.label}`} inputMode="decimal" /> : <span className="num" data-label="Weight">{Number(t.weight)}</span>}
+      {canEdit ? <input className="input num" style={{ width: 80, justifySelf: "end" }} value={h} onChange={(e) => setH(e.target.value)} onBlur={() => dirty && save()} aria-label={`Half-life for ${t.label}`} inputMode="decimal" /> : <span className="num" data-label="Counts half after">{Number(t.half_life_days)}</span>}
       <input type="checkbox" checked={t.enabled} disabled={!canEdit || busy} onChange={(e) => save(e.target.checked)} aria-label={`${t.label} on`} style={{ width: 18, height: 18, accentColor: "var(--accent)" }} />
     </div>
   );

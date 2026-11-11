@@ -141,7 +141,7 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
     calendar = []
     if current:
         calendar = db.all(cur, """
-            select pe.full_name, pe.photo_url, e.persona_key, e.state, e.step_index, e.next_at, m.step_index as msg_step,
+            select pe.full_name, pe.photo_url, e.persona_key, e.state, e.step_index, e.next_at, e.stop_reason, e.pause_reason, m.step_index as msg_step,
                    coalesce(m.sent_at, m.scheduled_for) as at, m.status
             from enrollments e join people pe on pe.id = e.person_id
             left join messages m on m.enrollment_id = e.id
@@ -226,8 +226,15 @@ def person(cur, person_id: int) -> dict | None:
                                (kind = 'person' and value = %s) or (kind = 'email' and value = %s) or (kind = 'phone' and value = %s)
                                or (kind = 'domain' and value = split_part(%s, '@', 2)))""",
                      str(person_id), p["email"] or "", p["phone"] or "", p["email"] or "")
+    waiting = db.all(cur, """select 'task' as kind, t.id, t.kind as what, t.title as label, t.due_at as at from tasks t
+                             where t.person_id = %s and t.status = 'open'
+                             union all
+                             select 'message', m.id, m.channel, 'Email ' || (m.step_index + 1) || ' to approve', m.created_at
+                             from messages m join enrollments e on e.id = m.enrollment_id
+                             where e.person_id = %s and m.channel = 'email' and m.status in ('awaiting_approval', 'failed_gate')
+                             order by at""", person_id, person_id)
     return {"person": p, "enrollments": enrollments, "touches": touches, "replies": reps, "meetings": meetings,
-            "signals": sigs, "suppressed": blocked}
+            "signals": sigs, "suppressed": blocked, "waiting": waiting}
 
 
 # ---------------------------------------------------------------- signals
@@ -500,7 +507,7 @@ def results(cur, *, money: bool) -> dict:
                count(*) filter (where exists (select 1 from touches t where t.person_id = o.person_id
                    and t.kind = 'call_connected' and t.at >= o.first_at)) as spoke,
                count(*) filter (where exists (select 1 from meetings m where m.person_id = o.person_id
-                   and m.booked_at between o.first_at and o.first_at + interval '30 days')) as meetings
+                   and m.booked_at between o.first_at and o.first_at + interval '60 days')) as meetings
         from first_out o group by 1 order by reached desc""")
     meeting_lift, deal_lift = lifts(cur)
     out = {"funnel": f, "lift": meeting_lift, "deal_lift": deal_lift,

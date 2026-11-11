@@ -68,7 +68,7 @@ export function Today() {
                 <button className="cell-main" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }} onClick={() => openSheet("account", p.account_id)}>
                   <span className="t">{p.name}</span><span className="s">{p.play}{p.urgent ? ", decide today" : ""}{me?.user.role !== "sdr" && p.owner ? `, ${p.owner}` : ""}</span><span className="s only-sm">{p.why_now.summary}</span>
                 </button>
-                <div className="cell-main hide-sm"><span className="t" style={{ fontWeight: 450 }}>{p.why_now.summary}</span><span className="s"><SignalLabel type={p.why_now.type} label={`${p.why_now.label}, ${ago(p.why_now.observed_at)}`} /></span></div>
+                <div className="cell-main hide-sm"><span className="t" style={{ fontWeight: 450 }}>{p.why_now.summary}</span><span className="s"><SignalLabel type={p.why_now.type} label={ago(p.why_now.observed_at)} /></span></div>
                 <span className="num hide-sm"><span className="mute small">Priority </span>{p.priority}</span>
                 {skipping === p.id ? (
                   <div className="actions">
@@ -95,7 +95,7 @@ export function Today() {
               {data.approvals.slice(0, 8).map((m: any) => (
                 <button key={m.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => openSheet("message", m.id)}>
                   <div className="cell-main"><span className="t">{m.full_name}</span><span className="s">{m.company}, email {m.step_index + 1}</span></div>
-                  <Status kind={MSG[m.status][0]}>{MSG[m.status][1]}</Status>
+                  {m.status === "failed_gate" ? <Status kind={MSG[m.status][0]}>{MSG[m.status][1]}</Status> : <span />}
                 </button>
               ))}
               {data.approvals.length > 8 ? <button className="row" style={{ gridTemplateColumns: "1fr", color: "var(--accent)" }} onClick={() => navigate("/approvals")}>All {data.approvals.length}</button> : null}
@@ -163,7 +163,7 @@ export function Accounts() {
       {error ? <Failed error={error} retry={reload} /> : !data ? <Loading rows={12} /> : data.accounts.length === 0 ? <Empty title="No accounts match" /> : (
         <div className="ledger">
           <div className="row head" style={{ gridTemplateColumns: COLS }}>
-            <span /><span>Company</span><span>Why now</span><span className="num">Priority</span><span className="num">Week</span><span>Stage</span><span>Owner</span>
+            <span /><span>Company</span><span>Latest signal</span><span className="num">Priority</span><span className="num">This week</span><span>Stage</span><span>Owner</span>
           </div>
           {data.accounts.map((a: any) => {
             const st = a.play_state ? PLAY_STATE[a.play_state] : null;

@@ -80,7 +80,7 @@ export function SheetHost() {
 
 export const PLAY_STATE: Record<string, [Glyph, string]> = {
   proposed: ["wait", "Proposed"], accepted: ["half", "Accepted"], researching: ["half", "Researching"],
-  approving: ["wait", "Drafts to approve"], active: ["go", "In sequence"], engaged: ["ok", "Replied"],
+  approving: ["wait", "Drafts to approve"], active: ["go", "Reaching out"], engaged: ["ok", "Replied"],
   meeting: ["ok", "Meeting"], converted: ["ok", "Opportunity"], lost: ["stop", "Not interested"],
   stopped: ["off", "Ended"], skipped: ["off", "Skipped"], expired: ["off", "Expired"], held_out: ["none", "Held back"],
 };
@@ -148,6 +148,11 @@ export function PersonSheet({ id }: { id: number }) {
           <div className="meta clip">{p.title}{p.company ? <> at <button className="link" onClick={() => openSheet("account", p.account_id)}>{p.company}</button></> : null}</div>
         </div>
       </div>
+      <div className="figs">
+        <Fig value={n0(data.touches.filter((x: any) => x.direction === "out").length)} label="Reached out" sm />
+        <Fig value={n0(data.replies.length)} label="Replies" sm />
+        <Fig value={data.touches.length ? ago(data.touches[0].at) : "Never"} label="Last contact" sm />
+      </div>
       {data.suppressed.length ? (
         <div className="notice"><Status kind="stop">Do not contact</Status><span className="mute">{data.suppressed.map((x: any) => x.reason).join(", ")}</span></div>
       ) : null}
@@ -158,9 +163,21 @@ export function PersonSheet({ id }: { id: number }) {
           <Reach label="LinkedIn" value={p.linkedin_url ? <a href={p.linkedin_url} target="_blank" rel="noreferrer noopener">Profile <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
             state={data.touches.some((x: any) => x.kind === "linkedin_accepted") ? ["ok", "Connected"] : data.touches.some((x: any) => x.kind === "linkedin_connect") ? ["wait", "Request sent"] : null} />
           {p.status !== "active" ? <Reach label="Status" value={cap(p.status)} /> : null}
+          {p.linkedin_url ? <LinkedInLog personId={p.id} canAccept={data.touches.some((x: any) => x.kind === "linkedin_connect") && !data.touches.some((x: any) => x.kind === "linkedin_accepted")} onDone={reload} /> : null}
         </div>
       </Section>
-      {p.linkedin_url ? <LinkedInLog personId={p.id} canAccept={data.touches.some((x: any) => x.kind === "linkedin_connect") && !data.touches.some((x: any) => x.kind === "linkedin_accepted")} onDone={reload} /> : null}
+      {data.waiting.length ? (
+        <Section title="Waiting">
+          <div className="ledger">
+            {data.waiting.map((w: any) => (
+              <button key={w.kind + w.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => openSheet(w.kind === "task" ? "task" : "message", w.id)}>
+                <span className="cell-main"><span className="t">{w.label.replace(/ \(.*\)$/, "")}</span></span>
+                <span className="mute small num">{ago(w.at)}</span>
+              </button>
+            ))}
+          </div>
+        </Section>
+      ) : null}
       <Section title="Plays">
         {data.enrollments.length ? (
           <div className="ledger">
@@ -170,7 +187,7 @@ export function PersonSheet({ id }: { id: number }) {
               const theirs = e.meeting && e.meeting.person_id === p.id;
               const colleague = e.stop_reason === "meeting_booked" && e.meeting && !theirs;
               const sub = e.state === "active" && e.next_at
-                ? `Step ${e.step_index + 1} of ${e.sequence.length}, ${ahead(e.next_at) === "due" ? "due now" : `next ${ahead(e.next_at)}`}`
+                ? `Step ${e.step_index + 1} of ${e.sequence.length}, ${ahead(e.next_at) === "overdue" ? "due now" : `next ${ahead(e.next_at)}`}`
                 : colleague ? `${e.meeting.name || "A colleague"} booked a meeting, so the play stopped for everyone`
                 : `Since ${day(e.created_at)}`;
               return (
@@ -184,7 +201,6 @@ export function PersonSheet({ id }: { id: number }) {
         ) : <Empty title="Not in a play" />}
       </Section>
       <OutsideContact personId={p.id} onDone={reload} />
-      <EraseBox personId={p.id} name={p.full_name} />
       <Section title="History">
         {history.length ? (
           <ul className="timeline">
@@ -217,6 +233,7 @@ export function PersonSheet({ id }: { id: number }) {
           </ul>
         ) : <Empty title="Nothing yet" />}
       </Section>
+      <EraseBox personId={p.id} name={p.full_name} />
     </Frame>
   );
 }
@@ -280,8 +297,10 @@ export function TaskSheet({ id }: { id: number }) {
         </Section>
       ) : null}
       {t.kind === "call" ? (
-        <Section title="Number">
-          <div className="ledger"><Reach label="Phone" value={t.phone} state={t.phone ? (t.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(t.phone_status)]) : null} /></div>
+        <Section title={t.title.replace(/ \(.*\)$/, "")}>
+          <div className="ledger"><Reach label="Phone" value={t.phone ? <a className="tap" href={`tel:${t.phone.replace(/[^+\d]/g, "")}`}>{t.phone}</a> : null}
+            state={t.phone ? (t.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(t.phone_status)]) : null} /></div>
+          {t.note ? <div className="small mute">{t.note}</div> : null}
         </Section>
       ) : null}
       {t.sources?.length ? (
@@ -296,7 +315,6 @@ export function TaskSheet({ id }: { id: number }) {
           </div>
         </Section>
       ) : null}
-      {t.kind === "call" && open ? <p className="mute small">If you spoke with them, the desk stops its own steps for them: you are in the conversation now.</p> : null}
     </Frame>
   );
 }
@@ -308,44 +326,45 @@ function LinkedInLog({ personId, canAccept, onDone }: { personId: number; canAcc
   const [text, setText] = useState("");
   const [busy, run] = useBusy();
   return (
-    <Section title="LinkedIn" right={
-      <div className="actions">
-        {canAccept ? <button className="btn line sm" disabled={busy} onClick={() => run(async () => { await api(`/api/people/${personId}/linkedin`, { method: "POST", body: { event: "accepted" } }); onDone(); }, "Recorded.")}>They accepted</button> : null}
-        <button className="btn line sm" onClick={() => setOpen(!open)}>{open ? "Cancel" : "They wrote back"}</button>
-      </div>}>
+    <div className="row" style={{ gridTemplateColumns: "minmax(0,1fr)" }}>
       {open ? (
-        <>
-          <textarea className="input" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste their message" aria-label="Their LinkedIn message" />
-          <div className="actions" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+        <div style={{ display: "grid", gap: 8 }}>
+          <textarea className="input" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste their LinkedIn message" aria-label="Their LinkedIn message" />
+          <div className="actions" style={{ justifyContent: "flex-end" }}>
+            <button className="btn quiet sm" onClick={() => setOpen(false)}>Cancel</button>
             <button className="btn sm" disabled={busy || !text.trim()} onClick={() => run(async () => {
               const r = await api<any>(`/api/people/${personId}/linkedin`, { method: "POST", body: { event: "reply", text } });
               setOpen(false); setText(""); onDone();
               if (r.reply_id) openSheet("reply", r.reply_id);
             }, "Saved as a reply. Their emails are paused.")}>Save as a reply</button>
           </div>
-        </>
-      ) : <p className="mute small" style={{ margin: 0 }}>An accepted request is recorded and pauses nothing. A message from them is a reply: their emails stop first.</p>}
-    </Section>
+        </div>
+      ) : (
+        <div className="actions" style={{ justifyContent: "flex-end" }}>
+          {canAccept ? <button className="btn line sm" disabled={busy} onClick={() => run(async () => { await api(`/api/people/${personId}/linkedin`, { method: "POST", body: { event: "accepted" } }); onDone(); }, "Recorded.")}>They accepted on LinkedIn</button> : null}
+          <button className="btn line sm" onClick={() => setOpen(true)}>They wrote on LinkedIn</button>
+        </div>
+      )}
+    </div>
   );
 }
 
-/** Who gets what next in the current play, person by person: the account calendar the desk keeps. */
 function Calendar({ rows }: { rows: any[] }) {
   const byPerson = new Map<string, any[]>();
   for (const r of rows) byPerson.set(r.full_name, [...(byPerson.get(r.full_name) || []), r]);
   return (
     <div className="section">
-      <h2 style={{ fontSize: 13.5 }}>Calendar</h2>
+      <h2 style={{ fontSize: 13.5 }}>People in this play</h2>
       <div className="ledger">
         {[...byPerson.entries()].map(([name, steps]) => {
           const e = steps[0];
           const sent = steps.filter((x) => x.status === "sent").length;
-          const next = e.state === "active" && e.next_at ? (ahead(e.next_at) === "due" ? "due now" : ahead(e.next_at)) : null;
+          const next = e.state === "active" && e.next_at ? (ahead(e.next_at) === "overdue" ? "due now" : ahead(e.next_at)) : null;
           return (
             <div key={name} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }}>
               <Avatar name={name} photo={e.photo_url} />
               <div className="cell-main"><span className="t">{name}</span><span className="s">{sent ? `${sent} sent` : "Nothing sent yet"}{next ? `, step ${e.step_index + 1} ${next}` : ""}</span></div>
-              <Status kind={(ENROLL[e.state] || ["off"])[0]}>{(ENROLL[e.state] || ["off", cap(e.state)])[1]}</Status>
+              <Status kind={GOOD_STOPS.has(e.stop_reason) ? "ok" : (ENROLL[e.state] || ["off"])[0]}>{(e.state === "stopped" || e.state === "paused") ? stopWord(e.stop_reason || e.pause_reason) || ENROLL[e.state][1] : (ENROLL[e.state] || ["off", cap(e.state)])[1]}</Status>
             </div>
           );
         })}
@@ -361,18 +380,23 @@ function LogMeeting({ accountId, people, onDone }: { accountId: number; people: 
   const [busy, run] = useBusy();
   if (!open) return <button className="btn quiet sm" onClick={() => setOpen(true)}>Log a meeting</button>;
   return (
-    <div className="actions" style={{ flexWrap: "wrap", width: "100%" }}>
-      <select className="select" style={{ width: 200 }} value={who} onChange={(e) => setWho(e.target.value)} aria-label="With whom">
-        <option value="">With whom</option>
-        {people.filter((p: any) => p.status === "active").map((p: any) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-      </select>
-      <input className="input" type="datetime-local" style={{ width: 210 }} value={when} onChange={(e) => setWhen(e.target.value)} aria-label="When" />
+    <Section title="Log a meeting">
+      <div className="form-row">
+        <label className="field"><span>With</span>
+          <select className="select" value={who} onChange={(e) => setWho(e.target.value)}>
+            <option value="">Someone at the company</option>
+            {people.filter((p: any) => p.status === "active").map((p: any) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+          </select></label>
+        <label className="field"><span>When</span><input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></label>
+      </div>
+      <div className="actions" style={{ justifyContent: "flex-end" }}>
       <button className="btn quiet sm" onClick={() => setOpen(false)}>Cancel</button>
       <button className="btn sm" disabled={busy || !when} onClick={() => run(async () => {
         await api(`/api/accounts/${accountId}/meetings`, { method: "POST", body: { person_id: who ? Number(who) : null, starts_at: new Date(when).toISOString() } });
         setOpen(false); onDone();
       }, "Meeting logged. The play's sequences stop.")}>Log it</button>
-    </div>
+      </div>
+    </Section>
   );
 }
 
@@ -407,7 +431,7 @@ function HoldBox({ accountId, onDone }: { accountId: number; onDone: () => void 
     <Section title="Hold this account">
       <div className="form-row">
         <label className="field"><span>Until</span><input className="input" type="date" value={until} onChange={(e) => setUntil(e.target.value)} /></label>
-        <label className="field" style={{ flex: 2 }}><span>Why</span><input className="input" value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} placeholder="A partner is talking to them" /></label>
+        <label className="field"><span>Why</span><input className="input" value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} placeholder="A partner is in touch" /></label>
       </div>
       <div className="actions" style={{ justifyContent: "flex-end" }}>
         <button className="btn quiet sm" onClick={() => setOpen(false)}>Cancel</button>
@@ -481,7 +505,7 @@ export function MeetingSheet({ id }: { id: number }) {
           <div className="ledger">
             {m.learnings.map((l: any, i: number) => (
               <div key={i} className="row" style={{ gridTemplateColumns: "minmax(0,1fr)" }}>
-                <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{l.text}</span><span className="s" style={{ whiteSpace: "normal" }}>&ldquo;{l.quote}&rdquo;</span></div>
+                <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{l.text}</span>{l.quote && l.quote.trim().replace(/[.]$/, "") !== l.text.trim().replace(/[.]$/, "") ? <span className="s" style={{ whiteSpace: "normal" }}>&ldquo;{l.quote}&rdquo;</span> : null}</div>
               </div>
             ))}
           </div>
@@ -503,7 +527,14 @@ export function MeetingSheet({ id }: { id: number }) {
   );
 }
 
-const MEETING: Record<string, string> = { booked: "Meeting booked", held: "Meeting held", no_show: "Meeting, they did not show", cancelled: "Meeting cancelled" };
+const MEETING: Record<string, string> = { booked: "Meeting booked", held: "Meeting happened", no_show: "Meeting, they did not show", cancelled: "Meeting cancelled" };
+
+/** The same step names as the play editor. */
+export const STEP_NAME: Record<string, string> = {
+  "email:open": "Email, first", "email:follow_up": "Email, follow-up", "email:bump": "Email, short nudge",
+  "email:break_up": "Email, last", "linkedin_connect:connect": "LinkedIn, connect", "linkedin_message:message": "LinkedIn, message",
+  "call:call": "Call",
+};
 
 /** Contact that happened outside the desk. Any of it puts the SDR in the conversation: the desk stops its own steps. */
 function OutsideContact({ personId, onDone }: { personId: number; onDone: () => void }) {
@@ -511,7 +542,7 @@ function OutsideContact({ personId, onDone }: { personId: number; onDone: () => 
   const log = (kind: string) => run(async () => { await api(`/api/people/${personId}/activity`, { method: "POST", body: { kind } }); onDone(); },
     "Logged. The desk stops its own steps for them.");
   return (
-    <Section title="Talked outside the desk" right={<span className="mute small">The desk stops its own steps for them</span>}>
+    <Section title="Talked outside the desk">
       <div className="actions" style={{ flexWrap: "wrap" }}>
         <button className="btn line sm" disabled={busy} onClick={() => log("they_called")}>They called me</button>
         <button className="btn line sm" disabled={busy} onClick={() => log("they_emailed")}>They emailed me directly</button>
@@ -589,8 +620,8 @@ export function AccountSheet({ id }: { id: number }) {
       {tab === "people" && <AccountPeople d={data} />}
       {tab === "signals" && <SignalTimeline signals={data.signals} />}
       {tab === "outreach" && <AccountOutreach d={data} />}
-      {cur ? null : data.holds.length ? <Section title={`Rests until ${day(data.holds[0].until)}`}><div className="small mute">{cap(data.holds[0].reason)}</div></Section> : null}
-      {tab === "overview" ? <div className="actions" style={{ marginTop: 8 }}><LogMeeting accountId={id} people={data.people} onDone={reload} /><HoldBox accountId={id} onDone={reload} /></div> : null}
+      {cur ? null : data.holds.length ? <Section title={`On hold until ${day(data.holds[0].until)}`}><div className="small mute">{cap(data.holds[0].reason)}</div></Section> : null}
+      {tab === "overview" ? <div className="acct-tools"><LogMeeting accountId={id} people={data.people} onDone={reload} /><HoldBox accountId={id} onDone={reload} /></div> : null}
     </Frame>
   );
 }
@@ -628,7 +659,7 @@ function AccountOverview({ d }: { d: any }) {
     <>
       {cur ? (
         <Section title="In play" right={<Status kind={PLAY_STATE[cur.state][0]}>{PLAY_STATE[cur.state][1]}</Status>}>
-          <div className="small mute">{cur.play}, proposed {ago(cur.proposed_at)}{cur.owner ? `, owned by ${cur.owner}` : ""}</div>
+          <div className="small mute">{cur.play}, proposed {day(cur.proposed_at)}</div>
           <WhyNow why={cur.why_now} />
           {d.calendar?.length ? <Calendar rows={d.calendar} /> : null}
           {cur.brief?.findings?.length ? (
@@ -648,7 +679,7 @@ function AccountOverview({ d }: { d: any }) {
       <Section title="What moves the score">
         {d.contributions.length ? (
           <div className="bars">
-            {grouped(d.contributions).slice(0, 7).map((c: any) => <Bar key={c.type} label={<SignalLabel type={c.type} label={c.label} />} value={c.value} of={max} shown={c.value.toFixed(1)} />)}
+            {grouped(d.contributions).slice(0, 7).map((c: any) => <Bar key={c.type} label={<SignalLabel type={c.type} label={c.label} />} value={c.value} of={max} shown={`+${Math.round(c.value)}`} hint="points" />)}
           </div>
         ) : <Empty title="No recent signals">The score is fit alone.</Empty>}
       </Section>
@@ -658,7 +689,7 @@ function AccountOverview({ d }: { d: any }) {
             {fit.map((f) => (
               <div key={f.key} className="row" style={{ gridTemplateColumns: "1fr auto", minHeight: 36 }}>
                 <span>{cap(f.key)}</span>
-                <Status kind={f.matched ? (f.weight < 0 ? "stop" : "ok") : "none"}>{f.matched ? (f.weight < 0 ? `${f.contribution}` : `+${f.contribution}`) : "No match"}</Status>
+                <Status kind={f.matched ? (f.weight < 0 ? "stop" : "ok") : "none"}>{f.matched ? (f.weight < 0 ? `${f.contribution}` : `+${f.contribution}`) : f.matched === null ? "Not known" : "No match"}</Status>
               </div>
             ))}
           </div>
@@ -670,8 +701,8 @@ function AccountOverview({ d }: { d: any }) {
             {d.opportunities.map((o: any) => (
               <div key={o.id} className="row" style={{ gridTemplateColumns: "1fr auto auto" }}>
                 <div className="cell-main"><span className="t">{o.name}</span><span className="s">{o.stage}, {day(o.created_at)}</span></div>
-                <span className="mute small">{cap(o.attribution)}</span>
-                <span className="num">{o.amount_cents !== undefined ? money(o.amount_cents) : ""}</span>
+                <span className="mute small">{ATTR[o.attribution] || ""}</span>
+                {o.amount_cents != null ? <span className="num">{money(o.amount_cents)}</span> : <span />}
               </div>
             ))}
           </div>
@@ -773,7 +804,7 @@ function AccountOutreach({ d }: { d: any }) {
             {d.meetings.map((m: any) => (
               <button key={m.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => openSheet("meeting", m.id)}>
                 <div className="cell-main"><span className="t">{m.full_name || "Meeting"}</span><span className="s">{dayTime(m.starts_at)}</span></div>
-                <Status kind={m.status === "held" ? "ok" : m.status === "booked" ? "go" : "off"}>{cap(m.status === "no_show" ? "no show" : m.status)}</Status>
+                <Status kind={m.status === "held" ? "ok" : m.status === "booked" ? "go" : "off"}>{({ held: "Happened", booked: "Booked", no_show: "No show", cancelled: "Cancelled" } as Record<string, string>)[m.status] || cap(m.status)}</Status>
               </button>
             ))}
           </div>
@@ -906,7 +937,7 @@ export function MessageSheet({ id }: { id: number }) {
       {lastAttempt && m.attempts.length > 1 && m.gate?.passed ? (
         <div className="small mute">First draft: {(lastAttempt.failures || []).map((f: any) => f.message.toLowerCase()).join("; ")}. Rewritten once.</div>
       ) : null}
-      <WhyNow why={m.why_now} />
+
     </Frame>
   );
 }
@@ -1003,6 +1034,7 @@ export function PlaySheet({ id }: { id: number }) {
   const me = useData<any>("/api/me").data;
   const [busy, run] = useBusy();
   const [limits, setLimits] = useState<Record<string, number> | null>(null);
+  const [worst, setWorst] = useState<any>(null);
   if (error) return <Frame crumb="Play"><Failed error={error} retry={reload} /></Frame>;
   const p = data?.plays.find((x: any) => x.id === id);
   if (!p) return <Frame crumb="Play"><Loading rows={8} /></Frame>;
@@ -1056,19 +1088,19 @@ export function PlaySheet({ id }: { id: number }) {
           <dt>Held back</dt><dd>{p.holdout_pct}% of matched accounts</dd>
         </dl>
       </Section>
-      <Section title="Sequence">
+      <Section title="Steps">
         <div className="ledger">
           {p.sequence.map((s: any, i: number) => (
             <div key={i} className="row" style={{ gridTemplateColumns: "56px minmax(0,1fr) auto", minHeight: 36 }}>
               <span className="mute">Day {s.day}</span>
-              <span>{STEP[s.channel] || cap(s.channel)}{s.job !== s.channel ? `, ${cap(s.job).toLowerCase()}` : ""}</span>
-              <span className="mute small">{s.by === "desk" ? "The desk sends" : "SDR task"}</span>
+              <span>{STEP_NAME[`${s.channel}:${s.job}`] || cap(s.channel)}</span>
+              <span className="mute small">{s.by === "desk" ? "Desk sends" : "SDR does it"}</span>
             </div>
           ))}
         </div>
       </Section>
-      {p.status === "draft" ? <DraftPreview p={p} onCost={(c) => { if (!limits && c) setLimits(defaultCap(c)); }} /> : null}
-      {p.status === "draft" && isManager && !isAuthor && limits ? <CapForm limits={limits} setLimits={setLimits} /> : null}
+      {p.status === "draft" ? <DraftPreview p={p} hideCost={isManager && !isAuthor} onCost={(c) => { if (!limits && c) { setLimits(defaultCap(c)); setWorst(c); } }} /> : null}
+      {p.status === "draft" && isManager && !isAuthor && limits ? <CapForm limits={limits} setLimits={setLimits} worst={worst} /> : null}
       {p.status !== "draft" && p.cap_use?.length ? <CapUse rows={p.cap_use} /> : null}
       {promo.next && p.status !== "draft" ? (
         <Section title={`Before: ${STAGE[promo.next]}`}>
@@ -1085,7 +1117,7 @@ export function PlaySheet({ id }: { id: number }) {
   );
 }
 
-function DraftPreview({ p, onCost }: { p: any; onCost?: (c: any) => void }) {
+function DraftPreview({ p, onCost, hideCost }: { p: any; onCost?: (c: any) => void; hideCost?: boolean }) {
   const [pv, setPv] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
@@ -1093,12 +1125,12 @@ function DraftPreview({ p, onCost }: { p: any; onCost?: (c: any) => void }) {
       holdout_pct: p.holdout_pct, urgent: p.urgent, latency_hours: p.latency_hours, sequence: p.sequence, trigger: p.trigger };
     api<any>("/api/play-preview", { method: "POST", body }).then((r) => { setPv(r); onCost?.(r.cost); }).catch((e) => setErr(e.message));
   }, [p.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <PlayPreview pv={pv} error={err} />;
+  return <PlayPreview pv={pv && hideCost ? { ...pv, cost: null } : pv} error={err} />;
 }
 
 const CAP_NAMES: Record<string, [string, string]> = {
   people_search: ["People search", "credits"], email_finder: ["Email finder", "credits"],
-  email_verifier: ["Email verification", "credits"], phone_finder: ["Phone finder", "credits"], anthropic_cents: ["AI", "cents"],
+  email_verifier: ["Email verification", "credits"], phone_finder: ["Phone finder", "credits"], anthropic_cents: ["AI", "dollars"],
 };
 
 /** The cost card's worst case a month, rounded up, as the starting cap. The manager can lower or raise it. */
@@ -1109,22 +1141,28 @@ function defaultCap(c: any): Record<string, number> {
   return out;
 }
 
-function CapForm({ limits, setLimits }: { limits: Record<string, number>; setLimits: (c: Record<string, number>) => void }) {
+function CapForm({ limits, setLimits, worst }: { limits: Record<string, number>; setLimits: (c: Record<string, number>) => void; worst: any }) {
+  const worstOf = (k: string) => (k === "anthropic_cents" ? `$${n0(worst?.per_month.ai_dollars || 0)}` : n0(worst?.per_month.credits[k] || 0));
   return (
-    <Section title="Monthly cap" right={<span className="mute small">Starts at the worst case above. At the cap the play takes no new accounts until next month.</span>}>
+    <Section title="Monthly cap">
       <div className="ledger">
-        {Object.entries(limits).map(([k, v]) => (
-          <div key={k} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 120px 70px" }}>
-            <span>{CAP_NAMES[k]?.[0] || k}</span>
-            <input className="input num" inputMode="numeric" value={v} aria-label={`${CAP_NAMES[k]?.[0] || k} cap`}
-              onChange={(e) => setLimits({ ...limits, [k]: Math.max(0, Number(e.target.value.replace(/\D/g, "")) || 0) })} />
-            <span className="mute small">{CAP_NAMES[k]?.[1]}</span>
-          </div>
-        ))}
+        <div className="row head" style={{ gridTemplateColumns: CAP_COLS }}><span>Paid for</span><span className="num">Worst case a month</span><span className="num">Cap</span></div>
+        {Object.entries(limits).map(([k, v]) => {
+          const dollars = k === "anthropic_cents";
+          return (
+            <div key={k} className="row" style={{ gridTemplateColumns: CAP_COLS }}>
+              <span>{CAP_NAMES[k]?.[0] || k} <span className="mute small">{dollars ? "dollars" : "credits"}</span></span>
+              <span className="num mute" data-label="Worst case">{worstOf(k)}</span>
+              <input className="input num" inputMode="numeric" value={dollars ? Math.round(v / 100) : v} aria-label={`${CAP_NAMES[k]?.[0] || k} cap`}
+                onChange={(e) => { const n = Math.max(0, Number(e.target.value.replace(/\D/g, "")) || 0); setLimits({ ...limits, [k]: dollars ? n * 100 : n }); }} />
+            </div>
+          );
+        })}
       </div>
     </Section>
   );
 }
+const CAP_COLS = "minmax(0,1fr) 150px 110px";
 
 function CapUse({ rows }: { rows: any[] }) {
   return (
@@ -1133,7 +1171,7 @@ function CapUse({ rows }: { rows: any[] }) {
         {rows.map((r: any) => (
           <div key={r.key} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(140px,1.4fr)" }}>
             <span>{CAP_NAMES[r.key]?.[0] || r.key}</span>
-            <Bar label="" value={r.used} of={Math.max(r.cap, 1)} shown={`${n0(r.used)} of ${n0(r.cap)}`} hint={CAP_NAMES[r.key]?.[1]} tone={r.used >= r.cap ? "accent" : undefined} />
+            <Bar label="" value={r.used} of={Math.max(r.cap, 1)} shown={r.key === "anthropic_cents" ? `$${n0(r.used / 100)} of $${n0(r.cap / 100)}` : `${n0(r.used)} of ${n0(r.cap)}`} hint={r.key === "anthropic_cents" ? undefined : "credits"} tone={r.used >= r.cap ? "accent" : undefined} />
           </div>
         ))}
       </div>
@@ -1163,7 +1201,6 @@ function PlayAccounts({ id }: { id: number }) {
 }
 
 export const STAGE: Record<string, string> = { research: "SDR writes", draft: "Desk drafts, SDR approves", supervised: "SDR approves first emails", autonomous: "Desk sends tier B" };
-const STEP: Record<string, string> = { email: "Email", linkedin_connect: "LinkedIn", linkedin_message: "LinkedIn", call: "Call" };
 
 export function LiftBlock({ lift }: { lift: any }) {
   const t = lift.treated, h = lift.holdout;
@@ -1178,14 +1215,29 @@ export function LiftBlock({ lift }: { lift: any }) {
           <Fig value={`${lift.difference >= 0 ? "+" : ""}${pct(lift.difference, 1)}`} label="Difference" sm />
           <Fig value={`${pct(lift.interval[0], 1)} to ${pct(lift.interval[1], 1)}`} label="Likely range" sm />
         </div>
-      ) : (
-        <div className="figs">
-          <Fig value="Too few to compare" label="Yet" sm />
-          <Fig value={n0(lift.still_needed.holdout)} label="More held back needed" sm />
-        </div>
-      )}
+      ) : <div className="small mute">Too few accounts to compare yet: {n0(lift.still_needed.holdout)} more held back needed.</div>}
     </div>
   );
 }
+
+/** Contacted against held back, one row per outcome: each group's rate, then the difference or what is still needed. */
+export function Comparison({ rows }: { rows: [string, any][] }) {
+  return (
+    <div className="ledger">
+      <div className="row head" style={{ gridTemplateColumns: CMP }}><span>Accounts with a</span><span className="num">Contacted</span><span className="num">Held back</span><span className="num">Difference</span></div>
+      {rows.map(([label, l]) => (
+        <div key={label} className="row" style={{ gridTemplateColumns: CMP }}>
+          <span className="cell-main"><span className="t">{label}</span></span>
+          <span className="num" data-label="Contacted">{pct(l.treated.rate, 1)} <span className="mute small">{l.treated.meetings} of {l.treated.accounts}</span></span>
+          <span className="num" data-label="Held back">{pct(l.holdout.rate, 1)} <span className="mute small">{l.holdout.meetings} of {l.holdout.accounts}</span></span>
+          <span className="num" data-label="Difference">{l.enough && l.difference !== null
+            ? <>{l.difference >= 0 ? "+" : ""}{pct(l.difference, 1)} <span className="mute small">likely {pct(l.interval[0], 1)} to {pct(l.interval[1], 1)}</span></>
+            : <span className="mute small">{n0(l.still_needed.holdout)} more held back needed</span>}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+const CMP = "minmax(0,1.2fr) 130px 130px minmax(0,1.3fr)";
 
 export { withParam };

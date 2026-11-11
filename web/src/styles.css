@@ -309,9 +309,12 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
   .two, .split, .three { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .fig { padding: 0 16px; }
   /* One row shape on a phone: mark, then the text that matters, then one value. Nothing floats or drops. */
-  .ledger .row { display: flex !important; align-items: center; gap: 12px; }
-  .ledger .row > * { flex: 0 0 auto; }
-  .ledger .row > .cell-main, .ledger .row > .grow-sm { flex: 1 1 auto; min-width: 0; }
+  .ledger .row { display: flex !important; align-items: center; gap: 6px 12px; flex-wrap: wrap; }
+  /* Cells may shrink, and values that do not fit beside the name wrap under it: nothing scrolls sideways. */
+  .ledger .row > * { flex: 0 1 auto; min-width: 0; }
+  .ledger .row > .cell-main, .ledger .row > .grow-sm { flex: 1 1 55%; min-width: 0; }
+  .ledger .row > .status { flex: 1 1 auto; }
+  .ledger .row > .input, .ledger .row > .select { flex: 1 1 120px; width: auto !important; }
   .ledger .row > .hide-sm { display: none; }
   .ledger .row .actions { flex-wrap: nowrap; }
   .only-sm { display: block !important; }
@@ -366,3 +369,28 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 /* An inline search that opens in place of a button, wrapping under the row on narrow screens. */
 .link-pop { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; max-width: 100%; }
 .link-pop .input { width: 200px; height: 32px; }
+
+/* A section's single column is never wider than the page, however long one line inside it is. */
+.section { grid-template-columns: minmax(0, 1fr); }
+.ledger { grid-template-columns: minmax(0, 1fr); }
+
+.said-text { min-width: 0; overflow-wrap: anywhere; }
+/* On a phone the column headers are hidden, so a value says what it is. */
+@media (max-width: 900px) {
+  .ledger .row > [data-label]::before { content: attr(data-label) " "; color: var(--mute); font-size: 12px; font-weight: 400; }
+}
+
+/* Figures inside a side sheet share the width evenly, so four never wrap three and one. */
+.sheet .figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 14px 18px; }
+.sheet .fig { padding-right: 0; }
+
+/* A phone number or link someone taps: at least 44px tall on a phone. */
+.tap { display: inline-flex; align-items: center; min-height: 44px; }
+@media (max-width: 900px) { .link, .meta .link-row, .who .link-row { min-height: 44px; display: inline-flex; align-items: center; } }
+
+.link-pop { flex-basis: 100%; order: 10; padding-top: 6px; }
+
+/* Account tools: two quiet buttons in a row; an open form takes the whole width. */
+.acct-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.acct-tools > .section { flex: 1 1 100%; }
+.nowrap { white-space: nowrap; }

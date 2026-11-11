@@ -90,6 +90,12 @@ export function useBusy(): [boolean, (f: () => Promise<unknown>, done?: string) 
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 let NOW = Date.now();
+/** One name per paid vendor, on every page. */
+export const VENDOR_NAME: Record<string, string> = {
+  people_search: "People search", email_finder: "Email finder", email_verifier: "Email verification",
+  phone_finder: "Phone finder", anthropic: "AI", research: "Website research",
+};
+
 export function setNow(iso: string) { NOW = new Date(iso).getTime(); }
 
 export function ago(iso: string | null | undefined): string {
@@ -105,7 +111,7 @@ export function ago(iso: string | null | undefined): string {
 export function ahead(iso: string | null | undefined): string {
   if (!iso) return "";
   const s = (new Date(iso).getTime() - NOW) / 1000;
-  if (s < 0) return "due";
+  if (s < 0) return "overdue";
   const say = (n: number, unit: string) => `in ${n} ${unit}${n === 1 ? "" : "s"}`;
   if (s < 3600) return say(Math.max(1, Math.round(s / 60)), "minute");
   if (s < 86400) return say(Math.round(s / 3600), "hour");

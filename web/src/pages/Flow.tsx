@@ -94,19 +94,19 @@ export function Signals() {
         {silent ? <Fig value={silent} label="Sources silent" /> : null}
       </div>
       <Seg label="View" value={tab} onChange={(v) => navigate(withParam("tab", v === "feed" ? null : v), true)}
-        options={[["feed", "Latest"], ["types", "Which signals work"], ["sources", "Sources"], ["unmatched", "Not matched"]]} />
+        options={[["feed", "Latest"], ["types", "Which signals work"], ["sources", "Sources"], ["unmatched", unmatched.length ? `Not matched ${unmatched.length}` : "Not matched"]]} />
       {tab === "feed" && <Feed rows={data.feed.filter((s: any) => s.status === "matched")} />}
       {tab === "unmatched" && <Unmatched rows={unmatched} />}
       {tab === "types" && <Types rows={data.types} />}
       {tab === "sources" && (
         <div className="ledger">
-          <div className="row head" style={{ gridTemplateColumns: S_COLS }}><span>Source</span><span>Every</span><span className="num">Last run</span><span className="num">Fetched</span><span className="num">Matched</span><span className="num">7 days</span></div>
+          <div className="row head" style={{ gridTemplateColumns: S_COLS }}><span>Source</span><span>Checked</span><span className="num">Last run</span><span className="num">Fetched</span><span className="num">Matched</span><span className="num">7 days</span></div>
           {data.sources.map((s: any) => (
             <div key={s.key} className="row" style={{ gridTemplateColumns: S_COLS }}>
               <div className="cell-main"><span className="t">{s.label}</span><span className="s">{s.paid ? `Paid: ${s.provider.charAt(0).toLowerCase()}${s.provider.slice(1)}` : s.provider}</span></div>
-              <span className="mute">{s.cadence_minutes >= 1440 ? "daily" : s.cadence_minutes >= 60 ? `every ${s.cadence_minutes / 60} hours` : `every ${s.cadence_minutes} minutes`}</span>
-              <span className="num">{s.key === "webhook" ? "Pushed to us" : s.error ? <Status kind="stop">Failed</Status> : ago(s.last_run)}</span>
-              <span className="num">{s.fetched ?? ""}</span><span className="num">{s.matched ?? ""}</span><span className="num strong">{s.week}</span>
+              <span className="mute nowrap">{s.adapter === "webhook" ? "As it arrives" : s.cadence_minutes >= 1440 ? "Daily" : s.cadence_minutes >= 60 ? `Every ${s.cadence_minutes / 60} h` : `Every ${s.cadence_minutes} min`}</span>
+              <span className="num">{s.adapter === "webhook" ? "" : s.error ? <Status kind="stop">Failed</Status> : ago(s.last_run)}</span>
+              <span className="num" data-label="Fetched">{s.adapter === "webhook" ? "" : s.fetched ?? ""}</span><span className="num" data-label="Matched">{s.adapter === "webhook" ? "" : s.matched ?? ""}</span><span className="num strong" data-label="7 days">{s.week}</span>
             </div>
           ))}
         </div>
@@ -136,8 +136,8 @@ function Feed({ rows }: { rows: any[] }) {
 }
 
 /** Link a signal to an account the desk has, found by name or domain. */
-function LinkTo({ signalId, hint }: { signalId: number; hint: string }) {
-  const [open, setOpen] = useState(false);
+function LinkTo({ signalId, hint, onClose }: { signalId: number; hint: string; onClose: () => void }) {
+  const open = true;
   const [q, setQ] = useState(hint || "");
   const [hits, setHits] = useState<any[]>([]);
   const [busy, run] = useBusy();
@@ -146,14 +146,13 @@ function LinkTo({ signalId, hint }: { signalId: number; hint: string }) {
     const t = window.setTimeout(() => api<any>(`/api/accounts?view=all&q=${encodeURIComponent(q.trim())}`).then((r) => setHits(r.accounts.slice(0, 5))).catch(() => setHits([])), 250);
     return () => window.clearTimeout(t);
   }, [q, open]);
-  if (!open) return <button className="btn quiet sm" onClick={() => setOpen(true)}>Link</button>;
   return (
-    <span className="link-pop">
+    <span className="link-pop" style={{ gridColumn: "1 / -1" }}>
       <input className="input" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Account name or domain" aria-label="Find the account" />
       {hits.map((a) => (
         <button key={a.id} className="btn quiet sm" disabled={busy} onClick={() => run(() => api(`/api/signals/${signalId}/resolve`, { method: "POST", body: { action: "link", account_id: a.id } }), `Linked to ${a.name}.`)}>{a.name}</button>
       ))}
-      <button className="btn quiet sm" onClick={() => setOpen(false)}>Cancel</button>
+      <button className="btn quiet sm" onClick={onClose}>Cancel</button>
     </span>
   );
 }
@@ -161,6 +160,7 @@ function LinkTo({ signalId, hint }: { signalId: number; hint: string }) {
 /** Signals about companies the desk does not know: add the company as an account, or set it aside. */
 function Unmatched({ rows }: { rows: any[] }) {
   const [busy, run] = useBusy();
+  const [linking, setLinking] = useState<number | null>(null);
   if (!rows.length) return <Empty title="Every signal matched an account" />;
   const act = (id: number, action: string) => run(() => api(`/api/signals/${id}/resolve`, { method: "POST", body: { action } }),
     action === "create" ? "Added as an account. It is scored now." : "Set aside.");
@@ -169,13 +169,14 @@ function Unmatched({ rows }: { rows: any[] }) {
       {rows.map((s: any) => (
         <div key={s.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) minmax(0,1.4fr) auto" }}>
           <SignalIcon type={s.type_key} />
-          <div className="cell-main"><span className="t">{s.raw_domain || s.raw_company || "Unknown company"}</span><span className="s">{s.label}, {s.status_reason}</span></div>
+          <div className="cell-main"><span className="t">{s.raw_domain || s.raw_company || "Unknown company"}</span><span className="s">{s.label}{s.status_reason && s.status_reason !== "no account with this domain or name" ? `, ${s.status_reason}` : ""}</span></div>
           <span className="clip hide-sm">{s.evidence.summary}</span>
           <span className="actions">
             <button className="btn quiet sm" disabled={busy} onClick={() => act(s.id, "ignore")}>Set aside</button>
-            <LinkTo signalId={s.id} hint={s.raw_company || (s.raw_domain || "").split(".")[0]} />
+            <button className="btn quiet sm" onClick={() => setLinking(linking === s.id ? null : s.id)}>Link</button>
             {s.raw_domain ? <button className="btn line sm" disabled={busy} onClick={() => act(s.id, "create")}>Add account</button> : null}
           </span>
+          {linking === s.id ? <LinkTo signalId={s.id} hint={s.raw_company || (s.raw_domain || "").split(".")[0]} onClose={() => setLinking(null)} /> : null}
         </div>
       ))}
     </div>
@@ -190,10 +191,10 @@ function Types({ rows }: { rows: any[] }) {
         <div className="row head" style={{ gridTemplateColumns: T_COLS }}><span>Signal</span><span className="num">Weight</span><span className="num">Seen</span><span className="num">Plays started</span><span className="num">Held back</span><span>Meetings within 60 days</span></div>
         {rows.map((r) => (
           <div key={r.key} className="row" style={{ gridTemplateColumns: T_COLS }} title={r.because}>
-            <div className="cell-main"><span className="t"><SignalLabel type={r.key} label={r.label} /></span><span className="s" style={{ paddingLeft: 30 }}>{r.because}</span></div>
+            <div className="cell-main"><span className="t"><SignalLabel type={r.key} label={r.label} /></span></div>
             <span className="num">{Number(r.weight) > 0 ? `+${Number(r.weight)}` : Number(r.weight)}</span>
             <span className="num">{r.seen}</span>
-            <span className="num">{r.treated}</span><span className="num">{r.holdout}</span>
+            <span className="num" data-label="Plays started">{r.treated}</span><span className="num" data-label="Held back">{r.holdout}</span>
             <div>{r.treated ? <Bar label="" value={r.meeting_rate || 0} of={max} shown={pct(r.meeting_rate)} hint={`${r.treated_meetings} of ${r.treated}`} /> : <span className="faint">No plays yet</span>}</div>
           </div>
         ))}
@@ -222,9 +223,9 @@ export function Plays() {
             <button key={p.id} className="row" style={{ gridTemplateColumns: P_COLS }} onClick={() => openSheet("play", p.id)}>
               <div className="cell-main"><span className="t">{p.name}</span><span className="s">{p.status === "live" ? (p.urgent ? "Live, decide within a day" : "Live") : p.status === "draft" ? "Draft, waiting for a manager" : cap(p.status)}</span></div>
               <span className="mute clip hide-sm">{STAGE[p.autonomy]}</span>
-              <span className="num">{f.proposed}</span>
-              <span className="num">{f.positive}</span>
-              <span className="num strong">{f.meetings}</span>
+              <span className="num" data-label="Accounts">{f.proposed}</span>
+              <span className="num" data-label="Positive">{f.positive}</span>
+              <span className="num strong" data-label="Meetings">{f.meetings}</span>
               <span className="num mute hide-sm">{p.median_hours_to_first_touch ? `${Math.round(p.median_hours_to_first_touch)} h` : ""}</span>
             </button>
           );
