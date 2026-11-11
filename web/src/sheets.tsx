@@ -1104,7 +1104,7 @@ export function ReplySheet({ id }: { id: number }) {
       <div className="who">
         <Avatar name={r.full_name || r.from_addr} photo={r.photo_url} size={44} />
         <div style={{ minWidth: 0 }}>
-          <h2 className="clip">{r.full_name || r.from_addr}</h2>
+          <h2 className="clip">{r.person_id ? <button className="link-row" onClick={() => openSheet("person", r.person_id)}>{r.full_name || r.from_addr}</button> : (r.full_name || r.from_addr)}</h2>
           <div className="meta clip">{r.title ? `${r.title}, ` : ""}{r.account_id ? <button className="btn quiet sm" style={{ padding: 0, height: "auto" }} onClick={() => openSheet("account", r.account_id)}>{r.company}</button> : "No account matched"}</div>
         </div>
       </div>
@@ -1341,7 +1341,9 @@ export function LiftBlock({ lift, holdoutPct = 20 }: { lift: any; holdoutPct?: n
       ) : (
         <div className="lift-verdict">
           <Status kind="wait" title="With this few accounts, a difference could be luck.">Too early to tell</Status>
-          <span className="mute small">About {n0(more * share)} more accounts offered this play, so {n0(more)} more are held back.</span>
+          <span className="mute small">{lift.out_of_reach
+            ? `Settling it needs about ${n0(more * share)} more accounts offered this play, and only ${n0(lift.room)} in this desk have never been offered it. At this size the comparison cannot answer; it needs a larger list or a bigger difference.`
+            : `About ${n0(more * share)} more accounts offered this play, so ${n0(more)} more are held back.`}</span>
         </div>
       )}
     </div>

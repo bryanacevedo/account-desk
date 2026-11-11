@@ -68,3 +68,13 @@ def lift_report(treated_k: int, treated_n: int, hold_k: int, hold_n: int, *, con
             "enough": enough, "needed": {"holdout": need_hold, "treated": need_treated},
             "still_needed": {"holdout": max(0, need_hold - hold_n), "treated": max(0, need_treated - treated_n)},
             "detectable_lift": assumed_lift, "confidence": conf}
+
+
+def within_reach(lift: dict, room: int) -> dict:
+    """Marks a comparison that cannot settle at this desk's size: the accounts it still needs (worked plus held back)
+    are more than the accounts left that have never been offered it. Counting is intention to treat on the first
+    assignment, so offering an account again adds nothing; only a larger list or a bigger difference can settle it."""
+    need = lift["still_needed"]["treated"] + lift["still_needed"]["holdout"]
+    lift["room"] = room
+    lift["out_of_reach"] = (not lift["enough"]) and need > room
+    return lift

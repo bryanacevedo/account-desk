@@ -351,11 +351,13 @@ def signal_performance(cur) -> list[dict]:
           count(o.*) filter (where o.arm = 'treated' and o.pos) as positive
         from signal_types t left join outcome o on o.type_key = t.key
         group by t.key order by t.weight desc""")
-    from .stats import lift_report
+    from .stats import lift_report, within_reach
+    total = db.val(cur, "select count(*) from accounts")
     triggers = {k for r in db.all(cur, "select trigger from plays where status = 'live'") for k in (r["trigger"] or {}).get("any_of", [])}
     for r in rows:
         r["meeting_rate"] = (r["treated_meetings"] / r["treated"]) if r["treated"] else None
-        r["lift"] = lift_report(r["treated_meetings"], r["treated"], r["holdout_meetings"], r["holdout"]) if r["treated"] else None
+        r["lift"] = within_reach(lift_report(r["treated_meetings"], r["treated"], r["holdout_meetings"], r["holdout"]),
+                                 max(0, total - r["treated"] - r["holdout"])) if r["treated"] else None
         # A type no live play starts on still moves priority, but its effect is not measured here.
         r["starts_plays"] = r["key"] in triggers
     return rows
@@ -395,7 +397,9 @@ def lifts(cur, play_id: int | None = None) -> tuple[dict, dict]:
           count(*) filter (where arm = 'holdout' and exists (select 1 from opportunities o where o.account_id = f.account_id
             and o.created_at between f.proposed_at and f.proposed_at + interval '90 days')) as d_h
         from first f""", play_id, play_id)
-    return (stats.lift_report(r["m_t"], r["n_t"], r["m_h"], r["n_h"]), stats.lift_report(r["d_t"], r["n_t"], r["d_h"], r["n_h"]))
+    room = max(0, db.val(cur, "select count(*) from accounts") - r["n_t"] - r["n_h"])
+    return (stats.within_reach(stats.lift_report(r["m_t"], r["n_t"], r["m_h"], r["n_h"]), room),
+            stats.within_reach(stats.lift_report(r["d_t"], r["n_t"], r["d_h"], r["n_h"]), room))
 
 
 def plays_page(cur, *, money: bool) -> list[dict]:
