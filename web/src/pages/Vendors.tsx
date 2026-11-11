@@ -85,7 +85,7 @@ export function Vendors() {
               <div key={s.key} className="row" style={{ gridTemplateColumns: S_COLS }}>
                 <span className="cell-main"><span className="t">{s.label}</span>{s.enabled ? null : <span className="s">Switched off</span>}</span>
                 <span data-label="Cost" title={s.paid ? "A paid data feed, billed by the vendor as a subscription." : "No charge to use."}>
-                  {s.subscription ? `${usd(s.subscription.monthly_cents)} a month` : s.paid ? "Subscription" : "Free"}</span>
+                  {s.subscription ? `${usd(s.subscription.monthly_cents)} a month` : s.key === "crm" ? "Part of the CRM" : s.key === "enrichment" ? "Company data, above" : s.paid ? "Subscription" : "Free"}</span>
                 <span data-label="Status"><Status kind={st[0]} title={st[2]}>{st[1]}</Status></span>
                 <span className="num" data-label="Signals">{n0(s.signals)}</span>
                 <span className="num mute" data-label="Last run">{s.last_run ? ago(s.last_run) : "Never"}</span>
@@ -117,11 +117,13 @@ function VendorRow({ v, demo }: { v: any; demo: boolean }) {
       <span className="cell-main"><span className="t">{v.name}</span><span className="s wrap">{v.purpose}</span>
         {v.suggest ? <span className="s wrap suggest" title="What we would use for this. Prices on this page are our own assumptions, not this vendor's.">We'd use: {v.suggest}</span> : null}
         {v.waterfall?.length ? (
-          <span className="s wrap order" aria-label="Email finders, asked in order">
-            Asked in order: {v.waterfall.map((w: any, i: number) => (
-              <span key={w.provider} title={`${w.name}: asked ${w.asked} times, found ${n0(w.found)}, ${usd(w.cents)} this month`}>
-                {i ? " → " : ""}<b>{w.name}</b> {w.asked ? `found ${Math.round((w.found / w.asked) * 100)}% of ${n0(w.asked)}` : "not asked yet"}
-              </span>
+          <span className="finders" aria-label="Email finders, asked in order"
+            title="Each finder is asked when the one before found nothing, or found an address that failed its check.">
+            <span className="fh">Finder</span><span className="fh num">Asked</span><span className="fh num">Found</span>
+            {v.waterfall.map((w: any) => (
+              <Fragment key={w.provider}>
+                <span>{w.step}. {w.name}</span><span className="num">{n0(w.asked)}</span><span className="num">{n0(w.found)}</span>
+              </Fragment>
             ))}
           </span>
         ) : null}

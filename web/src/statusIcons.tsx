@@ -1,7 +1,7 @@
 import {
-  AirplaneTilt, ArrowBendUpRight, CalendarCheck, CalendarPlus, ChatCircleText, CheckCircle, Clock, CurrencyCircleDollar,
-  EyeSlash, HandPalm, HourglassLow, Lightbulb, MagnifyingGlass, MinusCircle, PaperPlaneRight, PaperPlaneTilt,
-  PauseCircle, PencilSimpleLine, Prohibit, Question, Robot, SignOut, StopCircle, ThumbsUp, UserMinus, UserPlus,
+  AirplaneTilt, ArrowBendUpRight, ArrowsLeftRight, CalendarCheck, CalendarPlus, ChatCircleText, CheckCircle, Clock, CurrencyCircleDollar,
+  EyeSlash, Flask, HandPalm, HourglassLow, Lightbulb, MagnifyingGlass, MinusCircle, PaperPlaneRight, PaperPlaneTilt,
+  PauseCircle, PencilSimpleLine, PlugsConnected, Prohibit, Question, Robot, SignOut, StopCircle, ThumbsUp, UserMinus, UserPlus,
   WarningCircle, XCircle, type Icon,
 } from "@phosphor-icons/react";
 
@@ -24,7 +24,8 @@ export const STATUS_ICONS: Record<string, Icon> = {
   // people in a sequence
   "First email to approve": PencilSimpleLine, "Paused": PauseCircle, "Stopped": StopCircle, "Finished": CheckCircle,
   "Meeting booked": CalendarCheck, "Approval came too late": HourglassLow, "Changed jobs": SignOut,
-  "Replied, reading it": ChatCircleText, "Colleague replied": ChatCircleText, "Email rejected": XCircle,
+  "Replied, reading it": ChatCircleText, "Colleague replied": ChatCircleText, "Email rejected": XCircle, "Draft rejected": XCircle,
+  "Simulated": Flask, "Not connected": PlugsConnected, "Webhook": ArrowsLeftRight, "Connected": PlugsConnected,
   "Blocked by a contact rule": Prohibit, "Play ended": StopCircle,
   // mail and health
   "Sending mail": PaperPlaneTilt, "Live": PaperPlaneTilt, "Held": CalendarCheck, "Booked": CalendarPlus,

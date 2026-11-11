@@ -42,7 +42,7 @@ def test_enrichment_dates_a_new_seat_by_when_it_started(cur, scene):  # noqa: F8
     assert observed == started
 
 
-def _live_play(cur, scene, any_of):
+def _live_play(cur, scene, any_of):  # noqa: F811
     db.run(cur, """update plays set status = 'live', launched_by = %s, launched_at = now(), trigger = %s,
                    sequence = %s where id = %s""", scene["user"], db.J({"any_of": any_of, "within_days": 60}),
            db.J([{"day": 0, "channel": "email", "job": "open", "by": "desk"}]), scene["play"])

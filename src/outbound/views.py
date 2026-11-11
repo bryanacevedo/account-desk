@@ -71,13 +71,14 @@ def accounts(cur, *, q: str | None, view: str, owner: int | None, limit: int = 2
         args.append(owner)
     return db.all(cur, f"""
         select a.id, a.name, a.primary_domain, a.industry, a.employees, a.hq_country, a.fit_tier, a.lifecycle,
-               sc.priority, sc.fit, sc.intent, sc.engagement, u.name as owner, ap.state as play_state, p.name as play,
+               sc.priority, sc.fit, sc.intent, sc.engagement, coalesce(u.name, apu.name) as owner, ap.state as play_state, p.name as play,
                rs.label as reason, rs.type_key as reason_type, rs.observed_at as reason_at, coalesce(sh.delta, 0) as week_change,
                lp.state as last_state, hd.until as hold_until
         from accounts a left join account_scores sc on sc.account_id = a.id
         left join users u on u.id = a.owner_id
         left join account_plays ap on ap.account_id = a.id and ap.state in {OPEN}
         left join plays p on p.id = ap.play_id
+        left join users apu on apu.id = ap.owner_id
         left join lateral (select t.label, s.type_key, s.observed_at from signals s join signal_types t on t.key = s.type_key
                            where s.id = sc.reason_signal_id) rs on true
         left join lateral (select state from account_plays x where x.account_id = a.id
@@ -141,7 +142,7 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
     calendar = []
     if current:
         calendar = db.all(cur, """
-            select pe.full_name, pe.photo_url, e.persona_key, e.state, e.step_index, e.next_at, e.stop_reason, e.pause_reason, m.step_index as msg_step,
+            select pe.id as person_id, pe.full_name, pe.photo_url, e.persona_key, e.state, e.step_index, e.next_at, e.stop_reason, e.pause_reason, m.step_index as msg_step,
                    coalesce(m.sent_at, m.scheduled_for) as at, m.status
             from enrollments e join people pe on pe.id = e.person_id
             left join messages m on m.enrollment_id = e.id
@@ -165,10 +166,13 @@ def in_flight(cur, user: dict, *, mine: bool) -> dict:
                (select max(at) from touches t where t.account_play_id = ap.id) as last_touch,
                (select r.id from replies r where r.account_id = a.id and r.handled_at is null
                  order by r.received_at desc limit 1) as reply_id,
-               (select json_build_object('id', m.id, 'starts_at', m.starts_at) from meetings m
-                 where m.account_play_id = ap.id and m.status = 'booked' order by m.starts_at limit 1) as meeting,
+               (select json_build_object('id', m.id, 'starts_at', m.starts_at, 'status', m.status, 'person_id', m.person_id)
+                 from meetings m where m.account_play_id = ap.id
+                 order by (m.status = 'booked') desc, m.starts_at desc limit 1) as meeting,
                (select m.id from messages m join enrollments e on e.id = m.enrollment_id where e.account_play_id = ap.id
-                 and m.status in ('awaiting_approval', 'failed_gate') order by m.id limit 1) as draft_id
+                 and m.status in ('awaiting_approval', 'failed_gate') order by m.id limit 1) as draft_id,
+               (select m.step_index from messages m join enrollments e on e.id = m.enrollment_id where e.account_play_id = ap.id
+                 and m.status in ('awaiting_approval', 'failed_gate') order by m.id limit 1) as draft_step
         from account_plays ap join accounts a on a.id = ap.account_id join plays pl on pl.id = ap.play_id
         left join users u on u.id = ap.owner_id left join account_scores sc on sc.account_id = a.id
         where ap.state = any(%s) and ap.arm = 'treated' and (%s::bigint is null or ap.owner_id = %s)
@@ -495,6 +499,9 @@ def reply(cur, reply_id: int) -> dict | None:
                        left join messages m on m.id = r.message_id where r.id = %s""", reply_id)
     if r:
         r["extracted"] = {k: v for k, v in (r["extracted"] or {}).items() if not k.startswith("_")}
+        r["colleagues_waiting"] = db.val(cur, """select count(*) from enrollments e join account_plays ap on ap.id = e.account_play_id
+                                                 where ap.account_id = %s and e.state = 'paused' and e.pause_reason = 'account_reply'
+                                                 and e.person_id is distinct from %s""", r["account_id"], r["person_id"]) if r["account_id"] else 0
     return r
 
 

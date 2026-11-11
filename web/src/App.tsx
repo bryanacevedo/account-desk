@@ -108,7 +108,7 @@ export function App() {
         <a href="/more" aria-current={route.path === "/more" || rest.some((r) => r.path === route.path) ? "page" : undefined}
           onClick={(e) => { e.preventDefault(); navigate("/more"); }}><span className="pn-icon"><DotsThree size={18} weight="bold" /></span><span>More</span></a>
       </nav>
-      <SheetHost />
+      {me ? <SheetHost key={me.now} /> : null}
       <Toaster />
     </div>
   );

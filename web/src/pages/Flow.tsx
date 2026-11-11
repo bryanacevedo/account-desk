@@ -189,7 +189,7 @@ function Types({ rows }: { rows: any[] }) {
   return (
     <>
             <div className="ledger">
-        <div className="row head" style={{ gridTemplateColumns: T_COLS }}><span>Signal</span><span className="num">Weight</span><span className="num">Seen</span><span className="num">Plays started</span><span className="num">Held back</span><span>Meetings within 60 days</span></div>
+        <div className="row head" style={{ gridTemplateColumns: T_COLS }}><span>Signal</span><span className="num">Weight</span><span className="num">Seen</span><span className="num">Plays started</span><span className="num">Held back</span><span>Meetings within 60 days, against held back</span></div>
         {rows.map((r) => (
           <div key={r.key} className="row" style={{ gridTemplateColumns: T_COLS }} title={r.because}>
             <div className="cell-main"><span className="t"><SignalLabel type={r.key} label={r.label} /></span></div>
@@ -198,8 +198,8 @@ function Types({ rows }: { rows: any[] }) {
             <span className="num" data-label="Plays started">{r.treated}</span><span className="num" data-label="Held back">{r.holdout}</span>
             <div>{!r.starts_plays ? <span className="faint" title="No live play starts on this signal. It raises an account's priority, but its own effect is not measured.">Not measured: no play starts on it</span>
               : !r.treated ? <span className="faint">No plays yet</span>
-              : !r.lift?.enough ? <span title={`${pct(r.meeting_rate)} of ${r.treated} contacted accounts met, against ${pct(r.lift?.holdout?.rate)} of ${r.holdout} held back. Too few to tell yet.`}>
-                  <span className="mute">Too few to tell</span> <span className="faint small">{r.lift?.still_needed?.holdout ? `${r.lift.still_needed.holdout} more held back needed` : `${r.lift?.still_needed?.treated} more contacted needed`}</span></span>
+              : !r.lift?.enough ? <span title={`${pct(r.meeting_rate)} with a play met, against ${pct(r.lift?.holdout?.rate)} held back. ${r.lift?.still_needed?.holdout ? `${r.lift.still_needed.holdout} more held-back accounts` : `${r.lift?.still_needed?.treated} more accounts with a play`} are needed to tell.`}>
+                  <Status kind="wait">Too few to tell</Status></span>
               : <Bar label="" value={r.meeting_rate || 0} of={max} shown={pct(r.meeting_rate)}
                   hint={`vs ${pct(r.lift.holdout.rate)} held back, ${r.lift.difference >= 0 ? "+" : ""}${pct(r.lift.difference)} (${pct(r.lift.interval[0])} to ${pct(r.lift.interval[1])})`} />}</div>
           </div>
@@ -208,7 +208,7 @@ function Types({ rows }: { rows: any[] }) {
     </>
   );
 }
-const T_COLS = "minmax(0,1.6fr) 60px 56px 96px 80px minmax(160px,1.2fr)";
+const T_COLS = "minmax(200px,1.8fr) 60px 56px 96px 80px minmax(160px,1.1fr)";
 
 // ---------------------------------------------------------------- Plays
 

@@ -130,7 +130,7 @@ const STOP: Record<string, string> = {
 export const stopWord = (r: string | null) => {
   if (!r) return "";
   if (STOP[r]) return STOP[r];
-  if (r.startsWith("rejected")) return "Email rejected";
+  if (r.startsWith("rejected")) return "Draft rejected";
   if (r.startsWith("gate:") || r.startsWith("refused")) return "Blocked by a contact rule";
   if (r.startsWith("play_")) return "Play ended";
   return cap(r);
@@ -390,11 +390,11 @@ function Calendar({ rows }: { rows: any[] }) {
           const sent = steps.filter((x) => x.status === "sent").length;
           const next = e.state === "active" && e.next_at ? (ahead(e.next_at) === "overdue" ? late(e.next_at).toLowerCase() : ahead(e.next_at)) : null;
           return (
-            <div key={name} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }}>
+            <button key={name} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }} onClick={() => openSheet("person", e.person_id)}>
               <Avatar name={name} photo={e.photo_url} />
               <div className="cell-main"><span className="t">{name}</span><span className="s">{sent ? `${sent} sent` : "Nothing sent yet"}{next ? `, step ${e.step_index + 1} ${next}` : ""}</span></div>
               <Status kind={GOOD_STOPS.has(e.stop_reason) ? "ok" : (ENROLL[e.state] || ["off"])[0]}>{(e.state === "stopped" || e.state === "paused") ? stopWord(e.stop_reason || e.pause_reason) || ENROLL[e.state][1] : (ENROLL[e.state] || ["off", cap(e.state)])[1]}</Status>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -429,7 +429,7 @@ function LogMeeting({ accountId, people, onDone }: { accountId: number; people: 
   );
 }
 
-function ColleaguesChoice({ replyId }: { replyId: number }) {
+function ColleaguesChoice({ replyId, count }: { replyId: number; count: number }) {
   const [busy, run] = useBusy();
   const [done, setDone] = useState<string | null>(null);
   const act = (action: string) => run(async () => {
@@ -440,7 +440,7 @@ function ColleaguesChoice({ replyId }: { replyId: number }) {
     <Section title="Their colleagues">
       {done ? <div className="small mute">{done}</div> : (
         <div className="actions" style={{ flexWrap: "wrap" }}>
-          <span className="small mute" style={{ flex: 1, minWidth: 200 }}>Paused while you talk. They resume in 3 business days unless you decide now.</span>
+          <span className="small mute" style={{ flex: 1, minWidth: 200 }}>{count === 1 ? "One colleague is" : `${count} colleagues are`} paused while you talk. They resume in 3 business days unless you decide now.</span>
           <button className="btn quiet sm" disabled={busy} onClick={() => act("stop")}>Stop them</button>
           <button className="btn line sm" disabled={busy} onClick={() => act("resume_now")}>Resume now</button>
         </div>
@@ -1091,7 +1091,7 @@ export function ReplySheet({ id }: { id: number }) {
             <dt>Email</dt><dd>{ex.referral.email || <span className="mute">Not in the reply; the desk looks it up and enrolls them if it can</span>}</dd></dl>
         </Section>
       ) : null}
-      {r.hot && r.account_id ? <ColleaguesChoice replyId={id} /> : null}
+      {r.hot && r.account_id && !r.handled_at && r.colleagues_waiting ? <ColleaguesChoice replyId={id} count={r.colleagues_waiting} /> : null}
       {ex.suggested && open ? (
         <Section title="A reply you could send" right={<button className="btn quiet sm" onClick={() => { navigator.clipboard?.writeText(ex.suggested); toast("Copied. Paste it into your own inbox."); }}>Copy</button>}>
           <div className="quote ours">{ex.suggested}</div>
@@ -1292,8 +1292,8 @@ export function LiftBlock({ lift }: { lift: any }) {
   return (
     <div style={{ display: "grid", gap: 14 }}>
       <div className="bars">
-        <Bar label="Contacted" value={t.rate || 0} of={Math.max(t.rate || 0, h.rate || 0, 0.01)} shown={pct(t.rate, 1)} hint={`${t.meetings} of ${t.accounts}`} tone="accent" />
-        <Bar label="Not contacted" value={h.rate || 0} of={Math.max(t.rate || 0, h.rate || 0, 0.01)} shown={pct(h.rate, 1)} hint={`${h.meetings} of ${h.accounts}`} tone="soft" />
+        <Bar label="Play started" value={t.rate || 0} of={1} shown={pct(t.rate, 1)} hint={`${t.meetings} of ${t.accounts}`} tone="accent" />
+        <Bar label="Held back" value={h.rate || 0} of={1} shown={pct(h.rate, 1)} hint={`${h.meetings} of ${h.accounts}`} tone="soft" />
       </div>
       {lift.enough && lift.difference !== null ? (
         <div className="figs">
@@ -1309,11 +1309,11 @@ export function LiftBlock({ lift }: { lift: any }) {
 export function Comparison({ rows }: { rows: [string, any][] }) {
   return (
     <div className="ledger">
-      <div className="row head" style={{ gridTemplateColumns: CMP }}><span>Accounts with a</span><span className="num">Contacted</span><span className="num">Held back</span><span className="num">Difference</span></div>
+      <div className="row head" style={{ gridTemplateColumns: CMP }}><span>Accounts with a</span><span className="num">Play started</span><span className="num">Held back</span><span className="num">Difference</span></div>
       {rows.map(([label, l]) => (
         <div key={label} className="row" style={{ gridTemplateColumns: CMP }}>
           <span className="cell-main"><span className="t">{label}</span></span>
-          <span className="num" data-label="Contacted">{pct(l.treated.rate, 1)} <span className="mute small">{l.treated.meetings} of {l.treated.accounts}</span></span>
+          <span className="num" data-label="Play started">{pct(l.treated.rate, 1)} <span className="mute small">{l.treated.meetings} of {l.treated.accounts}</span></span>
           <span className="num" data-label="Held back">{pct(l.holdout.rate, 1)} <span className="mute small">{l.holdout.meetings} of {l.holdout.accounts}</span></span>
           <span className="num" data-label="Difference">{l.enough && l.difference !== null
             ? <>{l.difference >= 0 ? "+" : ""}{pct(l.difference, 1)} <span className="mute small">likely {pct(l.interval[0], 1)} to {pct(l.interval[1], 1)}</span></>

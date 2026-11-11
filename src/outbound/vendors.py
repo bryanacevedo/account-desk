@@ -116,7 +116,8 @@ def costs(cur) -> dict:
                              from signal_sources s order by s.paid desc, s.label""")
     for s in sources:
         s["subscription"] = subs.get(s["key"])
-        s["status"] = "simulated" if s["adapter"] == "sim" else "webhook" if s["adapter"] == "webhook" else "connected"
+        s["status"] = ("webhook" if s["adapter"] == "webhook" else "simulated" if CONFIG.mode != "live" or s["adapter"] == "sim"
+                       else "connected")
         if CONFIG.mode == "live" and s["adapter"] == "sim":
             s["status"] = "not_connected"
     by_play = db.all(cur, """select p.id, p.name, sum(l.cost_cents) as cents, count(distinct l.account_id) as accounts

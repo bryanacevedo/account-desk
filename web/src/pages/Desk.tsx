@@ -194,7 +194,7 @@ export function Results() {
           </div>
         </Section>
       </div>
-      <Section title="Contacted against held back">
+      <Section title="Plays started, against held back">
         <Comparison rows={[["Meeting within 60 days", data.lift], ["Deal within 90 days", data.deal_lift]]} />
       </Section>
       <Section title="By channel, last 90 days">

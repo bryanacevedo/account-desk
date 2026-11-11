@@ -8,9 +8,9 @@ v1 is built end to end on simulated vendors. **Public** at https://github.com/br
 
 Checked on 2026-11-11 by running them:
 
-- `pytest` on real Postgres 18: 189 passed on 2026-11-11, including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
+- `pytest` on real Postgres 18: 194 passed on 2026-11-11, including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
 - `ruff check src tests`: clean. `tsc --noEmit` and `vite build`: clean.
-- `make demo`: 700 invented accounts, 60 simulated days; opens on 2026-11-11 with work waiting for each SDR.
+- `make demo`: 700 invented accounts, 60 simulated days; opens on 2026-11-11 with work waiting for three of the four SDRs (Maya Okafor has none that morning).
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Since then two fresh design reviews and checks at 375 wide (see below).
 
 ## At production size (measured 2026-11-11)
@@ -22,7 +22,7 @@ Checked on 2026-11-11 by running them:
 - Final goldfish review (2026-11-11, two fresh reviewers in parallel: one read the docs against the code, one read only the code and the demo): the README hid the fourth autonomy stage and called the eval and live-adapter state wrong, PROJECT-STATUS had stale counts, calls showed as skipped on In flight, and a message written already sent skipped the send guard. All fixed with tests where code changed.
 - Spec: goldfish review against its sources and the build checklist, a real-world review against how strong teams run signal-based outbound in 2026, and a re-review after the blockers were fixed. 49 findings, all resolved in spec section 22.
 - Second code review (fresh, 2026-11-11, everything since the first publish): "ship after fixes", no blocker, 10 majors (erased people could be re-imported or stay named in signals, a stopped person's call task stayed open and calls skipped the contact rules, a connected call could cost a play its sourced credit, the CRM owner cursor could skip bulk changes, a reply could point the desk at any address, the play-cap alert and live AI charges were lost on rollback, the cap check relied on the caller's locks, a sequence could change under people in it, the CRM could hand accounts back to someone who left). All fixed with regression tests (`tests/test_review_fixes.py`), plus most minors; the tests also found that erasing someone whose signal had only a quote would have failed.
-- Code: one fresh reviewer, verdict "do not ship" with 11 blocking findings (double-send on a crash mid-send, jobs stranded in running, plays that could stay open forever, a customer turned back into a prospect by a lost expansion deal, a spoofable login header, a default webhook secret, failed drafts approvable unchanged, wrong influenced attribution, and others). All 11 fixed with regression tests, plus most non-blocking items (commit `9b055c4`). A second code review has not run.
+- Code: one fresh reviewer, verdict "do not ship" with 11 blocking findings (double-send on a crash mid-send, jobs stranded in running, plays that could stay open forever, a customer turned back into a prospect by a lost expansion deal, a spoofable login header, a default webhook secret, failed drafts approvable unchanged, wrong influenced attribution, and others). All 11 fixed with regression tests, plus most non-blocking items (commit `9b055c4`).
 
 - Design: one fresh hands-on reviewer drove every page and panel at 1440 and 375 wide (2026-11-11): "not ready to show", 3 blockers (phone rows, broken draft grammar, panels scrolling sideways), 14 major (explanatory sentences, jargon, numbers shown twice, two names for one thing, decorative dots, phone navigation, Approve and Reject behaving differently, losing the tab on Back, team work labelled as yours) and nits. All blockers and majors fixed and checked at both widths; checking at 375 also found a tab strip that collapsed to 1px and a page that grew to 402px wide, both fixed. Bryan's own review: "best design work so far", with comments to come.
 - Found by the flow test during the fixes: a resume after an out-of-office brought a colleague's first email forward to the same day; a pause now keeps each person's planned time.
@@ -33,7 +33,7 @@ Checked on 2026-11-11 by running them:
 
 **Not proven:**
 
-- Reply labelling is measured on live Claude answers (2026-11-11, `evals/REPLIES.md`): 45 of 48 exact, 47 of 48 acceptable, rules alone 12, injection flagged, no invented referral emails, $0.25. The set is 48 author-written replies: a regression guard, not a benchmark. Brief, drafts and call-note extraction still run on the stand-in only. The key lives in `.env` (gitignored, 600).
+- Reply labelling is measured on live Claude answers (2026-11-11, `evals/REPLIES.md`): 45 of 48 exact, 47 of 48 acceptable, rules alone 12, injection flagged, no invented referral emails, $0.25. The set is 48 author-written replies: a regression guard, not a benchmark. Call-note extraction still runs on the stand-in only (drafts and briefs have live recordings: `evals/WRITING.md`). The key lives in `.env` (gitignored, 600).
 - No live vendor adapter (people search, finders, verifier, catch-all resolver, company data, phone, research, mail provider, telemetry, CRM, Slack). Contracts only.
 - Call-note extraction has no eval set (drafts and briefs do: `evals/WRITING.md`).
 - The HeyReach webhook has not seen a real event.
@@ -45,9 +45,11 @@ Checked on 2026-11-11 by running them:
 ## Next
 
 1. Live vendor adapters beyond DNS (people search, finder, verifier, mail provider, seed tests, CRM, Slack), with `docs/INTEGRATIONS.md`; a delivery-event webhook for complaints and soft bounces.
-2. Tests for the time-based play exits, auto-approve and demotion, CRM push retries and SLA escalation.
+2. Tests for the time-based play exits, CRM push retries and SLA escalation.
 
 ## Done since the first review (2026-11-11)
+
+- Final reviews on the final state (2026-11-11): a goldfish drift check (README and decisions accurate; five stale lines here, fixed) and a fresh design review (11 majors, all fixed: "Draft rejected" instead of a wrong "Email rejected"; follow-up drafts count as waiting on the team in In flight; panels say "overdue" against the desk's clock; the colleagues decision only while colleagues are waiting; "Play started" against "Held back" with share bars drawn to 100%; the finder order as figures; honest statuses with icons; a readable per-signal table; play people and meetings open; one owner on every page; "Colleague's meeting"). Six nits left open: wrapped figure rows, a thin call panel, a few values shown twice, a few words that differ across screens, two panel tints too close, phone tab overflow.
 
 - Signals layer, after a fresh deep review (five real findings, all fixed and tested): enrichment signals are dated by when the event happened (a seat taken 80 days ago reads as 80 days old); the same event from two sources counts once in intent, with a small bonus for agreement, and each type's contribution is capped; accounts are re-checked for a play nightly, so a moment that arrived during a hold is not stranded; a signal starts at most one play; per-signal results count each account once and say "too few to tell" or "not measured" instead of showing a bare rate. Not done: time to first touch is still measured from when a signal arrived, not when its event happened.
 
