@@ -17,7 +17,8 @@ COPY src ./src
 COPY migrations ./migrations
 COPY scripts/docker-start.sh scripts/docker-build-demo.sh ./scripts/
 COPY --from=web /web/dist ./web/dist
-ENV DATABASE_URL=postgres://postgres@127.0.0.1:5432/outbound PUBLIC_DEMO=1 HOST=0.0.0.0 PORT=8800
+ENV DATABASE_URL=postgres://postgres@127.0.0.1:5432/outbound PUBLIC_DEMO=1 HOST=0.0.0.0 PORT=8800 \
+    PUBLIC_URL=https://outbound-desk.onrender.com
 # The demo database is built here, once, so starting the container takes seconds instead of minutes.
 RUN chmod +x scripts/*.sh && mkdir -p /data && chown postgres /data && NO_WORKER=1 ./scripts/docker-build-demo.sh
 EXPOSE 8800

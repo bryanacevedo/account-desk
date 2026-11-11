@@ -248,3 +248,16 @@ def test_only_first_party_sources_are_free():
     free = {key for key, _label, _adapter, _cadence, paid, _provider in SIGNAL_SOURCES if not paid}
     assert free == {"product", "crm", "events", "webhook"}
     assert all(provider for *_rest, provider in SIGNAL_SOURCES)
+
+
+def test_ordinary_business_terms_are_not_unsourced_names():
+    d = draft(*[(s["text"], s["kind"], s["fact_ids"]) for s in GOOD["sentences"][:-2]],
+              ("That is usually where billing and the CRM stop agreeing on what was sold for SaaS teams.", "courtesy", []),
+              ("Open to a short call next week?", "ask", []))
+    assert "unsourced_name" not in codes(check(d))
+
+
+def test_the_public_demo_links_to_itself_not_localhost():
+    from pathlib import Path
+    docker = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text()
+    assert "PUBLIC_URL=https://outbound-desk.onrender.com" in docker

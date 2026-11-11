@@ -27,7 +27,10 @@ STOPWORDS_CAPS = {"I", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "
                   "February", "March", "April", "May", "June", "July", "August", "September", "October", "November",
                   "December", "Q1", "Q2", "Q3", "Q4", "CFO", "VP", "OK", "API", "ERP", "If", "When", "Worth", "Open",
                   "Would", "Is", "Last", "One", "Following", "Teams", "That", "Most", "Saw", "Noticed", "Also",
-                  "Reply", "The", "Thanks", "Short"}
+                  "Reply", "The", "Thanks", "Short",
+                  # Ordinary business terms, not names: a draft may use them without a source.
+                  "CRM", "SaaS", "B2B", "B2C", "ARR", "MRR", "ROI", "KPI", "SOC", "GTM", "CEO", "COO", "CTO", "CRO",
+                  "RevOps", "FinOps", "ASC", "GAAP", "IFRS", "SLA", "SQL", "AI", "US", "UK", "EU"}
 LIMITS = {"open": (40, 120), "follow_up": (15, 90), "bump": (10, 60), "break_up": (8, 60)}
 PREFIXES = re.compile(r"^(dr|mr|mrs|ms|mx|prof)\.?\s+", re.I)
 
