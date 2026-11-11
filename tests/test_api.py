@@ -331,3 +331,13 @@ def test_only_a_hand_added_do_not_contact_can_be_lifted(client):
     if theirs:
         assert client.delete(f"/api/suppressions/{theirs}", headers=mgr).status_code == 409
     assert client.delete(f"/api/suppressions/{mine}", headers={"X-Acting-As": str(user("sdr"))}).status_code == 403
+
+
+def test_the_linkedin_webhook_needs_its_token(client, monkeypatch):
+    import dataclasses
+
+    from outbound.api import app as app_module
+    monkeypatch.setattr(app_module, "CONFIG", dataclasses.replace(app_module.CONFIG, linkedin_tool_token="tok-123"))
+    assert client.post("/api/webhooks/linkedin/wrong", json={}).status_code == 404
+    r = client.post("/api/webhooks/linkedin/tok-123", json={"event_type": "connection_request_sent"})
+    assert r.status_code == 200 and r.json()["applied"] is False

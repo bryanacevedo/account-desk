@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import threading
 import time
@@ -27,6 +28,7 @@ from .. import (  # noqa: F401
     db,
     gate,
     jobs,
+    linkedin_tool,
     monitors,
     outreach,
     pipeline,
@@ -50,7 +52,7 @@ async def lifespan(_app):
     yield
 
 
-app = FastAPI(title="Outbound Desk", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
+app = FastAPI(title="Account Desk", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
 
 
 # ---------------------------------------------------------------- cross-cutting
@@ -187,7 +189,7 @@ def me(u: dict = Depends(current_user)) -> dict:
         sim = db.val(cur, "select enabled from sim_clock")
     return {"user": {k: u[k] for k in ("id", "name", "role", "timezone")}, "users": users, "counts": counts,
             "money": money(u), "now": now, "simulated": sim, "public_demo": CONFIG.public_demo,
-            "company": CONFIG.sender_company}
+            "company": CONFIG.sender_company, "linkedin_tool": bool(CONFIG.linkedin_tool_token)}
 
 
 @app.get("/api/today")
@@ -1104,6 +1106,24 @@ class InboundSignal(BaseModel):
     strength: float = Field(0.6, ge=0, le=1)
     evidence: dict
     person: dict | None = None
+
+
+@app.post("/api/webhooks/linkedin/{token}")
+async def webhook_linkedin(token: str, request: Request) -> dict:
+    """HeyReach's webhooks: connection accepted, and the first reply. The token in the URL is the proof it is ours."""
+    if not CONFIG.linkedin_tool_token or not hmac.compare_digest(token, CONFIG.linkedin_tool_token):
+        raise HTTPException(404, "Not found.")
+    raw = await request.body()
+    if len(raw) > 200_000:
+        raise HTTPException(413, "Too large.")
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        raise HTTPException(400, "Not JSON.") from None
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "Expected an object.")
+    with db.tx() as cur:
+        return linkedin_tool.handle(cur, payload)
 
 
 @app.post("/api/webhooks/signal")

@@ -26,6 +26,8 @@ class Config:
     # Unset means a random secret for this process only: fine for a demo that resets, refused in live mode.
     webhook_secret: str = field(default_factory=lambda: os.environ.get("WEBHOOK_SECRET") or secrets.token_hex(32))
     webhook_secret_set: bool = field(default_factory=lambda: bool(os.environ.get("WEBHOOK_SECRET")))
+    # A LinkedIn tool (HeyReach) cannot sign its webhooks, so it calls a URL with this token in it. Unset: off.
+    linkedin_tool_token: str = field(default_factory=lambda: os.environ.get("LINKEDIN_TOOL_TOKEN", ""))
     access_team_domain: str = field(default_factory=lambda: os.environ.get("CF_ACCESS_TEAM_DOMAIN", ""))
     access_aud: str = field(default_factory=lambda: os.environ.get("CF_ACCESS_AUD", ""))
     public_url: str = field(default_factory=lambda: os.environ.get("PUBLIC_URL", "http://localhost:8800"))

@@ -1,6 +1,6 @@
-# Outbound Desk: project status
+# Account Desk: project status
 
-**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 14. **Working name**, Bryan's to change.
+**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 14. **Name:** Account Desk since 2026-11-11 (was Outbound Desk; Bryan: the tool is purely account-based). The repo and the Render address still say outbound-desk until he confirms renaming them.
 
 ## Where it stands
 

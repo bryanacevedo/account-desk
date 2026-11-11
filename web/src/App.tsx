@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  CaretRight, ChartLineUp, CheckSquare, ChatsCircle, DotsThree, Gauge, GearSix, Lightning, ListChecks, Pulse, Sun, Target,
+  CaretRight, ChartLineUp, CheckSquare, ChatsCircle, DotsThree, GearSix, Lightning, ListChecks, Pulse, Sun, Target,
   EnvelopeSimple, PaperPlaneTilt,
 } from "@phosphor-icons/react";
 import { api, setActingAs } from "./api";
@@ -52,7 +52,7 @@ export function App() {
   const more = { path: "/more", label: "More", icon: null, page: () => <More routes={rest} me={me} /> } as any;
   const route = path === "/more" ? more : routes.find((r) => r.path === path) || routes[0];
   const Page = route.page;
-  useEffect(() => { document.title = `${route.label}, Outbound Desk`; }, [route.label]);
+  useEffect(() => { document.title = `${route.label}, Account Desk`; }, [route.label]);
   const nav = (
     <nav className="nav" aria-label="Main">
       {routes.map((r) => (
@@ -70,7 +70,7 @@ export function App() {
   return (
     <div className="app">
       <aside className="side">
-        <div className="brand"><span className="mark"><Gauge size={14} color="#fff" weight="bold" /></span>Outbound Desk</div>
+        <div className="brand"><Mark />Account Desk</div>
         {nav}
         <div className="grow" />
         <div className="side-foot">
@@ -87,7 +87,7 @@ export function App() {
       </aside>
       <main className="main">
         <div className="phone-bar">
-          <span className="brand" style={{ margin: 0 }}><span className="mark"><Gauge size={14} color="#fff" weight="bold" /></span>{route.label}</span>
+          <span className="brand" style={{ margin: 0 }}><Mark />{route.label}</span>
           {me && me.users.length ? (
             <select className="select" style={{ width: 170, height: 40 }} value={me.user.id} aria-label="Acting as"
               onChange={(e) => { setActingAs(Number(e.target.value)); changed(); }}>
@@ -143,4 +143,9 @@ function Clock({ me }: { me: Me }) {
       })}>{busy ? "Working" : "Move a day ahead"}</button>
     </div>
   );
+}
+
+/** The Account Desk mark: one account, the people in it, one still to reach. */
+function Mark() {
+  return <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2B47C9"/><rect x="8.5" y="8.5" width="15" height="15" rx="4" stroke="#fff" strokeWidth="2.4" fill="none"/><circle cx="13" cy="13" r="1.9" fill="#fff"/><circle cx="19" cy="13" r="1.9" fill="#fff"/><circle cx="13" cy="19" r="1.9" fill="#fff"/><circle cx="19" cy="19" r="1.9" fill="#fff" fillOpacity=".45"/></svg>;
 }

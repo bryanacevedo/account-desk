@@ -1,8 +1,8 @@
-# Outbound Desk
+# Account Desk
 
 [![CI](https://github.com/bryanacevedo/outbound-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/bryanacevedo/outbound-desk/actions/workflows/ci.yml)
 
-Outbound Desk runs signal-based, account-based outbound for a B2B sales team. It watches for the moments a company that fits your customer profile shows it may need you (a new finance leader, a pricing change, hiring for the team you serve, a past champion joining), decides which accounts are worth working this week and why, finds the people who buy there, drafts outreach grounded in what actually happened at that company, has an SDR approve it, sends it from healthy inboxes at a human pace, and handles every reply through to a meeting and pipeline. It measures which signals turn into meetings against a comparison group nobody contacted.
+Account Desk runs signal-based, account-based outbound for a B2B sales team. It watches for the moments a company that fits your customer profile shows it may need you (a new finance leader, a pricing change, hiring for the team you serve, a past champion joining), decides which accounts are worth working this week and why, finds the people who buy there, drafts outreach grounded in what actually happened at that company, has an SDR approve it, sends it from healthy inboxes at a human pace, and handles every reply through to a meeting and pipeline. It measures which signals turn into meetings against a comparison group nobody contacted.
 
 It is built for a small team that would rather write to 40 companies at the right moment than to 4,000 at random.
 
@@ -10,7 +10,7 @@ It is built for a small team that would rather write to 40 companies at the righ
 
 ## The rules it is built on
 
-Autonomous "AI SDRs" mostly failed in 2025 and 2026: shallow or invented personalization, burned sending domains, bad data underneath. The teams getting results use signals plus fit to choose accounts, let AI research and draft, and keep a person on the send decision. Outbound Desk takes that as its design:
+Autonomous "AI SDRs" mostly failed in 2025 and 2026: shallow or invented personalization, burned sending domains, bad data underneath. The teams getting results use signals plus fit to choose accounts, let AI research and draft, and keep a person on the send decision. Account Desk takes that as its design:
 
 | People | AI | Code |
 |---|---|---|

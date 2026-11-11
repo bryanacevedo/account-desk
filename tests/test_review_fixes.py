@@ -146,3 +146,20 @@ def test_in_flight_shows_each_persons_sequence_and_what_comes_next(cur, scene): 
     assert play["people"][0]["sent"] == [0]
     assert play["next"]["step"]["channel"] == "call"
     assert out["counts"]["active"] >= 1
+
+
+def test_heyreach_events_reach_the_right_person_once(cur, scene):  # noqa: F811
+    from outbound import linkedin_tool
+    db.run(cur, "update people set linkedin_url = 'https://www.linkedin.com/in/ana-test-hr/' where id = %s", scene["person"])
+    acc = {"event_type": "CONNECTION_REQUEST_ACCEPTED", "lead": {"profile_url": "http://linkedin.com/in/Ana-Test-HR"}}
+    assert linkedin_tool.handle(cur, acc)["person_id"] == scene["person"]
+    linkedin_tool.handle(cur, acc)
+    assert db.val(cur, "select count(*) from touches where person_id = %s and kind = 'linkedin_accepted'", scene["person"]) == 1
+    rep = {"event_type": "message_reply_received", "conversation_id": "c1",
+           "lead": {"profile_url": "https://linkedin.com/in/ana-test-hr"},
+           "recent_messages": [{"message": "Hi Ana", "is_reply": False, "timestamp": "2026-11-10T10:00:00Z"},
+                               {"message": "Not right now, thanks.", "is_reply": True, "timestamp": "2026-11-10T12:00:00Z"}]}
+    first = linkedin_tool.handle(cur, rep)
+    assert first["applied"] and linkedin_tool.handle(cur, rep)["duplicate"]
+    assert db.val(cur, "select state from enrollments where id = %s", scene["enrollment"]) == "paused"
+    assert not linkedin_tool.handle(cur, {**rep, "lead": {"profile_url": "https://linkedin.com/in/nobody"}})["applied"]

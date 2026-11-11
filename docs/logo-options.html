@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Account Desk marks</title>
+<style>
+:root { --ink:#12161D; --mute:#5B6472; --line:#E6E8EC; --accent:#2B47C9; }
+body { margin:0; padding:32px; background:#fff; font:14px/1.45 Inter, -apple-system, system-ui, sans-serif; color:var(--ink); }
+h1 { font-size:20px; margin:0 0 24px; letter-spacing:-0.01em; }
+.opt { display:grid; grid-template-columns:150px 1fr; gap:24px; align-items:center; padding:22px 0; border-top:1px solid var(--line); }
+.opt h2 { font-size:15px; margin:0 0 4px; } .opt p { margin:0; color:var(--mute); font-size:13px; }
+.sizes { display:flex; gap:22px; align-items:center; flex-wrap:wrap; }
+.bar { display:flex; align-items:center; gap:10px; font-weight:620; font-size:15px; letter-spacing:-0.01em; padding:8px 12px; border:1px solid var(--line); border-radius:10px; }
+.dark { background:#12161D; color:#fff; border-color:#12161D; }
+svg { display:block; }
+</style></head><body>
+<h1>Account Desk: three marks</h1>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <!-- 1. Focus: one account held in brackets -->
+    <symbol id="m1" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#2B47C9"/>
+      <path d="M12 9H8.5V23H12M20 9H23.5V23H20" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="16" cy="16" r="3.4" fill="#fff"/></symbol>
+    <!-- 2. Committee: one account, several people in it -->
+    <symbol id="m2" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#2B47C9"/>
+      <rect x="8.5" y="8.5" width="15" height="15" rx="4" stroke="#fff" stroke-width="2.4" fill="none"/>
+      <circle cx="13" cy="13" r="1.9" fill="#fff"/><circle cx="19" cy="13" r="1.9" fill="#fff"/><circle cx="13" cy="19" r="1.9" fill="#fff"/><circle cx="19" cy="19" r="1.9" fill="#fff" fill-opacity=".45"/></symbol>
+    <!-- 3. Monogram: an A whose crossbar is a single point -->
+    <symbol id="m3" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#2B47C9"/>
+      <path d="M9.5 23.5L16 8.5L22.5 23.5" stroke="#fff" stroke-width="2.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="16" cy="18.6" r="2.3" fill="#fff"/></symbol>
+  </defs>
+</svg>
+
+<div class="opt"><div><h2>1. Focus</h2><p>One account held in brackets: the whole desk works one company at a time.</p></div>
+<div class="sizes"><svg width="16" height="16"><use href="#m1"/></svg><svg width="24" height="24"><use href="#m1"/></svg><svg width="48" height="48"><use href="#m1"/></svg>
+<div class="bar"><svg width="24" height="24"><use href="#m1"/></svg>Account Desk</div><div class="bar dark"><svg width="24" height="24"><use href="#m1"/></svg>Account Desk</div></div></div>
+
+<div class="opt"><div><h2>2. Committee</h2><p>One account with several people inside, one still to reach: the buying group.</p></div>
+<div class="sizes"><svg width="16" height="16"><use href="#m2"/></svg><svg width="24" height="24"><use href="#m2"/></svg><svg width="48" height="48"><use href="#m2"/></svg>
+<div class="bar"><svg width="24" height="24"><use href="#m2"/></svg>Account Desk</div><div class="bar dark"><svg width="24" height="24"><use href="#m2"/></svg>Account Desk</div></div></div>
+
+<div class="opt"><div><h2>3. Monogram</h2><p>An A whose crossbar is a single point: the account, and the one reason to reach it now.</p></div>
+<div class="sizes"><svg width="16" height="16"><use href="#m3"/></svg><svg width="24" height="24"><use href="#m3"/></svg><svg width="48" height="48"><use href="#m3"/></svg>
+<div class="bar"><svg width="24" height="24"><use href="#m3"/></svg>Account Desk</div><div class="bar dark"><svg width="24" height="24"><use href="#m3"/></svg>Account Desk</div></div></div>
+</body></html>

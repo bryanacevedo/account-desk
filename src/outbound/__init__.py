@@ -1,1 +1,1 @@
-"""Outbound Desk: signal-based, account-based outbound."""
+"""Account Desk: signal-based, account-based outbound."""

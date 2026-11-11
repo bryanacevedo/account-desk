@@ -129,6 +129,7 @@ const TOUCH: Record<string, string> = {
 
 export function PersonSheet({ id }: { id: number }) {
   const { data, error, reload } = useData<any>(`/api/people/${id}`);
+  const tool = useData<any>("/api/me").data?.linkedin_tool;
   if (error) return <Frame crumb="Person"><Failed error={error} retry={reload} /></Frame>;
   if (!data) return <Frame crumb="Person"><Loading rows={8} /></Frame>;
   const p = data.person;
@@ -163,7 +164,7 @@ export function PersonSheet({ id }: { id: number }) {
           <Reach label="LinkedIn" value={p.linkedin_url ? <a href={p.linkedin_url} target="_blank" rel="noreferrer noopener">Profile <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
             state={data.touches.some((x: any) => x.kind === "linkedin_accepted") ? ["ok", "Connected"] : data.touches.some((x: any) => x.kind === "linkedin_connect") ? ["wait", "Request sent"] : null} />
           {p.status !== "active" ? <Reach label="Status" value={cap(p.status)} /> : null}
-          {p.linkedin_url ? <LinkedInLog personId={p.id} canAccept={data.touches.some((x: any) => x.kind === "linkedin_connect") && !data.touches.some((x: any) => x.kind === "linkedin_accepted")} onDone={reload} /> : null}
+          {p.linkedin_url ? <LinkedInLog personId={p.id} canAccept={!tool && data.touches.some((x: any) => x.kind === "linkedin_connect") && !data.touches.some((x: any) => x.kind === "linkedin_accepted")} onDone={reload} /> : null}
         </div>
       </Section>
       {data.waiting.length ? (
