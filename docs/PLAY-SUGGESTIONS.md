@@ -1,96 +1,186 @@
 # Plays suggested from call learnings
 
-**Status:** spec, 2026-11-11, from Bryan's idea: "the learnings, as soon as there's a clear pattern from the learnings, should prompt play suggestions." To be built on a branch, reviewed, then shown to Bryan.
+**Status:** spec revision 2, 2026-11-11, from Bryan's idea: "the learnings, as soon as there's a clear pattern from the learnings, should prompt play suggestions." Revision 1 was reviewed by a fresh reader against the code.
+- **Blockers it found, now fixed here:**
+  - industry cannot trigger a play;
+  - a 2x rule fires on chance at these sizes;
+  - managers cannot create plays;
+  - research-stage plays can never be promoted.
+- **Majors it found, now fixed here:**
+  - no stored note author;
+  - no date for the window;
+  - the editor cannot be prefilled;
+  - placeholder recordings;
+  - name collisions;
+  - privacy paths.
 
-## The idea in one paragraph
+Build on a branch; it is reviewed before Bryan sees it.
 
-SDRs already write call notes, and a person marks the ones worth learning from. The desk then pulls out objections, competitors, reasons to buy and reasons not to buy, each with the exact words from the notes behind it (`pipeline.learn_from`, table `learnings`). Today those learnings sit in a list on Results.
+## The idea
 
-This feature watches them for a pattern: the same reason to buy, said at enough different accounts, by more than one SDR, and concentrated in one kind of account. When a pattern is clear, the desk proposes a new play built on it.
+Call notes that a person marks worth learning from already become learnings: objections, competitors, reasons to buy and reasons not to, each carrying the exact words behind it (`pipeline.learn_from`, table `learnings`).
 
-A manager or GTM engineer reads the evidence and turns the suggestion into a draft play in the existing play editor, or sets it aside. A suggestion never becomes a live play on its own.
+This feature watches them for a pattern. A pattern is the same reason to buy (or the same competitor) heard at enough different accounts, by more than one SDR, and clearly more common among accounts that came in on one kind of signal. When that holds, the desk proposes a new play triggered by that signal and built on that reason.
 
-## How it works
+GTM engineering turns a suggestion into a draft play; a manager can set one aside. Nothing becomes live on its own.
 
-1. **Themes.** Learnings are worded differently on every call, so each new learning is filed under a theme, a short label for one idea such as "audit flagged revenue recognition on usage contracts".
-   - The model files it, picking an existing theme of the same kind or naming a new one. Code checks the answer: a picked theme must exist and be of the same kind.
-   - The model sees only the learning's text and the list of existing themes.
-   - Filing happens when learnings are extracted, as one extra task in `llm.TASKS` ("theme").
-   - Learnings already in the database are filed once by a backfill.
+## 1. Themes
 
-2. **A clear pattern. Code decides, never the model.** A theme is a pattern when all of these hold:
-   - it appears at **at least 5 distinct accounts** in the last **90 days**;
-   - in notes written by **at least 2 different SDRs**;
-   - it is **concentrated in a segment** that can trigger a play. The segment is the signal type that started the account's play (`learnings.signal_type`) or the account's industry. The theme's rate in that segment must be at least **2 times** its rate across all accounts with learnings, with at least **4 accounts** in the segment;
-   - no live or draft play already came from this theme, and no open suggestion exists for it.
+- Learnings of kind `reason_to_buy` and `competitor` are filed under a theme (`learning_themes`): one short label for one idea. Kinds `objection` and `reason_not` are also filed, so a suggestion can show what you will hear. Kind `quote` is not filed.
+- **Filing is a new LLM task, `theme`.** It sees one learning's text and the existing themes of the same kind (id and label). It returns an existing theme id, or a new label.
+- Code checks the answer:
+  - a returned id must exist and be of the same kind;
+  - a new label must be at most 80 characters;
+  - a new label must not contain the name of any person or user in the desk (checked against `people` and `users` names), nor any email address;
+  - labels are unique per kind, case-insensitive.
 
-   The thresholds live in one place and are shown on Settings (read-only is fine for v1). The kinds that make a play are reason to buy and competitor. Objections and reasons not to buy are not suggestions on their own; they appear inside a suggestion as "what you will hear".
+  On a failure, the task is re-asked once; after a second failure the learning stays unfiled and an alert is logged.
+- **Filing runs as a background job,** enqueued by `learn_from`, never inside the request transaction. Add a `TYPICAL_TOKENS` entry and a sim stand-in.
+- **Backfill.** A CLI command, `python -m outbound themes backfill`, files every unfiled learning. `make demo` runs it after seeding.
 
-3. **The suggestion.** The model drafts the play from the pattern only. It returns:
-   - a name and a hypothesis;
-   - a trigger, chosen from the signal types in `signal_types`;
-   - the personas to reach, chosen from the personas that exist;
-   - an angle.
+## 2. A clear pattern (code decides)
 
-   Code rejects any trigger or persona that is not in the catalog. The angle may use the theme in plainly general terms ("teams like yours often find..."). It must never name another customer or quote one, because a call note is private. This is the same line the claim checker draws. A failing draft is rewritten once, then the suggestion is dropped and logged.
+### Data
+- Each learning reaches its account through `call_notes`, then `meetings.account_id`.
+- **Its date** is `call_notes.created_at`.
+- **Its SDR** is the note's author. Add `call_notes.written_by`, set in `record_call_notes`. Backfill it from `marked_by` where it is null. Only users with role `sdr` count.
+- **Its segment** is the signal type that started the account's play: `learnings.signal_type`, from the meeting's account play. Learnings without one count in the overall rate but belong to no segment.
+- **Industry is not a segment,** because a play's trigger cannot target it (`play_editor.Trigger`).
 
-4. **Where it shows.**
-   - The Plays page gets a "Suggested from calls" section, visible to manager and GTM only.
-   - Each suggestion opens a side sheet, with the usual Frame and its own kind identity. The sheet shows:
-     - the pattern in numbers: the accounts, the SDRs and the segment rate against the overall rate;
-     - every quote it rests on, verbatim, with the account, the SDR and the date, each opening its meeting sheet;
-     - the objections heard at the same accounts;
-     - the drafted play.
+### The rule
+A theme T of kind reason_to_buy or competitor is a pattern in segment S (a signal type) when all of these hold, counting distinct accounts with a learning under T in the last 90 days:
 
-5. **What a person can do.**
-   - **"Make it a draft play"** opens the existing play editor, prefilled. The play is created as `status = 'draft'` at the lowest autonomy stage (`research`, "SDR writes everything") with the standard holdout. Launching goes through the existing launch rules: a different person launches it, as `plays` already enforces.
-   - **"Not now"** asks for a reason. The suggestion comes back only if the pattern grows by half.
-   - **"No"** dismisses the theme for good.
+1. T is heard at **at least 5 accounts in S**.
+2. Those accounts' notes were written by **at least 2 different SDRs**.
+3. **The test.** T is more common in S than among the other accounts with learnings in the window. The comparison is a one-sided Fisher exact test on the 2x2 table: accounts in S or not, against T heard or not.
+   - It must pass at **alpha 0.05 divided by the number of (theme, segment) pairs tested that day** (Bonferroni).
+   - Implement it in `stats.py` with no new dependency (the hypergeometric tail).
+   - Show the two rates and the number of pairs tested, the same way DECISIONS 44 and the held-back comparison show their numbers.
+4. **No play of any status** has `suggested_from = T`.
+5. **No suggestion for T is open,** and none is `dismissed`. A `not_now` suggestion re-opens only when the theme's distinct accounts in S reach at least 1.5 times the count recorded when it was set aside, and the rule passes again.
 
-   Every decision is written to the audit log.
+**An open suggestion lapses** (status `lapsed`) when the daily check no longer finds the pattern.
 
-6. **Measured.** A play created from a suggestion records the theme it came from (`plays.suggested_from`). Its held-back comparison works like any other play's. Nothing new is claimed about it.
+**The thresholds** (5, 2, 90 days, 0.05, 1.5x) live as constants in one module and are shown read-only on Settings.
 
-## Data
+**The daily job:** a `PERIODIC` entry in `scheduler.py` plus a `@jobs.handler` in a module the worker imports (see `__main__.py`). The check also runs after each backfill.
 
-New migration (0024 or the next free number):
-- `learning_themes`: id, kind, label, created_at.
-- `learnings.theme_id`.
-- `play_suggestions`, holding:
-  - id and theme_id;
-  - the segment, as kind and value;
-  - the evidence counts as jsonb;
-  - the drafted play as jsonb;
-  - status: open, drafted, not_now or dismissed;
-  - reason, decided_by, decided_at and created_at;
-  - the size the pattern had when the suggestion was decided.
-- `plays.suggested_from`.
+## 3. The suggestion
 
-Constraints in the database, the way this repo does it:
-- at most one open suggestion per theme;
-- a decided suggestion has a decider and a time;
-- not_now has a reason.
+A new LLM task, `draft_play`, receives:
+- the theme label;
+- the segment's signal type, with its label and its "because";
+- the objection and reason_not themes heard at the same accounts (labels only);
+- the catalog of signal types and personas (keys and labels).
 
-A background job (the existing `jobs` and `scheduler`) re-checks patterns daily and after each `learn_from`.
+It never receives quotes or account names.
 
-## AI and evals, the way this repo does them
+It returns:
+- a name;
+- a hypothesis;
+- `trigger.any_of` (one or more signal types, which must include S);
+- personas;
+- an angle.
 
-- Two new LLM tasks: `theme` and `suggest_play`. Each needs:
-  - a stand-in in `sim_llm.py`, so the demo runs without a key;
-  - prompt hashes, so CI catches an unrecorded prompt change.
-- Evals with recorded answers, in the shape of `evals/run_*.py`:
-  - **theming:** about 30 learnings worded differently, with the expected grouping. Report pairwise agreement.
-  - **suggestions:** about 15 patterns. Code checks that the trigger and personas are in the catalog. The judge (`evals/judge.py`) checks that every claim in the hypothesis and angle traces to the quotes, and that no customer is named or quoted.
-  - Floors go in `evals/thresholds.json`; the safety ones (no customer named, catalog-only trigger) sit at 100%.
-- Live runs need the Anthropic key in `.env`. Record them once live. If you cannot run live, ship the sim stand-ins and recorded-answer placeholders, and say so plainly in the report. Never fake a recording.
+Code checks:
+- the trigger and personas are in the catalog, and S is among the triggers;
+- the angle and hypothesis name no person, user, account or company in the desk;
+- the angle passes the existing copy checks that apply to a play angle (no long dashes; the banned phrase list).
 
-## Demo
+On a failure it is re-asked once with the failures named; after that, no suggestion is made and an alert is logged.
 
-The demo's seeded learnings already repeat. "Audit flagged revenue recognition on usage contracts" shows up at 7 accounts, and "Board wants clean usage revenue by next quarter" at 9. After the seed, at least one suggestion should be open, and it must pass the pattern rules for real: do not lower the thresholds to force one. If none qualifies, adjust the seed so a pattern exists honestly, and say how.
+The angle may describe the theme in plainly general terms. It never applies the theme to the recipient as fact, because the drafter will still only use facts about the account. It never names or quotes a customer.
+
+## 4. Where it shows and who can act
+
+- **API.** `/api/play-suggestions` (list) and `/api/play-suggestions/{id}` (one). Both are enforced in the API, for manager and GTM only, with the same `need()` pattern as other gated routes.
+- **The Plays page** gets a "Suggested from calls" section, rendered for those roles.
+- **The side sheet** gets a new Frame kind with its own identity (see `KIND` in `sheets.tsx`). It shows:
+  - the pattern in plain words and numbers: "Heard at 6 of the 11 accounts that came in on a new finance leader, against 3 of 19 elsewhere, from 3 SDRs." It also gives how many pairs were tested and that the difference passed the test;
+  - the quotes it rests on, read live from `learnings` (never copied into the suggestion), each with its account, its SDR and the date, and each opening its meeting sheet;
+  - the objections heard at the same accounts;
+  - the drafted play.
+- **"Make it a draft play"** is for GTM only, because `create_play` is GTM-only. It opens the existing play editor prefilled.
+  - `PlayEditor` gains a `fromSuggestion` input, and `/plays/new?suggestion=<id>` loads the drafted fields: name, hypothesis, `trigger.any_of`, personas and angle.
+  - Every other field takes the editor's defaults for a new play: sequence, max_people, latency, `holdout_pct` 20, fit tiers, `min_priority` and `within_days`.
+  - `PlayIn` gains an optional `suggested_from`.
+  - The play is created exactly as today: `status = 'draft'`, autonomy `draft` (DECISIONS 22), launched later under the existing rules (a different person, a monthly cap).
+  - The suggestion becomes `drafted`, with the play's id.
+- **"Not now"** is for manager or GTM and needs a reason.
+- **"No"** is for manager or GTM and dismisses the theme for good.
+
+Every decision goes to the audit log, without quotes.
+
+## 5. Data (migration 0024)
+
+- `learning_themes`: id, kind (check: the four filed kinds), label, created_at; unique (kind, lower(label)).
+- `learnings.theme_id`, referencing `learning_themes`, null allowed.
+- `call_notes.written_by`, referencing `users`.
+- `play_suggestions`:
+  - id, theme_id, segment_signal_type (references `signal_types`);
+  - `evidence` jsonb, holding counts, rates, p and pairs tested, but **no quotes or names**;
+  - `draft` jsonb (the drafted play fields);
+  - status: open, drafted, not_now, dismissed or lapsed;
+  - reason, decided_by, decided_at, play_id and accounts_at_decision;
+  - created_at.
+  - **Checks:**
+    - one open suggestion per theme (a partial unique index);
+    - decided states need decided_by and decided_at;
+    - not_now needs a reason;
+    - drafted needs play_id.
+- `plays.suggested_from`, referencing `learning_themes`.
+
+**Privacy.**
+- `privacy.erase` already deletes learnings that mention a person. It must also delete themes left with no learnings, and the suggestions on those themes (any status, except drafted, whose play stays and has its `suggested_from` set to null).
+- Theme labels may never hold personal names (checked in section 1).
+
+## 6. AI and evals, the way this repo does them
+
+- The two new tasks are `theme` and `draft_play`. Each gets:
+  - an entry in `llm.TASKS` with its prompt hash;
+  - a stand-in in `sim_llm.py`;
+  - `TYPICAL_TOKENS`.
+- **Evals.** File names and threshold keys must not collide with the existing `run_suggest.py` and `suggest_*`:
+  - `evals/run_themes.py`: about 30 learnings worded differently, with the expected grouping. Report pairwise agreement and invented-name failures.
+  - `evals/run_draft_play.py`: about 15 patterns.
+    - Code checks catalog-only triggers and personas, and no names.
+    - The judge (`evals/judge.py`) checks that the hypothesis and angle follow from the theme and do not apply it to the recipient as fact.
+  - Threshold keys start with `themes_` and `draft_play_`. The safety keys (catalog-only, no names) are at 1.0.
+  - **The cases are written by an agent that has not read the code** (DECISIONS 45). They are provided in `evals/cases/themes_v1.jsonl` and `evals/cases/draft_play_v1.jsonl`.
+- **Recordings.** `tests/test_evals.py` requires real recordings for every task's current prompt. Run the two new evals live once (`ANTHROPIC_LIVE=1`; the key is in `.env`; expected cost is a few dollars) and commit the recordings and reports. If a live run is impossible, do not add placeholder recordings; say so in the report, and leave the task out of the recorded-task list with a comment saying why.
+
+## 7. The demo, honestly
+
+The simulator draws call-note reasons with no link to the account's signal (`sim/runner.py`), so today no pattern can pass the rule except by chance. Change the simulation so that a few reasons truly depend on the signal that brought the account in. For example:
+- accounts that came in on a new finance leader say "Audit flagged revenue recognition on usage contracts" more often;
+- accounts that came in on hiring in finance operations say "Close team spends a week reconciling usage by hand" more often.
+
+Write this down in the simulation code and in README "What is real and what is simulated" as a planted relationship, so a reader knows the demo's pattern was put there. Make the notes come from more than one SDR. Make sure meetings carry their account play, so learnings have a segment.
+
+After `make demo`, at least one suggestion must be open because it passes the rule above. Do not lower thresholds to get one. Phrase the sim's call-note lines with some variation, so the theming task has real work to do.
+
+## 8. Tests
+
+The build adds tests for:
+- the Fisher test against known values;
+- the rule:
+  - passes at the thresholds and fails just under each one;
+  - Bonferroni changes the verdict;
+  - lapsing;
+  - not_now re-opening at 1.5x;
+  - dismissed never re-opening;
+- the API role checks;
+- prefill;
+- privacy erase;
+- the migration's checks;
+- the demo producing a suggestion.
+
+The full suite stays green.
 
 ## Not in v1
 
 - Changing an existing play's angle from objections.
 - Auto-launching anything.
+- Industry or other non-signal segments.
 - Learnings from sources other than marked call notes.
 - Clustering by embeddings.
