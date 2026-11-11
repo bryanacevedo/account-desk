@@ -1,0 +1,185 @@
+"""The fixed configuration a new install starts with: the seller, personas, signal types, plays, rules.
+
+The seller in the demo is Lumen Ledger (invented): usage-based billing and revenue recognition software for
+B2B software companies. Buyers are finance and revenue operations leaders.
+"""
+from __future__ import annotations
+
+SETTINGS = {
+    "kill_switch": False,
+    "account_max_active": 3,
+    "account_max_active_wide": 5,
+    "person_cooldown_days": 90,
+    "account_reply_pause_hours": 72,
+    "verify_max_age_days": 45,
+    "proposal_ttl_days": 5,
+    "urgent_proposal_ttl_days": 1,
+    "stagger_days": 2,
+    "send_window": [["08:30", "11:30"], ["13:30", "16:00"]],
+    "mailbox_max_daily": 30,
+    "auto_create_accounts": True,
+    "sla_business_hours": 4,
+    "approval_lapse_business_days": 5,
+}
+
+USERS = [
+    # name, email, role, timezone
+    ("Maya Okafor", "maya.okafor@lumenledger.example", "rep", "America/New_York"),
+    ("Daniel Reyes", "daniel.reyes@lumenledger.example", "rep", "America/Chicago"),
+    ("Priya Natarajan", "priya.natarajan@lumenledger.example", "rep", "Europe/London"),
+    ("Tom Whitaker", "tom.whitaker@lumenledger.example", "rep", "America/Los_Angeles"),
+    ("Elena Duarte", "elena.duarte@lumenledger.example", "manager", "America/New_York"),
+    ("Sam Kowalski", "sam.kowalski@lumenledger.example", "gtm", "America/New_York"),
+]
+
+PERSONAS = [
+    # key, label, title patterns, seniority, committee role, angle
+    ("cfo", "Finance leader", ["cfo", "chief financial", "vp finance", "vice president of finance", "head of finance"],
+     ["c_suite", "vp"], "economic_buyer",
+     "Close the books faster and stop revenue leaking between the billing system and the ledger."),
+    ("controller", "Controller", ["controller", "head of accounting", "director of accounting", "chief accounting"],
+     ["director", "vp"], "champion",
+     "Revenue recognition that does not need a spreadsheet at month end."),
+    ("revops", "Revenue operations", ["revenue operations", "revops", "sales operations", "billing operations",
+                                      "head of billing"], ["director", "manager", "vp"], "user",
+     "Quote to cash without hand-offs: what was sold is what gets billed."),
+    ("data", "Data and systems", ["head of data", "data engineering", "finance systems", "business systems",
+                                  "erp"], ["director", "manager"], "technical",
+     "One source for usage data, so finance and product stop arguing about the number."),
+]
+
+SIGNAL_TYPES = [
+    # key, label, because, level, weight, half-life days
+    ("champion_moved", "A past champion joined", "A person who bought or used us before joined this company and already trusts us.",
+     "person", 30, 60),
+    ("new_exec", "New finance leader", "A new finance leader reviews the tools they inherit in their first 90 days.",
+     "account", 22, 45),
+    ("hiring_function", "Hiring in finance operations", "Hiring billing or revenue accountants means the manual work is growing.",
+     "account", 14, 30),
+    ("funding", "Raised a round", "New money comes with a board that wants clean revenue reporting.", "account", 12, 60),
+    ("pricing_visit", "Looked at our pricing", "Someone at the company read our pricing page.", "account", 18, 7),
+    ("site_visit", "Visited product pages", "Repeat visits to product pages from the company's network.", "account", 8, 10),
+    ("intent_topic", "Researching the category", "Reading about usage-based billing across the web.", "account", 10, 14),
+    ("competitor_review", "Reviewing a competitor", "Reviewing or complaining about a billing tool we replace.", "account", 16, 21),
+    ("tech_added", "Adopted a tool we connect to", "A new data warehouse or ERP means the billing stack is being rebuilt.",
+     "account", 9, 60),
+    ("tech_removed", "Dropped a tool we replace", "They removed a billing tool, so they need a replacement.", "account", 15, 45),
+    ("pricing_change", "Changed their pricing model", "Moving to usage-based pricing breaks seat-based billing systems.",
+     "account", 20, 45),
+    ("social_engaged", "Engaged with the topic", "A person engaged with posts about usage-based billing.", "person", 7, 14),
+    ("job_change", "Someone we know moved", "A person we have spoken to joined this company.", "person", 12, 60),
+    ("closed_lost_revisit", "Closed-lost, time to revisit", "We lost a deal here over timing, and the timing has passed.",
+     "account", 14, 60),
+    ("product_signup", "Signed up for the free tier", "Someone at the company created a free workspace.", "account", 20, 14),
+    ("event_attended", "Came to our event", "Someone from the company attended our webinar or dinner.", "person", 10, 21),
+    ("news_negative", "Layoffs or a hiring freeze", "Cost cutting pauses new tools, so priority drops.", "account", -15, 45),
+]
+
+SIGNAL_SOURCES = [
+    # key, label, adapter, cadence minutes, paid
+    ("jobs_feed", "Job postings", "sim", 360, True),
+    ("funding_feed", "Funding news", "sim", 720, False),
+    ("people_moves", "Job changes", "sim", 720, True),
+    ("web_visits", "Website visits", "sim", 60, False),
+    ("intent_feed", "Category research", "sim", 1440, True),
+    ("reviews_feed", "Software reviews", "sim", 1440, False),
+    ("techstack_feed", "Technology changes", "sim", 1440, True),
+    ("social_feed", "Social engagement", "sim", 360, True),
+    ("product", "Product sign-ups", "sim", 60, False),
+    ("crm", "CRM", "sim", 360, False),
+    ("events", "Events", "sim", 1440, False),
+    ("news_feed", "Company news", "sim", 720, False),
+    ("webhook", "Webhook intake", "webhook", 1440, False),
+]
+
+ICP = {
+    "factors": [
+        {"key": "industry", "field": "industry", "op": "in",
+         "value": ["Software", "Fintech", "Data infrastructure", "Developer tools", "Marketplaces"], "weight": 30},
+        {"key": "size", "field": "employees", "op": "between", "value": [120, 2000], "weight": 25},
+        {"key": "region", "field": "region", "op": "in", "value": ["North America", "Europe"], "weight": 15},
+        {"key": "revenue", "field": "revenue_band", "op": "in", "value": ["$20M-$100M", "$100M-$500M"], "weight": 15},
+        {"key": "stack", "field": "tech", "op": "has_any", "value": ["Snowflake", "NetSuite", "Salesforce", "Stripe"],
+         "weight": 15},
+    ],
+    "penalties": [
+        {"key": "legacy_erp", "field": "tech", "op": "has_any", "value": ["Legacy on-prem ERP"], "weight": 20},
+    ],
+    "excludes": [
+        {"field": "industry", "op": "in", "value": ["Government", "Education"], "reason": "Sector we do not sell to"},
+        {"field": "employees", "op": "between", "value": [0, 19], "reason": "Too small to need us"},
+    ],
+    "tiers": {"A": 85, "B": 65},
+}
+
+def _seq(*steps):
+    return [dict(zip(("day", "channel", "job", "by"), s)) for s in steps]
+
+STANDARD = _seq((0, "email", "open", "desk"), (2, "linkedin_connect", "connect", "rep"), (4, "email", "follow_up", "desk"),
+                (7, "call", "call", "rep"), (10, "email", "break_up", "desk"))
+SHORT = _seq((0, "email", "open", "desk"), (3, "email", "follow_up", "desk"), (6, "call", "call", "rep"),
+             (9, "email", "break_up", "desk"))
+
+PLAYS = [
+    # key, name, hypothesis, trigger, personas, max people, sequence, angle, autonomy, urgent, latency hours
+    ("champion_moved", "A past champion joined",
+     "People who bought us before buy again at their next company, faster than anyone else.",
+     {"any_of": ["champion_moved"], "fit_tiers": ["A", "B"], "min_priority": 0, "within_days": 30},
+     ["controller", "cfo"], 2, SHORT,
+     "Open with the person's history with us, then why it applies to the new company.", "supervised", True, 24),
+    ("new_finance_leader", "New finance leader, first 90 days",
+     "A new CFO or VP Finance reviews the stack they inherited and has budget to change it.",
+     {"any_of": ["new_exec"], "fit_tiers": ["A", "B"], "min_priority": 35, "within_days": 45},
+     ["cfo", "controller", "revops"], 3, STANDARD,
+     "Congratulate briefly, then the one finance problem new leaders find in their first quarter.", "draft", True, 24),
+    ("pricing_model_change", "Moving to usage-based pricing",
+     "Companies changing to usage-based pricing outgrow seat-based billing within two quarters.",
+     {"any_of": ["pricing_change", "product_signup"], "fit_tiers": ["A", "B"], "min_priority": 30, "within_days": 30},
+     ["revops", "controller", "data"], 3, STANDARD,
+     "Name the pricing change and the billing work it creates.", "draft", False, 48),
+    ("finance_ops_hiring", "Hiring in finance operations",
+     "Hiring billing and revenue accountants is the cost of manual billing showing up in the budget.",
+     {"any_of": ["hiring_function"], "fit_tiers": ["A", "B"], "min_priority": 40, "within_days": 30},
+     ["controller", "cfo", "revops"], 3, STANDARD,
+     "The roles they are hiring for, and the work those people would spend their first year on.", "draft", False, 48),
+    ("in_market", "Researching billing tools",
+     "Pricing visits and competitor reviews together mean an evaluation is under way.",
+     {"any_of": ["pricing_visit", "competitor_review", "tech_removed"], "fit_tiers": ["A", "B"], "min_priority": 45,
+      "within_days": 14},
+     ["revops", "controller", "cfo"], 3, SHORT,
+     "Be useful to an evaluation: what to test, without naming that we saw them.", "draft", True, 24),
+    ("funded", "Raised a round",
+     "A new round brings a board that wants clean revenue numbers.",
+     {"any_of": ["funding"], "fit_tiers": ["A"], "min_priority": 50, "within_days": 30},
+     ["cfo", "controller"], 2, STANDARD,
+     "What boards ask finance for after a round, and how long it takes without us.", "research", False, 72),
+]
+
+HOLIDAYS = [
+    ("US", "2026-11-26", "Thanksgiving"), ("US", "2026-11-27", "Day after Thanksgiving"),
+    ("US", "2026-12-25", "Christmas Day"), ("US", "2027-01-01", "New Year's Day"),
+    ("US", "2027-01-18", "Martin Luther King Jr. Day"), ("US", "2026-10-12", "Columbus Day"),
+    ("GB", "2026-12-25", "Christmas Day"), ("GB", "2026-12-28", "Boxing Day (substitute)"),
+    ("GB", "2027-01-01", "New Year's Day"), ("DE", "2026-10-03", "German Unity Day"),
+    ("DE", "2026-12-25", "Christmas Day"), ("DE", "2026-12-26", "St Stephen's Day"),
+    ("DE", "2027-01-01", "New Year's Day"), ("FR", "2026-11-11", "Armistice Day"),
+    ("FR", "2026-12-25", "Christmas Day"), ("FR", "2027-01-01", "New Year's Day"),
+    ("NL", "2026-12-25", "Christmas Day"), ("NL", "2026-12-26", "Second Christmas Day"),
+    ("CA", "2026-10-12", "Thanksgiving"), ("CA", "2026-11-11", "Remembrance Day"),
+    ("CA", "2026-12-25", "Christmas Day"), ("CA", "2026-12-26", "Boxing Day"),
+    ("ES", "2026-10-12", "National Day"), ("ES", "2026-12-08", "Immaculate Conception"),
+    ("ES", "2026-12-25", "Christmas Day"),
+]
+
+REGION_RULES = [
+    ("US", "allowed"), ("CA", "consent_required"), ("GB", "basis_required"), ("DE", "consent_required"),
+    ("FR", "basis_required"), ("NL", "basis_required"), ("ES", "basis_required"), ("IE", "basis_required"),
+]
+
+SENDING_DOMAINS = [
+    # domain, registered days before start, mailboxes per (user index)
+    ("getlumenledger.com", 220), ("lumenledger-hq.com", 210), ("trylumenledger.com", 190), ("lumenledgerapp.com", 25),
+]
+
+BUDGETS = [("people_search", 400000), ("email_finder", 300000), ("email_verifier", 300000),
+           ("phone_finder", 200000), ("anthropic", 30000)]  # vendor units: credits; anthropic in cents
