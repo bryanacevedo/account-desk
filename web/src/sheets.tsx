@@ -777,7 +777,7 @@ function AccountOverview({ d }: { d: any }) {
     <>
       <CompanyData a={d.account} />
       {cur ? (
-        <Section title="In play" right={<Status kind={PLAY_STATE[cur.state][0]}>{PLAY_STATE[cur.state][1]}</Status>}>
+        <Section title={cur.state === "proposed" ? "Proposed play" : "In play"} right={<Status kind={PLAY_STATE[cur.state][0]}>{PLAY_STATE[cur.state][1]}</Status>}>
           <div className="small mute">{cur.play}, proposed {day(cur.proposed_at)}</div>
           <WhyNow why={cur.why_now} />
           {d.calendar?.length ? <Calendar rows={d.calendar} /> : null}
