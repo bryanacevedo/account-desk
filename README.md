@@ -95,6 +95,22 @@ Or with Docker, the same image the hosted demo runs:
 make docker
 ```
 
+## Reply labelling, measured
+
+48 labelled replies, written to include the cases that break classifiers: an "unsubscribe" inside a quoted footer or a legal signature, an assistant answering for their boss, a referral with and without an email address, a reply that tries to instruct the system, and replies in Spanish, German, French and Portuguese. Run through the real pipeline (cleaning, rules, then Claude Opus 5.5 at low effort) on 2026-11-11:
+
+| Measure | Result |
+|---|---|
+| Exact label | 45 of 48 (94%) |
+| Label a person would accept | 47 of 48 (98%) |
+| Rules alone | 12 of 48 (25%) |
+| Settled by rules with no model call | 11 of 48 |
+| Written by someone else, spotted | 2 of 2 |
+| Attempt to instruct the system, flagged | Yes |
+| Referral emails the model invented | 0 |
+
+Two of the three misses are calls a reviewer could go either way on ("¿Podemos hablar la semana que viene?" read as a meeting request rather than interest). The labels were left as written. 37 model calls cost $0.25. The answers are recorded in `evals/recordings/`, CI replays them without a key, and a prompt change fails CI until the eval is re-recorded. Full report: [evals/REPLIES.md](evals/REPLIES.md). The set is small and written by the author, so treat it as a regression guard, not a benchmark.
+
 ## What is real and what is simulated
 
 **Real and tested:** the scoring, plays, the contact gate and the database trigger behind it, the copy checks, the account calendar, send windows and holidays, mailbox and domain health rules, stop-first reply handling, reply cleaning and the rules that label replies, attribution, the statistics, signed webhooks, one-click unsubscribe, erasure, the job queue and the monitors.
@@ -103,7 +119,7 @@ make docker
 
 **Not yet proven:**
 
-- No live model call has been made from this repo. The drafting, brief, reply-labelling and call-note tasks run on the deterministic stand-in in the demo and tests. Recording real answers needs an Anthropic key (`ANTHROPIC_LIVE=1`), after which CI replays them.
+- Reply labelling is measured on real Claude answers; the brief, drafting and call-note tasks still run on the deterministic stand-in in the demo and tests.
 - No live vendor adapter is written yet. The contracts are in `src/outbound/adapters/__init__.py`.
 - There is no login. "Acting as" is chosen from a menu in demo mode; `AUTH_MODE=header` reads identity from a trusted proxy such as Cloudflare Access. Live sending refuses to start in demo mode.
 - Region rules (which countries need a recorded legitimate interest or consent before a cold email) are a starting point. Counsel to confirm.
