@@ -183,13 +183,14 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
     return Verdict(passed=not uniq, failures=uniq, warnings=w, words=n)
 
 
-def assemble(draft: dict, *, sender_name: str, footer: str) -> str:
-    """Greeting on its own line, then the body, the rep's name, and the required footer."""
+def assemble(draft: dict, *, sender_name: str, footer: str, company: str | None = None) -> str:
+    """Greeting on its own line, then the body, a signature (the SDR's name, then the company), and the footer."""
     s = draft["sentences"]
     greeting = s[0]["text"] if s else ""
     middle = " ".join(x["text"] for x in s[1:])
     body = greeting + "\n\n" + middle
-    return body.strip() + f"\n\n{sender_name.split()[0]}\n\n{footer}"
+    signature = sender_name + (f"\n{company}" if company else "")
+    return body.strip() + f"\n\n{signature}\n\n{footer}"
 
 
 def footer(*, company: str, address: str, unsubscribe_url: str, privacy_url: str | None) -> str:

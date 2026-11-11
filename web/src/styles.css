@@ -394,3 +394,21 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .acct-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .acct-tools > .section { flex: 1 1 100%; }
 .nowrap { white-space: nowrap; }
+
+/* The email, as it arrives: a quiet message pane. The legal footer is small and faint, never the loudest thing. */
+.mail { border: 1px solid var(--line); border-radius: var(--r); background: var(--ground); min-height: max-content; }
+.mail-head { padding: 14px 18px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
+.mail-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); font-size: 13px; color: var(--ink-2); }
+.mail-row .k { color: var(--faint); }
+.mail-subject { margin-top: 8px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+.mail-body { padding: 16px 18px 18px; line-height: 1.6; }
+.mail-body p { margin: 0 0 12px; }
+.mail-sig { margin-top: 18px; font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+.mail-sig .name { color: var(--ink); font-weight: 560; }
+.mail-foot { margin: 0 18px; padding: 10px 0 14px; border-top: 1px solid var(--line); font-size: 11.5px; line-height: 1.55; color: var(--faint); overflow-wrap: anywhere; }
+.mail-foot a { color: inherit; text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 2px; }
+.mail-foot a:hover { color: var(--mute); }
+/* A sheet stacks its blocks top to bottom at their full height; a flex column never squeezes one to fit. */
+.sheet-body { display: flex; flex-direction: column; }
+.sheet-body > * { flex: none; }
+.mail { min-height: 0; }

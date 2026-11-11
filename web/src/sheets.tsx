@@ -444,6 +444,47 @@ function HoldBox({ accountId, onDone }: { accountId: number; onDone: () => void 
   );
 }
 
+// ---------------------------------------------------------------- the email, as it arrives
+
+/** The body without its signature and footer (both are drawn by MailPreview). */
+function bodyOnly(body: string): string {
+  const main = body.split("\n\n--\n")[0];
+  const parts = main.split("\n\n");
+  return parts.length > 2 ? parts.slice(0, -1).join("\n\n") : main;
+}
+
+function signatureOf(body: string): string[] {
+  const parts = body.split("\n\n--\n")[0].split("\n\n");
+  return parts.length > 2 ? parts[parts.length - 1].split("\n") : [];
+}
+
+/** A plain-text email shown the way a mail client shows it: who it is from and to, the subject, the body, the
+ *  signature, and the legal footer set small and quiet. Links in the footer stay real links. */
+function MailPreview({ m, footer, children }: { m: any; footer?: string; children: ReactNode }) {
+  const sig = signatureOf(m.body);
+  const lines = (footer || "").split("\n").filter(Boolean);
+  const link = (text: string) => {
+    const url = text.match(/https?:\/\/\S+/)?.[0];
+    if (!url) return text;
+    const [before, after] = text.split(url);
+    return <>{before}<a href={url} target="_blank" rel="noreferrer noopener">{url.replace(/^https?:\/\//, "")}</a>{after}</>;
+  };
+  return (
+    <div className="mail">
+      <div className="mail-head">
+        <div className="mail-row"><span className="k">From</span><span className="v clip">{m.owner || "The SDR"}{m.mailbox ? <span className="mute"> &lt;{m.mailbox}&gt;</span> : null}</span></div>
+        <div className="mail-row"><span className="k">To</span><span className="v clip">{m.full_name}{m.email ? <span className="mute"> &lt;{m.email}&gt;</span> : null}</span></div>
+        <div className="mail-subject">{m.subject || "(no subject)"}</div>
+      </div>
+      <div className="mail-body">
+        {children}
+        {sig.length ? <div className="mail-sig">{sig.map((l, i) => <div key={i} className={i === 0 ? "name" : ""}>{l}</div>)}</div> : null}
+      </div>
+      {lines.length ? <div className="mail-foot">{lines.map((l, i) => <div key={i}>{link(l)}</div>)}</div> : null}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- meeting
 
 const ATTR: Record<string, string> = { sourced: "Sourced by outbound", influenced: "Influenced by outbound", none: "Not from outbound" };
@@ -895,7 +936,6 @@ export function MessageSheet({ id }: { id: number }) {
       <div className="figs">
         <Fig value={<Status kind={MSG[m.status][0]}>{MSG[m.status][1]}</Status>} label="Status" sm />
         <Fig value={m.play} label="Play" sm />
-        <Fig value={m.mailbox || "Not chosen"} label="Sends from" sm />
       </div>
       {failures.length ? (
         <Section title="Why it needs a rewrite">
@@ -909,8 +949,7 @@ export function MessageSheet({ id }: { id: number }) {
           <div className="small mute">The opt-out line at the bottom has to stay.</div>
         </div>
       ) : (
-        <div className="draft">
-          <div className="subject">{m.subject}</div>
+        <MailPreview m={m} footer={footer}>
           {sentences.length && !m.edited ? (
             <>
               <p>{sentences[0]?.text}</p>
@@ -918,9 +957,8 @@ export function MessageSheet({ id }: { id: number }) {
                 <span key={i}><span className={sentenceKind(s.kind)}>{s.text}</span>{(s.fact_ids || []).map((f: number) => <sup key={f}>{idOf.get(f) ?? "?"}</sup>)} </span>
               ))}</p>
             </>
-          ) : <p style={{ whiteSpace: "pre-wrap" }}>{m.body.split("\n\n--\n")[0]}</p>}
-          {footer ? <div className="footer">{"--\n" + footer}</div> : null}
-        </div>
+          ) : <p style={{ whiteSpace: "pre-wrap" }}>{bodyOnly(m.body)}</p>}
+        </MailPreview>
       )}
       <Section title="What it rests on">
         {m.facts.length ? (

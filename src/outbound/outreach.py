@@ -506,7 +506,8 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
             J({"ids": citations, "sentences": out["sentences"]}), status, J(verdict.as_dict()), J(attempts),
             f"{play['key']}:v{play['version']}:{step_index}")
         return msg
-    body = copy_gate.assemble(out, sender_name=owner["name"], footer=footer_for(person, f"{enrollment_id}:{step_index}"))
+    body = copy_gate.assemble(out, sender_name=owner["name"], company=CONFIG.sender_company,
+                              footer=footer_for(person, f"{enrollment_id}:{step_index}"))
     msg = db.one(cur, """
         insert into messages (enrollment_id, step_index, channel, subject, body, citations, status, gate, attempts,
                               template_key, mailbox_id, body_hash)
