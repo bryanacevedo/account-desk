@@ -437,5 +437,16 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .flight-next .s { color: var(--mute); font-size: 12.5px; }
 @media (max-width: 900px) { .ps-name { width: auto; } .person-steps { min-height: 44px; flex-wrap: wrap; } }
 
-.brand-name { display: grid; line-height: 1.15; min-width: 0; }
-.brand-name .tagline { font-size: 11.5px; font-weight: 450; color: var(--mute); letter-spacing: 0; white-space: nowrap; }
+/* The tagline sits under the whole lockup, on the sidebar's full width, so it never runs past the edge. */
+.brand-block { margin-bottom: 18px; }
+.brand-block .brand { margin-bottom: 0; }
+.brand-block .tagline { padding: 2px 8px 0; font-size: 11.5px; color: var(--mute); line-height: 1.3; }
+
+/* A row of filters reads left to right, close together; only the stage switch spans the page. */
+.toolbar.filters { justify-content: flex-start; gap: 8px; }
+.toolbar.filters .clear { margin-left: 2px; }
+@media (max-width: 900px) {
+  .toolbar.filters { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+  .toolbar.filters form { grid-column: 1 / -1; }
+  .toolbar.filters input, .toolbar.filters select { width: 100% !important; }
+}

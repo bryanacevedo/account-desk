@@ -47,6 +47,7 @@ Checked on 2026-11-11 by running them:
 
 ## Done since the first review (2026-11-11)
 
+- In flight search (company, domain or person) and filters (play, SDR, next step: due today, a call or LinkedIn, waiting on the team), kept in the URL; checked at 800 and 375 wide.
 - Renamed Account Desk, tagline "Signal & Account based outbound", new mark (one account, the people in it, one still to reach) in the sidebar and favicon.
 - HeyReach webhooks: `POST /api/webhooks/linkedin/{LINKEDIN_TOOL_TOKEN}` takes connection accepted and the first reply; tested (matching by profile however it is written, no double counting, unknown people acknowledged and noted). Not yet tested against a real HeyReach event: the accepted event's field names come from third-party guides.
 - In flight after a fresh design review (13 findings): a step is filled only if it was sent (skipped steps dashed), each stopped or paused person shows why, the Next column names the person and opens the reply, draft or meeting that waits, the SDR has a column, one count per view, 44px tap targets on phones, emails named "Email 3" as on Approvals, sorted by next step.

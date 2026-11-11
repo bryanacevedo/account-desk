@@ -70,7 +70,7 @@ export function App() {
   return (
     <div className="app">
       <aside className="side">
-        <div className="brand"><Mark /><span className="brand-name"><span>Account Desk</span><span className="tagline">Signal &amp; Account based outbound</span></span></div>
+        <div className="brand-block"><div className="brand"><Mark />Account Desk</div><div className="tagline">Signal &amp; Account based outbound</div></div>
         {nav}
         <div className="grow" />
         <div className="side-foot">

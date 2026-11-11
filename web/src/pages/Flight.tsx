@@ -1,4 +1,5 @@
 import { CalendarCheck, ChatCircleText, EnvelopeSimple, LinkedinLogo, PencilSimpleLine, Phone } from "@phosphor-icons/react";
+import { useState } from "react";
 import { Avatar, Logo } from "../marks";
 import { Empty, Failed, Loading, Section, Seg, Status, ahead, cap, dayTime, navigate, usePath, useData, withParam } from "../lib";
 import { GOOD_STOPS, STEP_NAME, openSheet, stopWord } from "../sheets";
@@ -23,13 +24,30 @@ export function Flight() {
   const isSdr = me?.user.role === "sdr";
   const scope = params.get("scope") || (isSdr ? "mine" : "team");
   const { data, error, reload } = useData<any>(me ? `/api/in-flight?mine=${scope === "mine"}` : null);
+  const [q, setQ] = useState(params.get("q") || "");
   if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
   if (!data) return <div className="page"><div className="head"><h1>In flight</h1></div><Loading /></div>;
   const n = (states: string[]) => states.reduce((t, s) => t + (data.counts[s] || 0), 0);
   const asked = params.get("stage") || "all";
   const stage = asked !== "all" && n(STAGES.find((x) => x[0] === asked)?.[2] || []) === 0 ? "all" : asked;
-  const shown = stage === "all" ? data.plays : data.plays.filter((p: any) => (STAGES.find((x) => x[0] === stage)?.[2] || []).includes(p.state));
   const team = scope === "team";
+  const play = params.get("play") || "";
+  const sdr = team ? params.get("sdr") || "" : "";
+  const when = params.get("when") || "";
+  const needle = (params.get("q") || "").trim().toLowerCase();
+  const plays = [...new Set<string>(data.plays.map((p: any) => p.play))].sort();
+  const sdrs = [...new Set<string>(data.plays.map((p: any) => p.owner || "Unassigned"))].sort();
+  const endOfDay = new Date(me?.now || Date.now()); endOfDay.setHours(23, 59, 59, 999);
+  const matches = (p: any) => (!play || p.play === play) && (!sdr || (p.owner || "Unassigned") === sdr)
+    && (!needle || p.name.toLowerCase().includes(needle) || (p.primary_domain || "").includes(needle)
+      || p.people.some((e: any) => e.full_name.toLowerCase().includes(needle)))
+    && (!when || (when === "waiting" ? (p.state === "engaged" && p.reply_id) || p.state === "approving" || (p.draft_id && !p.next)
+      : when === "due" ? p.next && (ahead(p.next.at) === "overdue" || new Date(p.next.at) <= endOfDay)
+      : when === "calls" ? p.next && p.next.step.channel !== "email" : true));
+  const filtered = data.plays.filter(matches);
+  const shown = stage === "all" ? filtered : filtered.filter((p: any) => (STAGES.find((x) => x[0] === stage)?.[2] || []).includes(p.state));
+  const set = (k: string, v: string) => navigate(withParam(k, v || null), true);
+  const narrowed = play || sdr || when || needle;
   const cols = team ? F_COLS_TEAM : F_COLS;
   return (
     <div className="page">
@@ -42,6 +60,28 @@ export function Flight() {
             options={[["mine", "Mine"], ["team", "Team"]]} />
         )}
       </div>
+      <div className="toolbar filters">
+        <form onSubmit={(e) => e.preventDefault()}>
+          <input className="input" style={{ width: 220 }} type="search" placeholder="Company or person" value={q} aria-label="Search in flight"
+            onChange={(e) => { const v = e.target.value; setQ(v); window.clearTimeout((window as any).__flightq); (window as any).__flightq = window.setTimeout(() => set("q", v.trim()), 220); }} />
+        </form>
+        <select className="select" style={{ width: 200 }} value={play} onChange={(e) => set("play", e.target.value)} aria-label="Play">
+          <option value="">Every play</option>{plays.map((x) => <option key={x} value={x}>{x}</option>)}
+        </select>
+        {team ? (
+          <select className="select" style={{ width: 160 }} value={sdr} onChange={(e) => set("sdr", e.target.value)} aria-label="SDR">
+            <option value="">Every SDR</option>{sdrs.map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
+        ) : null}
+        <select className="select" style={{ width: 190 }} value={when} onChange={(e) => set("when", e.target.value)} aria-label="Next step">
+          <option value="">Any next step</option>
+          <option value="due">Due today</option>
+          <option value="calls">Next is a call or LinkedIn</option>
+          <option value="waiting">Waiting on the team</option>
+        </select>
+        {narrowed ? <button className="btn line sm clear" onClick={() => { setQ(""); const u = new URL(window.location.href); ["q", "play", "sdr", "when"].forEach((k) => u.searchParams.delete(k));
+          navigate(u.pathname + (u.search || ""), true); }}>Clear</button> : null}
+      </div>
       {shown.length ? (
         <Section title={stage === "all" ? "By next step" : STAGES.find((x) => x[0] === stage)?.[1] || ""} count={shown.length}>
           <div className="ledger flight">
@@ -51,7 +91,7 @@ export function Flight() {
             {shown.map((p: any) => <FlightRow key={p.id} p={p} team={team} cols={cols} mine={scope === "mine"} />)}
           </div>
         </Section>
-      ) : <Empty title="Nothing in a play yet" />}
+      ) : <Empty title={narrowed ? "Nothing in flight matches" : "Nothing in a play yet"} />}
     </div>
   );
 }
