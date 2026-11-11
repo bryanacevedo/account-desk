@@ -44,9 +44,12 @@ Checked on 2026-11-11 by running them:
 
 1. Live vendor adapters beyond DNS (people search, finder, verifier, mail provider, seed tests, CRM, Slack), with `docs/INTEGRATIONS.md`; a delivery-event webhook for complaints and soft bounces.
 2. Tests for the time-based play exits, auto-approve and demotion, CRM push retries and SLA escalation.
-3. From the second code review, left open: the trigger still trusts the cap value the sending code writes; deals on accounts the desk does not know are passed over by the CRM cursor and not re-read after an import.
 
 ## Done since the first review (2026-11-11)
+
+- The daily cap is the database's own rule: `mailbox_cap()` (migration 0017) computes ramp, ceiling and the spam and placement holds, and the send trigger uses it; nothing the sending code writes is trusted.
+- CRM deals on accounts the desk does not know yet are held (`crm_held_deals`, migration 0018) and read again after an import or a resolved signal; tested.
+- In flight page: every open play with each person's sequence as a step strip (done, next, not happening) and what happens next; stage filter, Mine and Team for SDRs. On phones it takes Accounts' slot in the bottom bar (Accounts moves to More). Checked at 1440 and 375 (no sideways scroll); tested. 170 tests.
 
 - Play editor: GTM writes a play with a live preview of matching accounts and a worst-case cost card, saved as a draft; a manager who did not write it launches it. Checked in the browser.
 - Plays with no email step activate directly; tested end to end.

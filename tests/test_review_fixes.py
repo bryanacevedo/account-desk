@@ -133,3 +133,16 @@ def test_a_deal_on_an_unknown_account_is_held_and_read_once_the_account_exists(c
     assert pipeline.retry_held_deals(cur) == 1
     assert db.val(cur, "select account_id from opportunities where crm_id = 'held-1'") == aid
     assert db.val(cur, "select count(*) from crm_held_deals where crm_id = 'held-1'") == 0
+
+
+def test_in_flight_shows_each_persons_sequence_and_what_comes_next(cur, scene):  # noqa: F811
+    from outbound import views
+    seq = [{"day": 0, "channel": "email", "job": "open", "by": "desk"}, {"day": 3, "channel": "call", "job": "call", "by": "sdr"}]
+    db.run(cur, "update plays set sequence = %s where id = %s", db.J(seq), scene["play"])
+    db.run(cur, "update messages set status = 'sent', sent_at = now() where id = %s", scene["message"])
+    db.run(cur, "update enrollments set step_index = 1, next_at = app_now() + interval '1 day' where id = %s", scene["enrollment"])
+    out = views.in_flight(cur, {"id": scene["user"]}, mine=True)
+    play = next(p for p in out["plays"] if p["id"] == scene["ap"])
+    assert play["people"][0]["sent"] == [0]
+    assert play["next"]["step"]["channel"] == "call"
+    assert out["counts"]["active"] >= 1

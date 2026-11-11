@@ -412,3 +412,20 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .sheet-body { display: flex; flex-direction: column; }
 .sheet-body > * { flex: none; }
 .mail { min-height: 0; }
+
+/* In flight: each person in a play with their sequence as a strip of small steps. */
+.flight-people { display: grid; gap: 6px; min-width: 0; }
+.person-steps { display: flex; align-items: center; gap: 8px; min-width: 0; background: none; border: 0; padding: 0; font: inherit;
+  color: inherit; cursor: pointer; text-align: left; }
+.person-steps:hover .ps-name { color: var(--accent); }
+.ps-name { width: 72px; flex: none; color: var(--ink-2); }
+.steps { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+.step { width: 20px; height: 20px; border-radius: 5px; display: inline-grid; place-items: center; color: var(--faint);
+  box-shadow: inset 0 0 0 1px var(--line); }
+.step.done { color: var(--ink-2); background: var(--well); box-shadow: none; }
+.step.next { color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
+.step.off { opacity: 0.35; }
+.flight-next { display: grid; gap: 2px; justify-items: end; }
+.flight-next .t { font-weight: 560; color: var(--ink); }
+.flight-next .s { color: var(--mute); font-size: 12.5px; }
+@media (max-width: 900px) { .flight-next { justify-items: start; } .ps-name { width: auto; } }

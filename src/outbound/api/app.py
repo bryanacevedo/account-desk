@@ -196,6 +196,13 @@ def today(u: dict = Depends(current_user)) -> dict:
         return views.today(cur, u)
 
 
+@app.get("/api/in-flight")
+def in_flight(mine: bool | None = None, u: dict = Depends(current_user)) -> dict:
+    """What is moving: every open play and each person's sequence. SDRs see their own by default."""
+    with db.tx() as cur:
+        return views.in_flight(cur, u, mine=(u["role"] == "sdr") if mine is None else mine)
+
+
 @app.get("/api/accounts")
 def accounts(view: Literal["priority", "in_play", "rising", "all"] = "priority", q: str | None = None,
              owner: int | None = None, u: dict = Depends(current_user)) -> dict:

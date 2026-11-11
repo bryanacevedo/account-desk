@@ -1,21 +1,23 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   CaretRight, ChartLineUp, CheckSquare, ChatsCircle, DotsThree, Gauge, GearSix, Lightning, ListChecks, Pulse, Sun, Target,
-  EnvelopeSimple,
+  EnvelopeSimple, PaperPlaneTilt,
 } from "@phosphor-icons/react";
 import { api, setActingAs } from "./api";
 import { Toaster, changed, navigate, setNow, toast, useBusy, useData, usePath } from "./lib";
 import { SheetHost } from "./sheets";
 import { Accounts, Today } from "./pages/Work";
+import { Flight } from "./pages/Flight";
 import { Approvals, Plays, Replies, Signals } from "./pages/Flow";
 import { Deliverability, Ops, Results, Settings } from "./pages/Desk";
 
 type Me = { user: { id: number; name: string; role: string }; users: any[]; counts: Record<string, number>; money: boolean;
   now: string; simulated: boolean; public_demo: boolean; company: string };
 
-const ROUTES: { path: string; label: string; icon: ReactNode; page: () => JSX.Element; roles?: string[]; count?: string; group?: string }[] = [
+const ROUTES: { path: string; label: string; icon: ReactNode; page: () => JSX.Element; roles?: string[]; count?: string; group?: string; offBar?: boolean }[] = [
   { path: "/", label: "Today", icon: <Sun size={18} />, page: Today, count: "today" },
-  { path: "/accounts", label: "Accounts", icon: <Target size={18} />, page: Accounts },
+  { path: "/in-flight", label: "In flight", icon: <PaperPlaneTilt size={18} />, page: Flight },
+  { path: "/accounts", label: "Accounts", icon: <Target size={18} />, page: Accounts, offBar: true },
   { path: "/approvals", label: "Approvals", icon: <CheckSquare size={18} />, page: Approvals, count: "approvals" },
   { path: "/replies", label: "Replies", icon: <ChatsCircle size={18} />, page: Replies, count: "replies" },
   { path: "/signals", label: "Signals", icon: <Lightning size={18} />, page: Signals, group: "How it works" },
@@ -44,7 +46,10 @@ export function App() {
     return () => window.removeEventListener("keydown", on);
   }, []);
   const routes = ROUTES.filter((r) => !r.roles || (me && r.roles.includes(me.user.role)));
-  const more = { path: "/more", label: "More", icon: null, page: () => <More routes={routes.slice(4)} me={me} /> } as any;
+  // The phone's bottom bar: the first four pages that belong there; everything else is under More.
+  const bar = routes.filter((r) => !r.offBar).slice(0, 4);
+  const rest = routes.filter((r) => !bar.includes(r));
+  const more = { path: "/more", label: "More", icon: null, page: () => <More routes={rest} me={me} /> } as any;
   const route = path === "/more" ? more : routes.find((r) => r.path === path) || routes[0];
   const Page = route.page;
   useEffect(() => { document.title = `${route.label}, Outbound Desk`; }, [route.label]);
@@ -93,12 +98,12 @@ export function App() {
         {me ? <Page key={`${route.path}:${me.user.id}`} /> : null}
       </main>
       <nav className="phone-nav" aria-label="Main">
-        {routes.slice(0, 4).map((r) => (
+        {bar.map((r) => (
           <a key={r.path} href={r.path} aria-current={r.path === route.path ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(r.path); }}>
             <span className="pn-icon">{r.icon}{r.count && me?.counts[r.count] ? <i className="pn-n">{me.counts[r.count]}</i> : null}</span><span>{r.label}</span>
           </a>
         ))}
-        <a href="/more" aria-current={route.path === "/more" || routes.slice(4).some((r) => r.path === route.path) ? "page" : undefined}
+        <a href="/more" aria-current={route.path === "/more" || rest.some((r) => r.path === route.path) ? "page" : undefined}
           onClick={(e) => { e.preventDefault(); navigate("/more"); }}><span className="pn-icon"><DotsThree size={18} weight="bold" /></span><span>More</span></a>
       </nav>
       <SheetHost />

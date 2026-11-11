@@ -151,6 +151,41 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
             "meetings": meetings, "opportunities": opps, "holds": holds, "calendar": calendar}
 
 
+# ---------------------------------------------------------------- in flight
+
+FLIGHT_STAGES = ["accepted", "researching", "approving", "active", "engaged", "meeting"]
+
+
+def in_flight(cur, user: dict, *, mine: bool) -> dict:
+    """Every open play past the decision, with each person's sequence: where it stands and what happens next."""
+    who = user["id"] if mine else None
+    plays_ = db.all(cur, """
+        select ap.id, ap.state, ap.proposed_at, ap.owner_id, u.name as owner, a.id as account_id, a.name, a.primary_domain,
+               a.fit_tier, pl.id as play_id, pl.name as play, pl.sequence, sc.priority,
+               (select max(at) from touches t where t.account_play_id = ap.id) as last_touch
+        from account_plays ap join accounts a on a.id = ap.account_id join plays pl on pl.id = ap.play_id
+        left join users u on u.id = ap.owner_id left join account_scores sc on sc.account_id = a.id
+        where ap.state = any(%s) and ap.arm = 'treated' and (%s::bigint is null or ap.owner_id = %s)
+        order by sc.priority desc nulls last, ap.proposed_at desc limit 400""", FLIGHT_STAGES, who, who)
+    people = db.all(cur, """
+        select e.account_play_id, e.id, e.state, e.step_index, e.next_at, e.stop_reason, e.pause_reason,
+               p.id as person_id, p.full_name, p.photo_url,
+               (select coalesce(json_agg(m.step_index), '[]') from messages m where m.enrollment_id = e.id and m.status = 'sent') as sent
+        from enrollments e join people p on p.id = e.person_id
+        where e.account_play_id = any(%s) order by e.id""", [x["id"] for x in plays_])
+    by_ap: dict[int, list] = {}
+    for r in people:
+        by_ap.setdefault(r["account_play_id"], []).append(r)
+    for x in plays_:
+        x["people"] = by_ap.get(x["id"], [])
+        upcoming = [r for r in x["people"] if r["state"] == "active" and r["next_at"]]
+        nxt = min(upcoming, key=lambda r: r["next_at"]) if upcoming else None
+        x["next"] = ({"at": nxt["next_at"], "person": nxt["full_name"], "step": x["sequence"][nxt["step_index"]]}
+                     if nxt and nxt["step_index"] < len(x["sequence"]) else None)
+    counts = {st: sum(1 for x in plays_ if x["state"] == st) for st in FLIGHT_STAGES}
+    return {"plays": plays_, "counts": counts, "mine": mine}
+
+
 # ---------------------------------------------------------------- tasks
 
 def task(cur, task_id: int) -> dict | None:

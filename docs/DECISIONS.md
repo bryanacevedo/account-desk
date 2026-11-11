@@ -67,3 +67,7 @@ Each entry: what was decided, why, and what it costs. Newest last.
 32. **Administration belongs to managers.** Managers add people, change roles (never removing the last manager) and remove someone by naming the SDR who takes their accounts, plays, tasks and meetings; their mailboxes retire and anyone mid-sequence continues from the successor's mailbox. Sending domains start unauthenticated until DNS checks them; a domain carries at most three mailboxes; pausing or retiring needs a reason.
 
 33. **Drafts are evaluated on the real path, graded by code, and read by a person.** The eval found that drafts did not know the sender's company and were never told the limits they are checked against; both now travel with every request, and a sentence naming the prospect's company is a claim that needs a source, whatever the model labels it.
+
+34. **The cap and held deals live in the database.** The send trigger computes each mailbox's daily cap itself (ramp, ceiling, spam and placement holds) instead of trusting a stored number; CRM deals for accounts not yet on the desk are kept and read again when the account arrives.
+
+35. **In flight is its own page.** Opening the desk should answer what is in motion: every open play, each person's sequence and the next step. It replaces Accounts in the phone bar, since Accounts is a lookup and In flight is a daily view.
