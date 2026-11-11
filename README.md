@@ -127,34 +127,38 @@ make docker
 
 Set `LINKEDIN_TOOL_TOKEN` to a long random string, then in HeyReach add a webhook to `https://<your desk>/api/webhooks/linkedin/<token>` for "Connection request accepted" and "Message reply received". The desk finds the person by their LinkedIn profile; events for people it does not know are acknowledged and noted. HeyReach reports only the first reply in a conversation, so later messages are pasted on the person's page.
 
-## Reply labelling, measured
+## The AI, measured
 
-48 labelled replies, written to include the cases that break classifiers: an "unsubscribe" inside a quoted footer or a legal signature, an assistant answering for their boss, a referral with and without an email address, a reply that tries to instruct the system, and replies in Spanish, German, French and Portuguese. Run through the real pipeline (cleaning, rules, then Claude Opus 5.5 at low effort) on 2026-11-11:
+Every task the model does has an eval: 268 cases in all, 194 of them written by a separate agent that never saw the
+code, so they test what the desk should do rather than what it happens to do. Each runs through the desk's real path,
+is graded by code where code can see the answer, and by a Claude Sonnet 5.5 judge with a written checklist where it
+cannot (the model under test never grades itself). Live run on 2026-11-11 with Claude Opus 5.5:
 
-| Measure | Result |
-|---|---|
-| Exact label | 45 of 48 (94%) |
-| Label a person would accept | 47 of 48 (98%) |
-| Rules alone | 12 of 48 (25%) |
-| Settled by rules with no model call | 11 of 48 |
-| Written by someone else, spotted | 2 of 2 |
-| Attempt to instruct the system, flagged | Yes |
-| Referral emails the model invented | 0 |
+| Task | Cases | Result |
+|---|---|---|
+| Labelling replies | 148 | 99% labelled as a careful person would, 95% exact; every stop request caught; every positive reply kept positive; no invented referral email; return dates 5 of 6 |
+| Drafting emails and LinkedIn notes | 50 | 92% pass the copy checks after the one redraft; none cites a private signal or a fact that does not exist; none follows an instruction hidden in a fact; the judge finds 78% say nothing about the buyer the facts do not |
+| Account briefs | 20 | 90% faithful to their facts by the judge; every instruction hidden in a fact ignored |
+| Suggested replies | 30 | 77% pass every check; 97% invent no price, integration or other product fact |
+| Learnings from call notes | 20 | 87% of expected learnings found; every quote verbatim; 95% invent nothing |
 
-Two of the three misses are calls a reviewer could go either way on ("¿Podemos hablar la semana que viene?" read as a meeting request rather than interest). The labels were left as written. 37 model calls cost $0.25. The answers are recorded in `evals/recordings/`, CI replays them without a key, and a prompt change fails CI until the eval is re-recorded. Full report: [evals/REPLIES.md](evals/REPLIES.md). The set is small and written by the author, so treat it as a regression guard, not a benchmark.
+The first live run found real problems and the prompts were fixed against the eval: suggested replies invented
+integrations and data locations and left placeholders in half the cases (now 1 in 30); drafts stated guesses about the
+buyer's billing as fact (faithfulness 40% before, 78% after); briefs stated inferences as findings (10% before, 90%
+after); return dates missed because the model was never told today's date. Reports with every case in full:
+`evals/REPLIES.md`, `WRITING.md`, `SUGGEST.md`, `EXTRACT.md`; the cases' coverage in `evals/CASES_V2.md`.
 
-## Drafts and briefs, measured
+```bash
+make evals
+```
 
-`evals/run_writing.py` runs 20 draft cases (email first touches, follow-ups, a last email, LinkedIn notes and messages) and 6 briefs, over invented companies, through the desk's real drafting path, graded by code. Recorded from live Claude on 2026-11-11 (about $0.35) and replayed in CI:
-
-| Check | Result |
-|---|---|
-| Drafts passing the copy checks first time | 17 of 20 |
-| After the one redraft the desk allows | 19 of 20; the 20th has only private signals, so nothing citable, and correctly fails |
-| A private signal or an unknown fact cited | none |
-| Briefs: findings that cite real facts, numbers and names traceable to them | all |
-
-The first live run passed 2 of 20 first time. The eval found why: the request never named the sender's company (the model wrote "At Pellucid Systems we...", the prospect's name) and never gave the limits the checks enforce. Both are now in every draft request, and any sentence about the prospect's company needs a source. Every draft and brief is printed in `evals/WRITING.md` for a person to judge what code cannot.
+That replays the recorded answers, free, and is what CI checks on every push, along with the recordings matching
+the current prompts. `make evals-live` calls Claude and the judge again (roughly $5 to $10). Each score has a floor in
+`evals/thresholds.json`, set a few points under the baseline; the safety ones (stop requests, private signals, hidden
+instructions, invented emails) must stay at 100%. A weekly workflow (`.github/workflows/evals.yml`) runs the live evals
+and fails below a floor, but only once an `ANTHROPIC_API_KEY` secret is added to the repository; this demo does not
+have one, so it never runs here. In the desk itself, a check raises an alert when SDRs start editing many more drafts
+than in the weeks before.
 
 ## What is real and what is simulated
 
@@ -164,7 +168,7 @@ The first live run passed 2 of 20 first time. The eval found why: the request ne
 
 **Not yet proven:**
 
-- Reply labelling, drafts and briefs are measured on real Claude answers (`evals/`); the demo and tests use a deterministic stand-in, and call-note extraction has no eval yet.
+- Every AI task is measured on real Claude answers (`evals/`, 268 cases); the demo and tests use a deterministic stand-in. The cases are written to be realistic but none is a real buyer's reply.
 - Only DNS checks have a live adapter. There is no mail provider adapter yet, so a live desk cannot send email; the other contracts are in `src/outbound/adapters/__init__.py`.
 - The company-data vendor and the catch-all resolver are simulated; no live adapter exists for either yet.
 - The HeyReach webhook has not seen a real HeyReach event (if an account sends an event for every reply, the desk takes those too); the accepted event's field names come from third-party guides.

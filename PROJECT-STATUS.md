@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 44. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 45. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -33,9 +33,8 @@ Checked on 2026-11-11 by running them:
 
 **Not proven:**
 
-- Reply labelling is measured on live Claude answers (2026-11-11, `evals/REPLIES.md`): 45 of 48 exact, 47 of 48 acceptable, rules alone 12, injection flagged, no invented referral emails, $0.25. The set is 48 author-written replies: a regression guard, not a benchmark. Call-note extraction still runs on the stand-in only (drafts and briefs have live recordings: `evals/WRITING.md`). The key lives in `.env` (gitignored, 600).
+- Every AI task has an eval (268 cases, 194 written by an agent that never saw the code), run live once on 2026-11-11: replies 99% accepted, drafts 92% pass and 78% faithful, briefs 90% faithful, suggested replies 77% pass and 97% invent nothing, call notes 87% recall. Not a real buyer among them.
 - No live vendor adapter (people search, finders, verifier, catch-all resolver, company data, phone, research, mail provider, telemetry, CRM, Slack). Contracts only.
-- Call-note extraction has no eval set (drafts and briefs do: `evals/WRITING.md`).
 - The HeyReach webhook has not seen a real event.
 - No mail provider adapter: a live desk cannot send email yet.
 - Real login only through Cloudflare Access token verification, which has not been run against a real Access app.
@@ -48,6 +47,8 @@ Checked on 2026-11-11 by running them:
 2. Tests for the time-based play exits, CRM push retries and SLA escalation.
 
 ## Done since the first review (2026-11-11)
+
+- The AI layer, made measurable: 268 eval cases over all six tasks (194 written independently), graded by code and a Claude Sonnet 5.5 judge with written checklists, with recordings so CI replays them free and floors in `evals/thresholds.json`. The first live run found real faults and the prompts were fixed against it: suggested replies invented product facts and left placeholders (half the cases, now 1 in 30); drafts stated guesses about the buyer as fact (40% faithful, now 78%); briefs stated inferences as findings (10%, now 90%); return dates were missed for want of today's date; a departure notice was read as out of office. A weekly live workflow is in place but dormant without an API key secret; an in-app check alerts when SDRs start editing many more drafts.
 
 - Final reviews on the final state (2026-11-11): a goldfish drift check (README and decisions accurate; five stale lines here, fixed) and a fresh design review (11 majors, all fixed: "Draft rejected" instead of a wrong "Email rejected"; follow-up drafts count as waiting on the team in In flight; panels say "overdue" against the desk's clock; the colleagues decision only while colleagues are waiting; "Play started" against "Held back" with share bars drawn to 100%; the finder order as figures; honest statuses with icons; a readable per-signal table; play people and meetings open; one owner on every page; "Colleague's meeting"). The six nits were then fixed too: figures on one line, a call panel with why now and what was sent, values shown once, one word per thing, nine distinct panel tints with ink labels, and a phone stage control that shows there is more.
 

@@ -62,6 +62,18 @@ MONITORS: dict[str, dict] = {
     "alerts_undelivered": {
         "title": "Alerts that never reached Slack",
         "sql": "select id from alerts where delivered_at is null and at < app_now() - interval '30 minutes'"},
+    "draft_quality_drift": {
+        "title": "SDRs are editing many more drafts than usual",
+        # The live signal of drafting quality: the share of emails an SDR approved only after editing, this week
+        # against the four weeks before. Twenty approvals at least, so a slow week does not raise it.
+        "sql": """with w as (select count(*) filter (where approved_at > app_now() - interval '7 days') as n7,
+                                    count(*) filter (where approved_at > app_now() - interval '7 days' and edited) as e7,
+                                    count(*) filter (where approved_at <= app_now() - interval '7 days') as n28,
+                                    count(*) filter (where approved_at <= app_now() - interval '7 days' and edited) as e28
+                             from messages where channel = 'email' and approval_mode = 'person'
+                             and approved_at > app_now() - interval '35 days')
+                  select 1 as id, e7, n7, e28, n28 from w
+                  where n7 >= 20 and n28 >= 20 and e7::float / n7 - e28::float / n28 >= 0.15"""},
     "jobs_dead": {
         "title": "Jobs that stopped after their last retry",
         "sql": "select id from jobs where status = 'dead' and finished_at > app_now() - interval '7 days'"},

@@ -1,4 +1,4 @@
-.PHONY: setup db demo serve web dev test lint monitors docker
+.PHONY: setup db demo serve web dev test lint monitors docker evals evals-live
 PY = PYTHONPATH=src .venv/bin/python
 
 setup:            ## install Python and web dependencies
@@ -24,8 +24,15 @@ dev:              ## web app with hot reload on :5173, API on :8800
 test: db          ## the whole suite, on real Postgres
 	$(PY) -m pytest
 
+evals:            ## every AI eval, replayed from recordings (free; what CI does)
+	$(PY) evals/run_replies.py && $(PY) evals/run_writing.py && $(PY) evals/run_suggest.py && $(PY) evals/run_extract.py
+
+evals-live:       ## every AI eval against live Claude, recording each answer (costs roughly $5 to $10)
+	ANTHROPIC_LIVE=1 $(PY) evals/run_replies.py; ANTHROPIC_LIVE=1 $(PY) evals/run_writing.py; \
+	ANTHROPIC_LIVE=1 $(PY) evals/run_suggest.py; ANTHROPIC_LIVE=1 $(PY) evals/run_extract.py
+
 lint:
-	.venv/bin/ruff check src tests
+	.venv/bin/ruff check src tests evals
 	cd web && npm run typecheck
 
 monitors:         ## run every monitor once

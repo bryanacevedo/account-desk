@@ -32,7 +32,7 @@ OPT_OUT = re.compile(r"\b(unsubscribe|remove (me|us)|stop emailing|take (me|us) 
 OOO = re.compile(r"\b(out of (the )?office|on (annual )?leave|automatic reply|auto-?reply|abwesenheit\w*|"
                  r"fuera de la oficina|absent du bureau|ausente)\b", re.I)
 BOUNCE_FROM = re.compile(r"^(mailer-daemon|postmaster)@", re.I)
-LEFT = re.compile(r"\b(no longer (with|at)|has left the company|left the company|is no longer employed)\b", re.I)
+LEFT = re.compile(r"\b(no longer (with|at|employed)|has left the company|left the company)\b", re.I)
 NOT_COMPANY = {"New", "San", "Los", "Las", "Finance", "Sales", "Marketing", "Engineering", "Operations", "Legal", "The",
                "London", "Paris", "Berlin", "Madrid", "Toronto", "Chicago", "Boston", "Austin", "Denver", "Seattle"}
 # Only a company the person actually named: "I'm now at Kestrel Health." Nothing is guessed.
@@ -81,6 +81,9 @@ def rules_label(from_addr: str, subject: str | None, cleaned: str) -> tuple[str,
     if BOUNCE_FROM.search(from_addr) or (subject or "").lower().startswith(("undeliverable", "delivery status notification",
                                                                              "mail delivery failed")):
         return "bounce", 1.0
+    # A departure notice often arrives as an automatic reply; that the person has left is what matters.
+    if LEFT.search(cleaned):
+        return "left_company", 0.9
     if OOO.search(cleaned) or (subject or "").lower().startswith(("automatic reply", "out of office", "autoreply")):
         return "out_of_office", 0.97
     if OPT_OUT.search(cleaned) and len(cleaned.split()) <= 25:
@@ -204,7 +207,8 @@ def classify_job(cur, payload: dict) -> None:
             if m:
                 extracted["return_text"] = m.group(1)
     else:
-        out = llm.run(cur, "classify", {"cleaned": r["cleaned"], "subject": r["subject"], "language_hint": r["language"]},
+        out = llm.run(cur, "classify", {"cleaned": r["cleaned"], "subject": r["subject"], "language_hint": r["language"],
+                                        "today": db.val(cur, "select app_now()::date").isoformat()},
                       account_id=r["account_id"])
         label, conf, by = out["label"], out["confidence"], "model"
         same_person = out["same_person"]

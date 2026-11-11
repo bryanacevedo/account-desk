@@ -1,0 +1,50 @@
+name: evals
+# Weekly, against live Claude: every AI task over its eval set, failing the run if any score falls below its floor
+# in evals/thresholds.json. Needs the ANTHROPIC_API_KEY repository secret; without it the run skips, so forks and a
+# repo without the key stay green. A run costs roughly $5 to $10.
+on:
+  schedule:
+    - cron: "0 13 * * 1"   # Mondays, 13:00 UTC
+  workflow_dispatch:
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      PYTHONPATH: src
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip without a key
+        if: ${{ env.ANTHROPIC_API_KEY == '' }}
+        run: echo "No ANTHROPIC_API_KEY secret, so the live evals are skipped." && exit 0
+      - uses: astral-sh/setup-uv@v5
+        if: ${{ env.ANTHROPIC_API_KEY != '' }}
+        with:
+          python-version: "3.13"
+      - if: ${{ env.ANTHROPIC_API_KEY != '' }}
+        run: uv sync --frozen && uv run python -c "from outbound import db; db.migrate()"
+      - name: Live evals
+        if: ${{ env.ANTHROPIC_API_KEY != '' }}
+        env:
+          ANTHROPIC_LIVE: "1"
+        run: |
+          status=0
+          for r in run_replies run_writing run_suggest run_extract; do
+            uv run python evals/$r.py || status=1
+          done
+          exit $status
+      - name: Keep the reports
+        if: ${{ always() && env.ANTHROPIC_API_KEY != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-reports
+          path: evals/*.md

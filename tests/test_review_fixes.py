@@ -263,3 +263,18 @@ def test_heavy_editing_moves_a_supervised_play_back_to_drafts(cur, scene):  # no
                        approved_at = app_now() - (%s || ' minutes')::interval, edited = %s where id = %s""", str(i), i < 7, m)
     plays.autonomy_watch(cur, {})
     assert db.val(cur, "select autonomy from plays where id = %s", scene["play"]) == "draft"
+
+
+def test_a_jump_in_edited_drafts_raises_the_quality_check(cur, scene):  # noqa: F811
+    from outbound import monitors
+    sql = monitors.MONITORS["draft_quality_drift"]["sql"]
+    assert db.all(cur, sql) == []
+    for i in range(25):  # four weeks of mostly clean approvals
+        m = _fresh_draft(cur, scene, 100 + i)
+        db.run(cur, """update messages set status = 'approved', approved_hash = body_hash, approval_mode = 'person',
+                       approved_at = app_now() - interval '14 days', edited = %s where id = %s""", i < 3, m)
+    for i in range(25):  # this week, most edited
+        m = _fresh_draft(cur, scene, 200 + i)
+        db.run(cur, """update messages set status = 'approved', approved_hash = body_hash, approval_mode = 'person',
+                       approved_at = app_now() - interval '1 day', edited = %s where id = %s""", i < 15, m)
+    assert len(db.all(cur, sql)) == 1
