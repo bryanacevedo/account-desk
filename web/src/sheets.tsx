@@ -105,7 +105,7 @@ const STOP: Record<string, string> = {
   approval_lapsed: "Approval came too late", rep_in_conversation: "SDR talking to them", colleague_engaged: "Colleague talking to us", person_moved: "Changed jobs", referral: "Referred someone",
   reply_received: "Replied, reading it", account_reply: "Colleague replied", out_of_office: "Out of office",
 };
-const stopWord = (r: string | null) => {
+export const stopWord = (r: string | null) => {
   if (!r) return "";
   if (STOP[r]) return STOP[r];
   if (r.startsWith("rejected")) return "Email rejected";
@@ -113,7 +113,7 @@ const stopWord = (r: string | null) => {
   if (r.startsWith("play_")) return "Play ended";
   return cap(r);
 };
-const GOOD_STOPS = new Set(["replied_positive", "meeting_booked", "referral"]);
+export const GOOD_STOPS = new Set(["replied_positive", "meeting_booked", "referral"]);
 
 const PERSONA: Record<string, string> = { cfo: "Finance leader", controller: "Controller", revops: "Revenue operations", data: "Data and systems" };
 

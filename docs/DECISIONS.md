@@ -71,3 +71,5 @@ Each entry: what was decided, why, and what it costs. Newest last.
 34. **The cap and held deals live in the database.** The send trigger computes each mailbox's daily cap itself (ramp, ceiling, spam and placement holds) instead of trusting a stored number; CRM deals for accounts not yet on the desk are kept and read again when the account arrives.
 
 35. **In flight is its own page.** Opening the desk should answer what is in motion: every open play, each person's sequence and the next step. It replaces Accounts in the phone bar, since Accounts is a lookup and In flight is a daily view.
+
+36. **Account Desk, and LinkedIn events from the LinkedIn tool.** Renamed from Outbound Desk: the desk does account-based outbound only. HeyReach's webhooks (connection accepted, first reply) call `/api/webhooks/linkedin/{token}`, since HeyReach cannot sign them; the person is found by their LinkedIn profile, every event is safe to receive twice, and with the tool connected the manual "accepted" button goes away. Later replies in the same conversation are still pasted, because HeyReach only reports the first.

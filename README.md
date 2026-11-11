@@ -1,5 +1,7 @@
 # Account Desk
 
+Signal & Account based outbound.
+
 [![CI](https://github.com/bryanacevedo/outbound-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/bryanacevedo/outbound-desk/actions/workflows/ci.yml)
 
 Account Desk runs signal-based, account-based outbound for a B2B sales team. It watches for the moments a company that fits your customer profile shows it may need you (a new finance leader, a pricing change, hiring for the team you serve, a past champion joining), decides which accounts are worth working this week and why, finds the people who buy there, drafts outreach grounded in what actually happened at that company, has an SDR approve it, sends it from healthy inboxes at a human pace, and handles every reply through to a meeting and pipeline. It measures which signals turn into meetings against a comparison group nobody contacted.
@@ -118,6 +120,10 @@ Or with Docker, the same image the hosted demo runs:
 ```bash
 make docker
 ```
+
+### LinkedIn through HeyReach
+
+Set `LINKEDIN_TOOL_TOKEN` to a long random string, then in HeyReach add a webhook to `https://<your desk>/api/webhooks/linkedin/<token>` for "Connection request accepted" and "Message reply received". The desk finds the person by their LinkedIn profile; events for people it does not know are acknowledged and noted. HeyReach reports only the first reply in a conversation, so later messages are pasted on the person's page.
 
 ## Reply labelling, measured
 

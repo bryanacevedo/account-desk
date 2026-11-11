@@ -47,6 +47,10 @@ Checked on 2026-11-11 by running them:
 
 ## Done since the first review (2026-11-11)
 
+- Renamed Account Desk, tagline "Signal & Account based outbound", new mark (one account, the people in it, one still to reach) in the sidebar and favicon.
+- HeyReach webhooks: `POST /api/webhooks/linkedin/{LINKEDIN_TOOL_TOKEN}` takes connection accepted and the first reply; tested (matching by profile however it is written, no double counting, unknown people acknowledged and noted). Not yet tested against a real HeyReach event: the accepted event's field names come from third-party guides.
+- In flight after a fresh design review (13 findings): a step is filled only if it was sent (skipped steps dashed), each stopped or paused person shows why, the Next column names the person and opens the reply, draft or meeting that waits, the SDR has a column, one count per view, 44px tap targets on phones, emails named "Email 3" as on Approvals, sorted by next step.
+
 - The daily cap is the database's own rule: `mailbox_cap()` (migration 0017) computes ramp, ceiling and the spam and placement holds, and the send trigger uses it; nothing the sending code writes is trusted.
 - CRM deals on accounts the desk does not know yet are held (`crm_held_deals`, migration 0018) and read again after an import or a resolved signal; tested.
 - In flight page: every open play with each person's sequence as a step strip (done, next, not happening) and what happens next; stage filter, Mine and Team for SDRs. On phones it takes Accounts' slot in the bottom bar (Accounts moves to More). Checked at 1440 and 375 (no sideways scroll); tested. 170 tests.
