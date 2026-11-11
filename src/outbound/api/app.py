@@ -12,7 +12,7 @@ import time
 import uuid
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -744,6 +744,101 @@ def publish_icp(body: IcpRules, u: dict = Depends(writer)) -> dict:
         jobs.enqueue(cur, "rescore_all", {"reason": "icp"}, dedupe_key=f"rescore_all:icp:{vid}")
         audit.log(cur, "person", "icp_published", "icp", vid, {"note": body.note}, actor_id=u["id"])
     return {"ok": True, "version": vid}
+
+
+# ---------------------------------------------------------------- administration (managers)
+
+def _admin(fn, *args, **kwargs):
+    from .. import admin
+    try:
+        with db.tx() as cur:
+            return fn(cur, *args, **kwargs)
+    except admin.AdminError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
+@app.get("/api/admin")
+def admin_view(u: dict = Depends(current_user)) -> dict:
+    need(u, "manager", "gtm")
+    with db.tx() as cur:
+        return {"users": db.all(cur, """select u.id, u.name, u.email, u.role, u.timezone, u.slack_id, u.active,
+                                          (select count(*) from accounts a where a.owner_id = u.id) as accounts,
+                                          (select count(*) from mailboxes m where m.user_id = u.id and m.status <> 'retired') as mailboxes
+                                   from users u order by u.active desc, u.role, u.name""")}
+
+
+class NewUser(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$", max_length=320)
+    role: Literal["sdr", "manager", "gtm"]
+    timezone: str = Field("America/New_York", max_length=60)
+    slack_id: str | None = Field(None, max_length=40)
+
+
+@app.post("/api/users")
+def add_user(body: NewUser, u: dict = Depends(writer)) -> dict:
+    need(u, "manager")
+    from .. import admin
+    return {"ok": True, "id": _admin(admin.add_user, **body.model_dump(), by=u["id"])}
+
+
+class UserChange(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=120)
+    role: Literal["sdr", "manager", "gtm"] | None = None
+    timezone: str | None = Field(None, max_length=60)
+    slack_id: str | None = Field(None, max_length=40)
+    deactivate: bool = False
+    successor: int | None = None
+
+
+@app.patch("/api/users/{uid}")
+def change_user(uid: int, body: UserChange, u: dict = Depends(writer)) -> dict:
+    need(u, "manager")
+    from .. import admin
+    if body.deactivate:
+        return {"ok": True, "moved": _admin(admin.deactivate, uid, successor=body.successor, by=u["id"])}
+    _admin(admin.change_user, uid, by=u["id"], name=body.name, role=body.role, timezone=body.timezone, slack_id=body.slack_id)
+    return {"ok": True}
+
+
+class NewDomain(BaseModel):
+    domain: str = Field(min_length=3, max_length=253)
+    registered: date
+    dkim_selector: str | None = Field(None, max_length=63)
+
+
+@app.post("/api/sending-domains")
+def add_domain(body: NewDomain, u: dict = Depends(writer)) -> dict:
+    need(u, "manager")
+    from .. import admin
+    return {"ok": True, "domain": _admin(admin.add_domain, **body.model_dump(), by=u["id"])}
+
+
+class NewMailbox(BaseModel):
+    address: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$", max_length=320)
+    user_id: int
+    provider: Literal["google", "microsoft"]
+    warmup_started: date
+
+
+@app.post("/api/mailboxes")
+def add_mailbox(body: NewMailbox, u: dict = Depends(writer)) -> dict:
+    need(u, "manager")
+    from .. import admin
+    return {"ok": True, "id": _admin(admin.add_mailbox, **body.model_dump(), by=u["id"])}
+
+
+class MailboxChange(BaseModel):
+    status: Literal["active", "paused", "retired"]
+    reason: str | None = Field(None, max_length=300)
+
+
+@app.patch("/api/mailboxes/{mid}")
+def change_mailbox(mid: int, body: MailboxChange, u: dict = Depends(writer)) -> dict:
+    need(u, "manager")
+    from .. import admin
+    _admin(admin.set_mailbox, mid, status=body.status, reason=body.reason, by=u["id"])
+    return {"ok": True}
 
 
 class PlayChange(BaseModel):

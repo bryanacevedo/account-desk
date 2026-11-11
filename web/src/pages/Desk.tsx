@@ -11,6 +11,8 @@ import { SignalLabel } from "../signalIcons";
 
 export function Deliverability() {
   const { data, error, reload } = useData<any>("/api/deliverability");
+  const me = useData<any>("/api/me").data;
+  const isManager = me?.user.role === "manager";
   if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
   if (!data) return <div className="page"><div className="head"><h1>Inboxes</h1></div><Loading /></div>;
   const healthy = data.mailboxes.filter((m: any) => !m.blocked).length;
@@ -44,17 +46,19 @@ export function Deliverability() {
       </Section>
       <Section title="Mailboxes">
         <div className="ledger">
-          <div className="row head" style={{ gridTemplateColumns: M_COLS }}><span>Mailbox</span><span>Status</span><span className="num">Today</span><span className="num">Sent, 14 days</span><span className="num">Bounced</span></div>
+          <div className="row head" style={{ gridTemplateColumns: isManager ? M_COLS_ADMIN : M_COLS }}><span>Mailbox</span><span>Status</span><span className="num">Today</span><span className="num">Sent, 14 days</span><span className="num">Bounced</span>{isManager ? <span /> : null}</div>
           {data.mailboxes.map((m: any) => (
-            <div key={m.id} className="row" style={{ gridTemplateColumns: M_COLS }}>
+            <div key={m.id} className="row" style={{ gridTemplateColumns: isManager ? M_COLS_ADMIN : M_COLS }}>
               <div className="cell-main"><span className="t">{m.address}</span><span className="s">{m.owner}, {cap(m.provider)}</span></div>
               <Status kind={m.blocked ? (m.status === "paused" ? "stop" : "wait") : "ok"}>{m.blocked || "Sending"}</Status>
               <span className="num">{m.today} <span className="faint">of {m.cap}</span></span>
               <span className="num">{m.sent}</span>
               <span className="num">{m.sent ? pct(m.bounced / m.sent, 1) : ""}</span>
+              {isManager ? <MailboxActions m={m} onDone={reload} /> : null}
             </div>
           ))}
         </div>
+        {isManager ? <AddSending domains={data.domains} onDone={reload} /> : null}
       </Section>
       <Section title="Where mail lands" right={<span className="mute small">Seed tests, weekly. Under {pct(data.placement.placement_hold_below, 0)} holds a mailbox at 10 a day, under {pct(data.placement.placement_pause_below, 0)} pauses it.</span>}>
         <div className="ledger">
@@ -99,6 +103,64 @@ const C_COLS = "minmax(0,1fr) 120px minmax(0,1.3fr) 170px";
 const P_COLS = "minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr) 110px";
 const D_COLS = "minmax(0,1.4fr) minmax(0,1.4fr) 64px 90px 90px";
 const M_COLS = "minmax(0,1.6fr) minmax(0,1.4fr) 90px 90px 80px";
+const M_COLS_ADMIN = "minmax(0,1.6fr) minmax(0,1.4fr) 90px 90px 80px 96px";
+
+/** Pause, resume or retire a mailbox. Resuming one the desk paused is a person's call after checking why. */
+function MailboxActions({ m, onDone }: { m: any; onDone: () => void }) {
+  const [busy, run] = useBusy();
+  const set = (status: string, reason: string | null, msg: string) => run(async () => {
+    await api(`/api/mailboxes/${m.id}`, { method: "PATCH", body: { status, reason } }); onDone();
+  }, msg);
+  if (m.status === "retired") return <span className="mute small">Retired</span>;
+  return (
+    <span className="actions" style={{ justifyContent: "flex-end" }}>
+      {m.status === "paused"
+        ? <button className="btn line sm" disabled={busy} title={m.pause_reason || undefined} onClick={() => set("active", null, "Resumed.")}>Resume</button>
+        : <button className="btn quiet sm" disabled={busy} onClick={() => set("paused", "Paused by a manager", "Paused.")}>Pause</button>}
+    </span>
+  );
+}
+
+/** A new sending domain (unauthenticated until the DNS check reads it) or a new mailbox for an SDR. */
+function AddSending({ domains, onDone }: { domains: any[]; onDone: () => void }) {
+  const team = useData<any>("/api/admin").data;
+  const [open, setOpen] = useState<"" | "domain" | "mailbox">("");
+  const [f, setF] = useState<any>({ domain: "", registered: "", address: "", user_id: "", provider: "google", warmup_started: "" });
+  const [busy, run] = useBusy();
+  if (!open) return (
+    <div className="actions" style={{ marginTop: 10 }}>
+      <button className="btn quiet sm" onClick={() => setOpen("domain")}>Add a domain</button>
+      <button className="btn quiet sm" onClick={() => setOpen("mailbox")}>Add a mailbox</button>
+    </div>
+  );
+  const done = () => { setOpen(""); onDone(); };
+  return open === "domain" ? (
+    <div className="actions" style={{ flexWrap: "wrap", marginTop: 10 }}>
+      <input className="input" style={{ width: 220 }} placeholder="getyourcompany.com" value={f.domain} onChange={(e) => setF({ ...f, domain: e.target.value })} aria-label="Domain" />
+      <label className="field"><span>Registered</span><input className="input" type="date" value={f.registered} onChange={(e) => setF({ ...f, registered: e.target.value })} /></label>
+      <button className="btn quiet sm" onClick={() => setOpen("")}>Cancel</button>
+      <button className="btn sm" disabled={busy || !f.domain || !f.registered} onClick={() => run(async () => {
+        await api("/api/sending-domains", { method: "POST", body: { domain: f.domain, registered: f.registered } }); done();
+      }, "Added. Nothing sends from it until its DNS records check out.")}>Add domain</button>
+    </div>
+  ) : (
+    <div className="actions" style={{ flexWrap: "wrap", marginTop: 10 }}>
+      <input className="input" style={{ width: 220 }} placeholder={`name@${domains[0]?.domain || "yourdomain.com"}`} value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} aria-label="Address" />
+      <select className="select" style={{ width: 160 }} value={f.user_id} onChange={(e) => setF({ ...f, user_id: e.target.value })} aria-label="Whose">
+        <option value="">Whose mailbox</option>
+        {(team?.users || []).filter((x: any) => x.active && x.role === "sdr").map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}
+      </select>
+      <select className="select" style={{ width: 130 }} value={f.provider} onChange={(e) => setF({ ...f, provider: e.target.value })} aria-label="Provider">
+        <option value="google">Google</option><option value="microsoft">Microsoft</option>
+      </select>
+      <label className="field"><span>Warm-up began</span><input className="input" type="date" value={f.warmup_started} onChange={(e) => setF({ ...f, warmup_started: e.target.value })} /></label>
+      <button className="btn quiet sm" onClick={() => setOpen("")}>Cancel</button>
+      <button className="btn sm" disabled={busy || !f.address || !f.user_id || !f.warmup_started} onClick={() => run(async () => {
+        await api("/api/mailboxes", { method: "POST", body: { address: f.address, user_id: Number(f.user_id), provider: f.provider, warmup_started: f.warmup_started } }); done();
+      }, "Added. A seed test runs now.")}>Add mailbox</button>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------- Results
 
@@ -331,6 +393,59 @@ function LiftButton({ id, onDone }: { id: number; onDone: () => void }) {
   return <button className="btn quiet sm" disabled={busy} onClick={() => run(async () => { await api(`/api/suppressions/${id}`, { method: "DELETE" }); onDone(); }, "Lifted.")}>Lift</button>;
 }
 
+const ROLE: Record<string, string> = { sdr: "SDR", manager: "Manager", gtm: "GTM engineering" };
+
+/** The team: who is on the desk and in what role. Someone who leaves hands their accounts and work to a successor. */
+function Team() {
+  const { data, reload } = useData<any>("/api/admin");
+  const [busy, run] = useBusy();
+  const [leaving, setLeaving] = useState<number | null>(null);
+  const [successor, setSuccessor] = useState("");
+  const [nu, setNu] = useState({ name: "", email: "", role: "sdr" });
+  if (!data) return null;
+  const sdrs = data.users.filter((x: any) => x.active && x.role === "sdr");
+  return (
+    <Section title="Team">
+      <div className="ledger">
+        {data.users.map((x: any) => (
+          <div key={x.id} className="row" style={{ gridTemplateColumns: "minmax(0,1.4fr) 170px minmax(0,1fr)", minHeight: 44, opacity: x.active ? 1 : 0.55 }}>
+            <div className="cell-main"><span className="t">{x.name}</span><span className="s">{x.email}{x.accounts ? `, ${n0(x.accounts)} accounts` : ""}{x.mailboxes ? `, ${x.mailboxes} mailboxes` : ""}</span></div>
+            {x.active ? (
+              <select className="select" value={x.role} disabled={busy} aria-label={`${x.name}'s role`}
+                onChange={(e) => run(async () => { await api(`/api/users/${x.id}`, { method: "PATCH", body: { role: e.target.value } }); reload(); }, "Role changed.")}>
+                {Object.entries(ROLE).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+            ) : <span className="mute">Left the desk</span>}
+            {!x.active ? <span /> : leaving === x.id ? (
+              <span className="actions" style={{ flexWrap: "wrap" }}>
+                <select className="select" style={{ width: 170 }} value={successor} onChange={(e) => setSuccessor(e.target.value)} aria-label="Hand their work to">
+                  <option value="">Hand their work to</option>
+                  {sdrs.filter((s: any) => s.id !== x.id).map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <button className="btn quiet sm" onClick={() => setLeaving(null)}>Cancel</button>
+                <button className="btn ink sm" disabled={busy} onClick={() => run(async () => {
+                  await api(`/api/users/${x.id}`, { method: "PATCH", body: { deactivate: true, successor: successor ? Number(successor) : null } });
+                  setLeaving(null); reload();
+                }, "Done. Their sign-in stopped and their work moved.")}>Remove</button>
+              </span>
+            ) : <span className="actions" style={{ justifyContent: "flex-end" }}><button className="btn quiet sm" onClick={() => { setLeaving(x.id); setSuccessor(""); }}>Remove from the desk</button></span>}
+          </div>
+        ))}
+      </div>
+      <div className="actions" style={{ flexWrap: "wrap", marginTop: 12 }}>
+        <input className="input" style={{ flex: 1, minWidth: 150 }} placeholder="Name" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} aria-label="Name" />
+        <input className="input" style={{ flex: 1, minWidth: 190 }} placeholder="Work email" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} aria-label="Work email" />
+        <select className="select" style={{ width: 170 }} value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })} aria-label="Role">
+          {Object.entries(ROLE).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+        <button className="btn sm" disabled={busy || nu.name.trim().length < 2 || !nu.email.includes("@")} onClick={() => run(async () => {
+          await api("/api/users", { method: "POST", body: nu }); setNu({ name: "", email: "", role: "sdr" }); reload();
+        }, "Added. They sign in with that email.")}>Add</button>
+      </div>
+    </Section>
+  );
+}
+
 /** The ideal customer profile. GTM edits weights, values and tier lines; publishing makes a new version and
  *  rescores every account. A field the desk does not know about an account is left out of its score. */
 function IcpSection({ icp, canEdit, onDone }: { icp: any; canEdit: boolean; onDone: () => void }) {
@@ -452,6 +567,7 @@ export function Settings() {
           <div className="small mute">Legal rules per country are a starting point. Counsel to confirm.</div>
         </Section>
       </div>
+      {me?.user.role === "manager" ? <Team /> : null}
       <IcpSection icp={data.icp} canEdit={canEdit} onDone={reload} />
       {me && me.user.role !== "sdr" ? <ImportBox /> : null}
       <Section title="Do not contact">

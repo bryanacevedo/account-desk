@@ -88,7 +88,7 @@ def match(cur, account_id: int) -> int | None:
 
 
 def _pick_owner(cur, account_owner: int | None) -> int:
-    if account_owner:
+    if account_owner and db.val(cur, "select active and role = 'sdr' from users where id = %s", account_owner):
         return account_owner
     return db.val(cur, """select u.id from users u where u.role = 'sdr' and u.active
                           order by (select count(*) from account_plays ap where ap.owner_id = u.id
