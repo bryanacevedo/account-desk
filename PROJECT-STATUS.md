@@ -4,11 +4,11 @@
 
 ## Where it stands
 
-v1 is built end to end on simulated vendors and runs locally. It is not on GitHub and not hosted yet: creating the public repo is Bryan's call (name still open).
+v1 is built end to end on simulated vendors. **Public** at https://github.com/bryanacevedo/outbound-desk since 2026-11-11 (Bryan: keep the name, publish). CI green on the first push (lint, the suite on Postgres 18, the web build). Not hosted yet: the Render service needs Bryan's go-ahead to use the Render key.
 
 Checked on 2026-11-11 by running them:
 
-- `pytest` on real Postgres 18: 77 passed in about 5 seconds, including a 21-day simulation of the whole desk (140 accounts) followed by checks of every promise against what happened, and 9 regression tests for the first code review's blocking findings.
+- `pytest` on real Postgres 18: 79 passed (77 then, plus 2 eval replays) in about 5 seconds, including a 21-day simulation of the whole desk (140 accounts) followed by checks of every promise against what happened, and 9 regression tests for the first code review's blocking findings.
 - `ruff check src tests`: clean. `tsc --noEmit` and `vite build`: clean.
 - `make demo`: 460 invented accounts, 60 simulated days in about 25 seconds; opens on 2026-11-11 with work waiting for each SDR.
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Not yet walked by a fresh reviewer against `docs/DESIGN-CHECKLIST.md`, and not yet checked at phone width.
@@ -28,18 +28,18 @@ Checked on 2026-11-11 by running them:
 
 **Not proven:**
 
-- No live model call. Brief, drafts, reply labels and call-note extraction run on the deterministic stand-in. Recording real answers needs an Anthropic key (`ANTHROPIC_LIVE=1`).
+- Reply labelling is measured on live Claude answers (2026-11-11, `evals/REPLIES.md`): 45 of 48 exact, 47 of 48 acceptable, rules alone 12, injection flagged, no invented referral emails, $0.25. The set is 48 author-written replies: a regression guard, not a benchmark. Brief, drafts and call-note extraction still run on the stand-in only. The key lives in `.env` (gitignored, 600).
 - No live vendor adapter (people search, finder, verifier, phone, research, mail provider, telemetry, CRM, Slack). Contracts only.
 - No MCP server yet (in the spec, section 20).
-- No evals with labelled sets yet (spec 22.15).
+- No eval sets yet for the brief, drafts or call notes (spec 22.15).
 - Real login only through Cloudflare Access token verification, which has not been run against a real Access app.
 - Region rules are a starting point. Counsel to confirm.
 - Contention from several servers at once (one process was measured).
 
 ## Next
 
-1. Bryan: the repo name and the go-ahead to create the public GitHub repo, then the Render service.
+1. Bryan: the go-ahead to create the Render service with the Render key.
 2. A fresh hands-on design review of every screen against `docs/DESIGN-CHECKLIST.md`, including phone width.
-3. Evals: a labelled reply set and a draft set, recorded with a real key.
+3. Evals for drafts and briefs with live calls (the reply set is done).
 4. The MCP server, live adapters vendor by vendor (Apollo, a verifier, Instantly or Smartlead, HeyReach, HubSpot, Slack, Google Postmaster).
 5. A second fresh code review.
