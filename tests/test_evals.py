@@ -76,7 +76,7 @@ def _load(name: str):
 
 
 def test_every_ai_task_has_recordings_for_its_current_prompt():
-    for task in ("classify", "draft", "draft_linkedin", "brief", "suggest_reply", "extract"):
+    for task in ("classify", "draft", "draft_linkedin", "brief", "suggest_reply", "extract", "check_claims"):
         rows = [json.loads(line) for line in (ROOT / f"evals/recordings/{task}.jsonl").read_text().splitlines() if line.strip()]
         assert rows, f"no recordings for {task}: run make evals-live"
         assert {r["prompt_hash"] for r in rows} == {llm.prompt_hash(task)}, f"{task} prompt changed: re-record the evals"

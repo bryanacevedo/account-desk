@@ -172,6 +172,22 @@ def ingest(cur, *, from_addr: str, subject: str | None, raw: str, received_at: d
     return rid
 
 
+def suggest(cur, label: str, cleaned: str, first_name: str | None, account_id: int | None = None) -> str | None:
+    """A reply the SDR could send, or None. The model writes it; code checks it for invented numbers, product facts
+    and placeholders; one rewrite with the failures named; then nothing rather than an invention."""
+    from .copy_gate import check_suggestion
+    failures: list[str] = []
+    for attempt in (1, 2):
+        out = llm.run(cur, "suggest_reply", {"label": label, "cleaned": cleaned, "first_name": first_name,
+                                            **({"attempt": attempt, "failures": failures} if failures else {})},
+                      account_id=account_id)
+        found = check_suggestion(out["body"], cleaned)
+        if not found:
+            return out["body"]
+        failures = [x["message"] for x in found]
+    return None
+
+
 def stop_first(cur, person_id: int | None, account_id: int | None, reply_id: int) -> None:
     if person_id:
         db.run(cur, """update enrollments set state = 'paused', pause_reason = 'reply_received'
@@ -339,10 +355,10 @@ def act(cur, r: dict) -> None:
         owner = owner or db.val(cur, "select id from users where role = 'manager' limit 1")
         due = _sla(cur, r, owner)
         db.run(cur, "update replies set sla_due_at = %s where id = %s", due, r["id"])
-        suggestion = llm.run(cur, "suggest_reply", {"label": label, "cleaned": r["cleaned"],
-                                                    "first_name": db.val(cur, "select first_name from people where id = %s", pid)
-                                                    if pid else None}, account_id=aid)
-        db.run(cur, "update replies set extracted = extracted || %s where id = %s", J({"suggested": suggestion["body"]}), r["id"])
+        body = suggest(cur, label, r["cleaned"], db.val(cur, "select first_name from people where id = %s", pid) if pid else None, aid)
+        # A suggestion that keeps failing the checks is withheld: the SDR writes their own rather than see an invention.
+        db.run(cur, "update replies set extracted = extracted || %s where id = %s",
+               J({"suggested": body} if body else {"suggestion_withheld": True}), r["id"])
         db.run(cur, """insert into tasks (account_play_id, person_id, reply_id, kind, title, due_at, owner_id)
                        values (%s,%s,%s,'reply',%s,%s,%s)""", ap["id"] if ap else None, pid, r["id"],
                "Answer a reply", due, owner)

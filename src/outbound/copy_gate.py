@@ -203,3 +203,35 @@ def footer(*, company: str, address: str, unsubscribe_url: str, privacy_url: str
         lines.append(f"Where we found your details: {privacy_url}")
     return "\n".join(lines)
 
+
+
+# ---------------------------------------------------------------- suggested replies
+
+TIME_WORDS = re.compile(r"\b(\d{1,2}(:\d{2})?\s?(am|pm|h)|\d{1,2}:\d{2})\b", re.I)
+SUGGEST_NUMBER = re.compile(r"[$€£]\s?\d|\d+\s?%|\d{2,}")
+# Product facts an SDR's suggestion must never state on its own: integrations, certifications, where data lives,
+# discounts, trials, named customers. Stems cover the languages the desk handles.
+PRODUCT_CLAIMS = re.compile(r"\b(integr\w*|connector\w*|native\w*|soc ?2|iso ?27001|gdpr|rgpd|dsgvo|hipaa|certif\w*|"
+                            r"data ?cent\w*|datacenter|region\w*|hosted|aws|azure|gcp|frankfurt|discount\w*|descuento\w*|"
+                            r"desconto\w*|remise\w*|rabatt\w*|free trial|prueba gratuita|case stud\w*|customers like|"
+                            r"we work with|trabajamos con)\b", re.I)
+
+
+def check_suggestion(body: str, their_text: str) -> list[dict]:
+    """Code-checkable invention in a suggested reply: placeholders, numbers and product facts the prospect did not
+    bring up. A meeting time is not a number for this purpose."""
+    f: list[dict] = []
+    theirs = their_text.lower()
+    if re.search(r"[\[\]{}<>]", body):
+        f.append({"code": "placeholder", "message": "It has a placeholder or bracket; it must be ready to send."})
+    nums = [m.group(0) for m in SUGGEST_NUMBER.finditer(TIME_WORDS.sub("", body)) if m.group(0).strip("$€£% ") not in theirs]
+    if nums:
+        f.append({"code": "invented_number", "message": f"It states a number the prospect did not give: {nums[0]}."})
+    # A word the prospect used in any form ('integrate', 'integration') is theirs to bring up, not ours to invent.
+    claims = sorted({m.group(0).lower() for m in PRODUCT_CLAIMS.finditer(body) if m.group(0).lower()[:6] not in theirs})
+    if claims:
+        f.append({"code": "product_claim", "message": "It states a product fact the SDR does not have ("
+                  + ", ".join(claims) + "); say it will be confirmed instead."})
+    if "—" in body or "–" in body or "!" in body:
+        f.append({"code": "punctuation", "message": "No dashes or exclamation marks."})
+    return f

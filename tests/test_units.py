@@ -317,3 +317,15 @@ def test_a_sentence_about_their_company_needs_a_source_whatever_it_is_labelled()
     v = copy_gate.check(d, job="open", person={"first_name": "Amara"}, account={"name": "Quillon Payments"},
                         facts={1: "Removed a legacy billing tool from its stack."}, our_names=["Lumen Ledger"], other_bodies=[])
     assert any(f["code"] == "uncited_claim" and "Quillon" in f["message"] for f in v.failures)
+
+
+def test_a_suggested_reply_that_invents_is_caught_by_code():
+    from outbound.copy_gate import check_suggestion
+    theirs = "Do you integrate with NetSuite, and what does it cost for 40,000 invoices?"
+    assert check_suggestion("Ana, I will confirm both and come back to you by Thursday.", theirs) == []
+    codes = {f["code"] for f in check_suggestion("Yes, we're SOC 2 certified and hosted in Frankfurt. Pricing starts at $900.", theirs)}
+    assert codes == {"product_claim", "invented_number"}
+    assert check_suggestion("Ana, we connect through [connector name].", theirs)[0]["code"] == "placeholder"
+    assert check_suggestion("Does Tuesday at 10am or Thursday at 2pm work?", "Happy to meet") == []
+    # Words the prospect used themselves are not inventions.
+    assert check_suggestion("I will check the NetSuite integration and come back.", theirs) == []

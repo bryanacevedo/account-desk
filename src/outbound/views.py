@@ -56,7 +56,7 @@ def today(cur, user: dict) -> dict:
 
 # ---------------------------------------------------------------- accounts
 
-def accounts(cur, *, q: str | None, view: str, owner: int | None, limit: int = 200) -> list[dict]:
+def accounts(cur, *, q: str | None, view: str, owner: int | None, limit: int = 100, offset: int = 0) -> list[dict]:
     where = ["a.fit_tier in ('A','B')"] if view != "all" else ["true"]
     args: list = []
     if view == "in_play":
@@ -71,7 +71,7 @@ def accounts(cur, *, q: str | None, view: str, owner: int | None, limit: int = 2
         args.append(owner)
     return db.all(cur, f"""
         select a.id, a.name, a.primary_domain, a.industry, a.employees, a.hq_country, a.fit_tier, a.lifecycle,
-               sc.priority, sc.fit, sc.intent, sc.engagement, coalesce(u.name, apu.name) as owner, ap.state as play_state, p.name as play,
+               count(*) over () as total_n, sc.priority, sc.fit, sc.intent, sc.engagement, coalesce(u.name, apu.name) as owner, ap.state as play_state, p.name as play,
                rs.label as reason, rs.type_key as reason_type, rs.observed_at as reason_at, coalesce(sh.delta, 0) as week_change,
                lp.state as last_state, hd.until as hold_until
         from accounts a left join account_scores sc on sc.account_id = a.id
@@ -88,8 +88,8 @@ def accounts(cur, *, q: str | None, view: str, owner: int | None, limit: int = 2
         left join lateral (select sum(priority - coalesce(previous, 0)) as delta from score_history h
                            where h.account_id = a.id and h.at > app_now() - interval '7 days') sh on true
         where {' and '.join(where)}
-        order by {"coalesce(sh.delta, 0) desc," if view == "rising" else ""} sc.priority desc nulls last, a.name limit %s""",
-        *args, limit)
+        order by {"coalesce(sh.delta, 0) desc," if view == "rising" else ""} sc.priority desc nulls last, a.name limit %s offset %s""",
+        *args, limit, offset)
 
 
 def account(cur, account_id: int, *, money: bool) -> dict | None:

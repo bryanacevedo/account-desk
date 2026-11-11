@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Literal
 
 import psycopg
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -217,11 +217,12 @@ def in_flight(mine: bool | None = None, u: dict = Depends(current_user)) -> dict
 
 @app.get("/api/accounts")
 def accounts(view: Literal["priority", "in_play", "rising", "all"] = "priority", q: str | None = None,
-             owner: int | None = None, u: dict = Depends(current_user)) -> dict:
+             owner: int | None = None, page: int = Query(1, ge=1, le=10_000), u: dict = Depends(current_user)) -> dict:
+    per = 100
     with db.tx() as cur:
-        rows = views.accounts(cur, q=(q or "")[:80] or None, view=view, owner=owner)
-        total = db.val(cur, "select count(*) from accounts" + ("" if view == "all" else " where fit_tier in ('A','B')"))
-        return {"accounts": rows, "total": total if not q and view in ("all", "priority") else len(rows)}
+        rows = views.accounts(cur, q=(q or "")[:80] or None, view=view, owner=owner, limit=per, offset=(page - 1) * per)
+        total = rows[0]["total_n"] if rows else 0
+        return {"accounts": rows, "total": total, "page": page, "per_page": per}
 
 
 @app.get("/api/accounts/{account_id}")

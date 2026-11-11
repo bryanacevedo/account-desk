@@ -292,6 +292,19 @@ def _verify(cur, ad, person: dict, account: dict, email: str) -> str:
     return status
 
 
+def check_claims(cur, out: dict, facts: dict[int, str], company: str, account_id: int | None = None) -> list[dict]:
+    """The second check: every sentence about the buyer is read against the facts. Returns copy-gate style failures,
+    empty when every sentence holds. The copy checks catch what code can see (citations, numbers, names); this catches
+    the implication code cannot ('your team rebuilds invoices by hand')."""
+    from . import llm
+    sentences = [s["text"] for s in out["sentences"]]
+    got = llm.run(cur, "check_claims", {"company": company, "facts": [{"id": k, "text": v} for k, v in facts.items()],
+                                        "sentences": sentences}, account_id=account_id)
+    return [{"code": "unsupported_about_them",
+             "message": f"Sentence {c['index'] + 1} says something about them the facts do not: {c['why']}"}
+            for c in got["sentences"] if not c["supported"] and 0 <= c["index"] < len(sentences)]
+
+
 def _record_basis(cur, person: dict, play: dict) -> str | None:
     rule = db.val(cur, "select rule from region_rules where country = %s", person["country"])
     if rule == "basis_required" and play.get("lia_ref"):
@@ -556,6 +569,10 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
         verdict = copy_gate.check(out, job=step["job"], person=person, account=account, facts=fact_map,
                                   our_names=OUR_NAMES + [owner["name"]], other_bodies=others, private_ids=private_ids,
                                   channel="linkedin" if linkedin else "email", max_chars=max_chars)
+        if verdict.passed:
+            unsupported = check_claims(cur, out, fact_map, account["name"], account["id"])
+            if unsupported:
+                verdict = copy_gate.Verdict(passed=False, failures=unsupported, words=verdict.words)
         attempts.append({"attempt": attempt, "passed": verdict.passed, "failures": verdict.failures})
         if verdict.passed:
             break

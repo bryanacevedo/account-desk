@@ -278,3 +278,17 @@ def test_a_jump_in_edited_drafts_raises_the_quality_check(cur, scene):  # noqa: 
         db.run(cur, """update messages set status = 'approved', approved_hash = body_hash, approval_mode = 'person',
                        approved_at = app_now() - interval '1 day', edited = %s where id = %s""", i < 15, m)
     assert len(db.all(cur, sql)) == 1
+
+
+def test_a_draft_with_an_unsupported_claim_goes_back_and_never_sends_on_its_own(cur, scene, monkeypatch):  # noqa: F811
+    from outbound import llm
+    real = llm.run
+
+    def run(cur, task, payload, **kw):
+        if task == "check_claims":
+            return {"sentences": [{"index": 0, "supported": False, "why": "assumes they rebuild invoices by hand"}]}
+        return real(cur, task, payload, **kw)
+
+    monkeypatch.setattr(llm, "run", run)
+    failures = outreach.check_claims(cur, {"sentences": [{"text": "Your team rebuilds invoices by hand."}]}, {1: "Hiring."}, "Test Co")
+    assert failures and failures[0]["code"] == "unsupported_about_them"

@@ -146,18 +146,28 @@ export function Accounts() {
   const [, params] = usePath();
   const view = (params.get("view") || "priority") as "priority" | "in_play" | "rising" | "all";
   const [q, setQ] = useState(params.get("q") || "");
-  const { data, error, reload } = useData<any>(`/api/accounts?view=${view}${params.get("q") ? `&q=${encodeURIComponent(params.get("q")!)}` : ""}`);
+  const page = Math.max(1, Number(params.get("page") || 1));
+  const { data, error, reload } = useData<any>(`/api/accounts?view=${view}&page=${page}${params.get("q") ? `&q=${encodeURIComponent(params.get("q")!)}` : ""}`);
+  const pages = data ? Math.max(1, Math.ceil(data.total / data.per_page)) : 1;
+  const first = data ? (page - 1) * data.per_page + 1 : 0;
+  const last = data ? Math.min(page * data.per_page, data.total) : 0;
   return (
     <div className="page">
       <div className="head">
-        <div><h1>Accounts</h1></div>{data ? <Fig value={data.accounts.length < data.total ? `${data.accounts.length} of ${n0(data.total)}` : n0(data.total)} label="Accounts" sm /> : null}
+        <div><h1>Accounts</h1></div>{data ? <Fig value={n0(data.total)} label="Accounts" sm /> : null}
       </div>
       <div className="toolbar">
-        <Seg label="Which accounts" value={view} onChange={(v) => navigate(withParam("view", v === "priority" ? null : v), true)}
+        <Seg label="Which accounts" value={view} onChange={(v) => {
+            // A new view starts again at page 1.
+            const u = new URL(window.location.href);
+            u.searchParams.delete("page");
+            if (v === "priority") u.searchParams.delete("view"); else u.searchParams.set("view", v);
+            navigate(u.pathname + (u.search || ""), true);
+          }}
           options={[["priority", "Fit our profile"], ["in_play", "In a play"], ["rising", "Rising this week"], ["all", "All"]]} />
         <form onSubmit={(e) => e.preventDefault()}>
           <input className="input" style={{ width: 240 }} type="search" placeholder="Company or domain" value={q} aria-label="Search accounts"
-            onChange={(e) => { const v = e.target.value; setQ(v); window.clearTimeout((window as any).__acctq); (window as any).__acctq = window.setTimeout(() => navigate(withParam("q", v.trim() || null), true), 220); }} />
+            onChange={(e) => { const v = e.target.value; setQ(v); window.clearTimeout((window as any).__acctq); (window as any).__acctq = window.setTimeout(() => (() => { const u = new URL(window.location.href); u.searchParams.delete("page"); if (v.trim()) u.searchParams.set("q", v.trim()); else u.searchParams.delete("q"); navigate(u.pathname + (u.search || ""), true); })(), 220); }} />
         </form>
       </div>
       {error ? <Failed error={error} retry={reload} /> : !data ? <Loading rows={12} /> : data.accounts.length === 0 ? <Empty title="No accounts match" /> : (
@@ -184,6 +194,16 @@ export function Accounts() {
           })}
         </div>
       )}
+      {data && data.total > data.per_page ? (
+        <nav className="pager" aria-label="Pages of accounts">
+          <span className="mute small">{n0(first)} to {n0(last)} of {n0(data.total)}</span>
+          <span className="pager-buttons">
+            <button className="btn line sm" disabled={page <= 1} onClick={() => { navigate(withParam("page", page - 1 <= 1 ? null : String(page - 1)), true); window.scrollTo(0, 0); }}>Previous</button>
+            <span className="small">Page {page} of {pages}</span>
+            <button className="btn line sm" disabled={page >= pages} onClick={() => { navigate(withParam("page", String(page + 1)), true); window.scrollTo(0, 0); }}>Next</button>
+          </span>
+        </nav>
+      ) : null}
     </div>
   );
 }

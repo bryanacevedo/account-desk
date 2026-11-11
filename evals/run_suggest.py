@@ -45,8 +45,11 @@ def load(name: str) -> list[dict]:
 
 
 def run_case(cur, c: dict) -> dict:
-    out = llm.run(cur, "suggest_reply", {"label": c["label"], "cleaned": c["cleaned"], "first_name": c.get("first_name")})
-    body = out["body"]
+    # The desk's own path: the model writes, code checks, one rewrite, then nothing rather than an invention.
+    body = replies.suggest(cur, c["label"], c["cleaned"], c.get("first_name"))
+    if body is None:
+        return {"id": c["id"], "tags": c.get("tags", []), "body": "(withheld: the SDR writes their own)", "words": 0,
+                "code": {}, "judge": None, "why": {}, "passed": False, "withheld": True}
     e = c.get("expect", {})
     words = len(body.split())
     times = len({m.group(0).lower() for m in TIME.finditer(body)})
@@ -63,23 +66,28 @@ def run_case(cur, c: dict) -> dict:
               {"suggested_reply": body}, CRITERIA)
     judged = {k: v["passed"] for k, v in j.items() if not k.startswith("_")} if j else None
     passed = all(code.values()) and (judged is None or all(judged.values()))
-    return {"id": c["id"], "tags": c.get("tags", []), "body": body, "words": words, "code": code, "judge": judged,
+    return {"id": c["id"], "tags": c.get("tags", []), "body": body, "words": words, "code": code, "judge": judged, "withheld": False,
             "why": {k: v["why"] for k, v in j.items() if not k.startswith("_") and not v["passed"]} if j else {},
             "passed": passed}
 
 
 def report(rows: list[dict]) -> tuple[str, dict]:
     n = len(rows)
-    judged = [r for r in rows if r["judge"] is not None]
+    offered = [r for r in rows if not r["withheld"]]
+    judged = [r for r in offered if r["judge"] is not None]
+    invented = [r for r in judged if not r["judge"]["no_invention"] or not r["judge"]["respects_case"]]
     scores = {"suggest_pass": sum(r["passed"] for r in rows) / n if n else 0,
-              "suggest_no_invention": sum(r["judge"]["no_invention"] for r in judged) / len(judged) if judged else 1.0}
+              # What reaches an SDR: a suggestion withheld invents nothing; one offered must invent nothing.
+              "suggest_no_invention": 1 - len(invented) / n if n else 1.0}
     lines = ["# Suggested-reply eval", "",
              f"{n} cases written independently of the code. Graded by code and by a {('Claude Sonnet 5.5')} judge "
              f"({len(judged)} judged).", "",
              "| Check | Result |", "|---|---|",
-             f"| Passes every check | {rate(sum(r['passed'] for r in rows), n)} |"]
-    for k in rows[0]["code"] if rows else []:
-        lines.append(f"| Code: {k.replace('_', ' ')} | {rate(sum(r['code'][k] for r in rows), n)} |")
+             f"| Offered and passes every check | {rate(sum(r['passed'] for r in rows), n)} |",
+             f"| Withheld after failing the code check twice (the SDR writes their own) | {rate(n - len(offered), n)} |",
+             f"| Offered with something invented, by the judge | {len(invented)} of {n} |"]
+    for k in offered[0]["code"] if offered else []:
+        lines.append(f"| Code: {k.replace('_', ' ')} | {rate(sum(r['code'][k] for r in offered), len(offered))} |")
     for cid, _ in CRITERIA:
         lines.append(f"| Judge: {cid.replace('_', ' ')} | {rate(sum(r['judge'][cid] for r in judged), len(judged))} |")
     lines += ["", "## Every suggestion", ""]

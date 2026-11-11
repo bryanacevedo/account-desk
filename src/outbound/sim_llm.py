@@ -232,3 +232,9 @@ def extract(p: dict) -> dict:
         elif any(w in low for w in ("need", "want", "close", "audit", "board")):
             items.append({"kind": "reason_to_buy", "text": ln[:120], "quote": ln})
     return {"items": items[:8]}
+
+
+@sim("check_claims")
+def check_claims(p: dict) -> dict:
+    """The stand-in trusts its own drafts, which only restate facts."""
+    return {"sentences": [{"index": i, "supported": True, "why": ""} for i, _ in enumerate(p["sentences"])]}

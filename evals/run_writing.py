@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # judge.py and thresho
 from judge import judge, rate  # noqa: E402
 
 from outbound import copy_gate, db, llm, sim_llm  # noqa: F401  (sim_llm registers the stand-in)
-from outbound.outreach import PRIVATE_SIGNALS, limits_for
+from outbound.outreach import PRIVATE_SIGNALS, check_claims, limits_for
 
 HERE = Path(__file__).resolve().parent
 NOTE_LIMIT = 200
@@ -88,6 +88,10 @@ def draft(cur, c: dict) -> dict:
                                   other_bodies=[], private_ids=set(c["private_ids"]),
                                   channel="linkedin" if linkedin else "email",
                                   max_chars=NOTE_LIMIT if c["job"] == "connect" else None)
+        if verdict.passed:  # the second check, as in the desk: every sentence about them read against the facts
+            unsupported = check_claims(cur, out, facts, c["company"])
+            if unsupported:
+                verdict = copy_gate.Verdict(passed=False, failures=unsupported, words=verdict.words)
         attempts.append(verdict.passed)
         if attempt == 1:
             first_codes = [f["code"] for f in verdict.failures]

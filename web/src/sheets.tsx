@@ -1193,7 +1193,7 @@ export function PlaySheet({ id }: { id: number }) {
           <Bar label="Meeting" value={f.meetings} of={f.proposed} hint={pct(f.proposed ? f.meetings / f.proposed : 0)} tone="accent" />
         </div>
       </Section>}
-      {p.status === "draft" ? null : <><Section title="Meetings: contacted against held back"><LiftBlock lift={lift} /></Section>
+      {p.status === "draft" ? null : <><Section title="Is this play creating meetings?"><LiftBlock lift={lift} holdoutPct={p.holdout_pct} /></Section>
       <PlayAccounts id={id} /></>}
       <Section title="Trigger">
         <dl className="kv">
@@ -1319,20 +1319,31 @@ function PlayAccounts({ id }: { id: number }) {
 
 export const STAGE: Record<string, string> = { research: "SDR writes everything", draft: "SDR approves every email", supervised: "SDR approves first emails only", autonomous: "Desk sends to tier B on its own" };
 
-export function LiftBlock({ lift }: { lift: any }) {
+/** Does the play cause meetings? Accounts it worked against a random share it never contacted. Said in words a
+ *  new hire can read: the two rates, then a verdict, or how much longer until there is one. */
+export function LiftBlock({ lift, holdoutPct = 20 }: { lift: any; holdoutPct?: number }) {
   const t = lift.treated, h = lift.holdout;
+  const share = Math.max(1, Math.round(100 / Math.max(1, holdoutPct)));
+  const more = lift.still_needed?.holdout || 0;
   return (
-    <div style={{ display: "grid", gap: 14 }}>
-      <div className="bars">
-        <Bar label="Offered a play" value={t.rate || 0} of={1} shown={pct(t.rate, 1)} hint={`${t.meetings} of ${t.accounts}`} tone="accent" />
-        <Bar label="Held back" value={h.rate || 0} of={1} shown={pct(h.rate, 1)} hint={`${h.meetings} of ${h.accounts}`} tone="soft" />
+    <div className="lift">
+      <p className="lift-why">1 in {share} accounts this play would work is held back and never contacted. If the worked
+        accounts book more meetings, the play is the reason.</p>
+      <div className="lift-pair">
+        <div><b>{pct(t.rate, 0)}</b><span>of worked accounts booked a meeting <span className="mute">({t.meetings} of {t.accounts})</span></span></div>
+        <div><b>{pct(h.rate, 0)}</b><span>of held-back accounts booked one anyway <span className="mute">({h.meetings} of {h.accounts})</span></span></div>
       </div>
       {lift.enough && lift.difference !== null ? (
-        <div className="figs">
-          <Fig value={`${lift.difference >= 0 ? "+" : ""}${pct(lift.difference, 1)}`} label="Difference" sm />
-          <Fig value={`${pct(lift.interval[0], 1)} to ${pct(lift.interval[1], 1)}`} label="Likely range" sm />
+        <Status kind={lift.interval[0] > 0 ? "ok" : "off"}>
+          {lift.interval[0] > 0 ? `Worked accounts meet ${pct(lift.difference, 0)} more often (likely ${pct(lift.interval[0], 0)} to ${pct(lift.interval[1], 0)})`
+            : "No clear difference yet: the play may not be adding meetings"}
+        </Status>
+      ) : (
+        <div className="lift-verdict">
+          <Status kind="wait" title="With this few accounts, a difference could be luck.">Too early to tell</Status>
+          <span className="mute small">About {n0(more * share)} more accounts offered this play, so {n0(more)} more are held back.</span>
         </div>
-      ) : <div className="small mute">Too few accounts to compare yet: {n0(lift.still_needed.holdout)} more held back needed.</div>}
+      )}
     </div>
   );
 }
@@ -1341,15 +1352,15 @@ export function LiftBlock({ lift }: { lift: any }) {
 export function Comparison({ rows }: { rows: [string, any][] }) {
   return (
     <div className="ledger">
-      <div className="row head" style={{ gridTemplateColumns: CMP }}><span>Accounts with any</span><span className="num">Offered a play</span><span className="num">Held back</span><span className="num">Difference</span></div>
+      <div className="row head" style={{ gridTemplateColumns: CMP }}><span>Accounts with any</span><span className="num">Worked</span><span className="num">Held back, never contacted</span><span className="num">Difference</span></div>
       {rows.map(([label, l]) => (
         <div key={label} className="row" style={{ gridTemplateColumns: CMP }}>
           <span className="cell-main"><span className="t">{label}</span></span>
-          <span className="num" data-label="Offered a play">{pct(l.treated.rate, 1)} <span className="mute small">{l.treated.meetings} of {l.treated.accounts}</span></span>
+          <span className="num" data-label="Worked">{pct(l.treated.rate, 1)} <span className="mute small">{l.treated.meetings} of {l.treated.accounts}</span></span>
           <span className="num" data-label="Held back">{pct(l.holdout.rate, 1)} <span className="mute small">{l.holdout.meetings} of {l.holdout.accounts}</span></span>
           <span className="num" data-label="Difference">{l.enough && l.difference !== null
             ? <>{l.difference >= 0 ? "+" : ""}{pct(l.difference, 1)} <span className="mute small">likely {pct(l.interval[0], 1)} to {pct(l.interval[1], 1)}</span></>
-            : <span className="mute small">{n0(l.still_needed.holdout)} more held back needed</span>}</span>
+            : <span className="mute small" title="With this few accounts, a difference could be luck.">Too early to tell</span>}</span>
         </div>
       ))}
     </div>
