@@ -498,7 +498,8 @@ async def webhook_meeting(request: Request) -> dict:
         if b.starts_at is None:
             raise HTTPException(422, "A booking needs starts_at.")
         if existing:
-            db.run(cur, "update meetings set starts_at = %s, status = 'booked' where id = %s", b.starts_at, existing["id"])
+            # A reschedule moves a booked meeting; one that happened or was cancelled stays as it is.
+            db.run(cur, "update meetings set starts_at = %s where id = %s and status = 'booked'", b.starts_at, existing["id"])
             return {"ok": True, "meeting_id": existing["id"]}
         p = db.one(cur, "select id, account_id from people where email = %s", b.invitee_email.strip().lower())
         account_id = p["account_id"] if p else signals.resolve_account(cur, b.invitee_email.split("@")[-1], None)[0]
@@ -534,17 +535,22 @@ class Suppression(BaseModel):
 @app.post("/api/suppressions")
 def add_suppression(body: Suppression, u: dict = Depends(writer)) -> dict:
     """Do not contact, added by a person: takes effect on the next send check, and the send trigger enforces it."""
+    if u["role"] == "sdr" and body.kind in ("domain", "account"):
+        raise HTTPException(403, "Blocking a whole company is for a manager or GTM.")
     with db.tx() as cur:
         value = body.value.strip().lower()
         db.run(cur, "insert into suppressions (kind, value, reason, source) values (%s,%s,%s,%s)",
                body.kind, value, body.reason, f"person:{u['id']}")
-        if body.kind in ("person", "email", "domain"):
+        if body.kind in ("person", "email", "domain", "account"):
             people = db.all(cur, """select id from people where (%s = 'person' and id::text = %s) or (%s = 'email' and email = %s)
-                                    or (%s = 'domain' and split_part(email, '@', 2) = %s)""",
-                            body.kind, value, body.kind, value, body.kind, value)
+                                    or (%s = 'domain' and split_part(email, '@', 2) = %s)
+                                    or (%s = 'account' and account_id::text = %s)""",
+                            body.kind, value, body.kind, value, body.kind, value, body.kind, value)
             for p in people:
                 for e in db.all(cur, "select id from enrollments where person_id = %s and state in ('pending','active','paused')", p["id"]):
                     outreach.stop_enrollment(cur, e["id"], "suppressed")
+                db.run(cur, """update tasks set status = 'skipped', done_at = app_now(), note = 'Closed: do not contact'
+                               where person_id = %s and status = 'open'""", p["id"])
         audit.log(cur, "person", "suppressed", body.kind, None, {"value": value, "reason": body.reason}, actor_id=u["id"])
     return {"ok": True}
 
@@ -941,6 +947,11 @@ def edit_play(play_id: int, body: play_editor.PlayIn, u: dict = Depends(writer))
         _play_in(cur, body)
         # A live play's words can change; who it reaches, when, and how many are held back change only after a
         # manager pauses it, so the comparison group is not reshuffled mid-measurement without anyone deciding to.
+        in_flight = db.val(cur, """select count(*) from enrollments e join account_plays ap on ap.id = e.account_play_id
+                                   where ap.play_id = %s and e.state in ('pending','active','paused')""", play_id)
+        if in_flight and p["sequence"] != [x.model_dump() for x in body.sequence]:
+            raise HTTPException(409, f"{in_flight} people are part-way through this sequence. Write a new play for the new "
+                                     "steps, or wait until they finish.")
         if p["status"] == "live":
             moved = [k for k, new in (("trigger", body.trigger.model_dump()), ("sequence", [x.model_dump() for x in body.sequence]),
                                       ("personas", body.personas), ("max_people", body.max_people),

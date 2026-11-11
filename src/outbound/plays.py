@@ -263,7 +263,8 @@ def autonomy_watch(cur, payload: dict) -> None:
                                      and d.event = 'bounced_hard') as bounced""", p["id"])
         last = db.all(cur, """select m.edited from messages m join enrollments e on e.id = m.enrollment_id
                               join account_plays ap on ap.id = e.account_play_id
-                              where ap.play_id = %s and m.approval_mode = 'person' order by m.approved_at desc limit 20""", p["id"])
+                              where ap.play_id = %s and m.approval_mode = 'person' and m.channel = 'email'
+                              order by m.approved_at desc limit 20""", p["id"])
         if complaints:
             why = "A spam complaint"
         elif day["sent"] >= 50 and day["bounced"] / day["sent"] > 0.03:

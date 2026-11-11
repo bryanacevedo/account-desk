@@ -221,11 +221,16 @@ def person(cur, person_id: int) -> dict | None:
     sigs = db.all(cur, """select s.id, s.type_key, t.label, s.observed_at, s.evidence from signals s
                           join signal_types t on t.key = s.type_key where s.person_id = %s order by s.observed_at desc limit 20""",
                   person_id)
+    from .privacy import linkedin_hash
     blocked = db.all(cur, """select kind, reason, created_at from suppressions
                              where (expires_at is null or expires_at > app_now()) and (
                                (kind = 'person' and value = %s) or (kind = 'email' and value = %s) or (kind = 'phone' and value = %s)
-                               or (kind = 'domain' and value = split_part(%s, '@', 2)))""",
-                     str(person_id), p["email"] or "", p["phone"] or "", p["email"] or "")
+                               or (kind = 'domain' and value = split_part(%s, '@', 2))
+                               or (kind = 'account' and value = %s)
+                               or (kind = 'email_hash' and %s <> '' and value = encode(sha256(convert_to(%s, 'UTF8')), 'hex'))
+                               or (kind = 'linkedin_hash' and value = %s))""",
+                     str(person_id), p["email"] or "", p["phone"] or "", p["email"] or "", str(p["account_id"] or ""),
+                     p["email"] or "", p["email"] or "", linkedin_hash(p["linkedin_url"]) if p["linkedin_url"] else "")
     waiting = db.all(cur, """select 'task' as kind, t.id, t.kind as what, t.title as label, t.due_at as at from tasks t
                              where t.person_id = %s and t.status = 'open'
                              union all
@@ -492,7 +497,7 @@ def results(cur, *, money: bool) -> dict:
         join accounts a on a.id = m.account_id left join plays p on p.id = l.play_id
         group by l.kind, l.text order by calls desc, last_at desc""")
     # Each channel judged on its own terms over 90 days: people reached there, how many answered there, and meetings
-    # within 30 days of their first touch there. A person reached on two channels counts in both.
+    # within 60 days of their first touch there. A person reached on two channels counts in both.
     channels = db.all(cur, """
         with first_out as (
           select channel, person_id, min(at) as first_at from touches

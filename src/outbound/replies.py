@@ -33,6 +33,8 @@ OOO = re.compile(r"\b(out of (the )?office|on (annual )?leave|automatic reply|au
                  r"fuera de la oficina|absent du bureau|ausente)\b", re.I)
 BOUNCE_FROM = re.compile(r"^(mailer-daemon|postmaster)@", re.I)
 LEFT = re.compile(r"\b(no longer (with|at)|has left the company|left the company|is no longer employed)\b", re.I)
+NOT_COMPANY = {"New", "San", "Los", "Las", "Finance", "Sales", "Marketing", "Engineering", "Operations", "Legal", "The",
+               "London", "Paris", "Berlin", "Madrid", "Toronto", "Chicago", "Boston", "Austin", "Denver", "Seattle"}
 # Only a company the person actually named: "I'm now at Kestrel Health." Nothing is guessed.
 NEW_CO = re.compile(r"\b(?:now at|now with|joined|moved to)\s+([A-Z][\w&'-]*(?:\s+[A-Z][\w&'-]*){0,3})")
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
@@ -194,7 +196,7 @@ def classify_job(cur, payload: dict) -> None:
         by = "rules"
         if label == "left_company":
             m = NEW_CO.search(r["cleaned"])
-            if m:
+            if m and m.group(1).strip().split()[0] not in NOT_COMPANY:
                 extracted["new_company"] = m.group(1).strip()
         if label == "out_of_office":
             extracted["return_date"] = None
@@ -412,7 +414,7 @@ def _moved_signal(cur, r: dict, person_id: int) -> None:
         "type": "champion_moved" if p["is_champion"] else "job_change", "external_id": f"reply-{r['id']}",
         "observed_at": r["received_at"], "company": new_company, "strength": 0.8,
         "person": {"email": p["email"], "linkedin_url": p["linkedin_url"]},
-        "evidence": {"summary": f"{p['full_name']} joined {new_company}.", "quote": r["cleaned"][:300]}}])
+        "evidence": {"summary": f"Someone we spoke with joined {new_company}.", "quote": r["cleaned"][:300]}}])
 
 
 def _next_for_persona(cur, person_id: int, ap: dict | None) -> None:

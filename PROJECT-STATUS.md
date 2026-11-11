@@ -20,6 +20,7 @@ Checked on 2026-11-11 by running them:
 ## Reviews
 
 - Spec: goldfish review against its sources and the build checklist, a real-world review against how strong teams run signal-based outbound in 2026, and a re-review after the blockers were fixed. 49 findings, all resolved in spec section 22.
+- Second code review (fresh, 2026-11-11, everything since the first publish): "ship after fixes", no blocker, 10 majors (erased people could be re-imported or stay named in signals, a stopped person's call task stayed open and calls skipped the contact rules, a connected call could cost a play its sourced credit, the CRM owner cursor could skip bulk changes, a reply could point the desk at any address, the play-cap alert and live AI charges were lost on rollback, the cap check relied on the caller's locks, a sequence could change under people in it, the CRM could hand accounts back to someone who left). All fixed with regression tests (`tests/test_review_fixes.py`), plus most minors; the tests also found that erasing someone whose signal had only a quote would have failed.
 - Code: one fresh reviewer, verdict "do not ship" with 11 blocking findings (double-send on a crash mid-send, jobs stranded in running, plays that could stay open forever, a customer turned back into a prospect by a lost expansion deal, a spoofable login header, a default webhook secret, failed drafts approvable unchanged, wrong influenced attribution, and others). All 11 fixed with regression tests, plus most non-blocking items (commit `9b055c4`). A second code review has not run.
 
 - Design: one fresh hands-on reviewer drove every page and panel at 1440 and 375 wide (2026-11-11): "not ready to show", 3 blockers (phone rows, broken draft grammar, panels scrolling sideways), 14 major (explanatory sentences, jargon, numbers shown twice, two names for one thing, decorative dots, phone navigation, Approve and Reject behaving differently, losing the tab on Back, team work labelled as yours) and nits. All blockers and majors fixed and checked at both widths; checking at 375 also found a tab strip that collapsed to 1px and a page that grew to 402px wide, both fixed. Bryan's own review: "best design work so far", with comments to come.
@@ -43,7 +44,7 @@ Checked on 2026-11-11 by running them:
 
 1. Live vendor adapters beyond DNS (people search, finder, verifier, mail provider, seed tests, CRM, Slack), with `docs/INTEGRATIONS.md`; a delivery-event webhook for complaints and soft bounces.
 2. Tests for the time-based play exits, auto-approve and demotion, CRM push retries and SLA escalation.
-3. Whatever the second fresh code review (running 2026-11-11) finds.
+3. From the second code review, left open: the trigger still trusts the cap value the sending code writes; deals on accounts the desk does not know are passed over by the CRM cursor and not re-read after an import.
 
 ## Done since the first review (2026-11-11)
 

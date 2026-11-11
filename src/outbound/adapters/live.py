@@ -30,8 +30,10 @@ class DohDns:
         dkim = [t for t in _txt(f"{dkim_selector}._domainkey.{domain}") if "p=" in t] if dkim_selector else []
         tags = dict(kv.strip().split("=", 1) for kv in dmarc[0].split(";") if "=" in kv) if dmarc else {}
         policy = tags.get("p", "").strip().lower() or None
-        # Relaxed alignment holds when the mail is signed with this domain's own DKIM key, which is what we check.
-        aligned = bool(dkim) and tags.get("adkim", "r").strip().lower() in ("r", "s")
+        # Alignment as far as DNS can show it: the domain publishes its own DKIM key under the selector the mail
+        # provider signs with, so mail signed with it aligns with the From domain. Whether the provider really signs
+        # with that key is only visible in a sent message's headers (a seed test checks that).
+        aligned = bool(dkim)
         return DnsResult(domain, len(spf) == 1, bool(dkim), bool(dmarc),
                          policy if policy in ("none", "quarantine", "reject") else None, aligned and bool(dmarc), None,
                          {"spf": spf, "dmarc": dmarc, "dkim_selector": dkim_selector, "dkim_found": bool(dkim),

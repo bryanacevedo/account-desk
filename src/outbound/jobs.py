@@ -61,7 +61,8 @@ def _play_of(cur, payload: dict) -> int | None:
                               order by e.created_at desc limit 1""", payload["person_id"])
     if payload.get("reply_id"):
         return db.val(cur, """select ap.play_id from replies r join account_plays ap on ap.account_id = r.account_id
-                              where r.id = %s and ap.state in ('approving','active','engaged') limit 1""", payload["reply_id"])
+                              where r.id = %s and ap.state in ('approving','active','engaged','meeting')
+                              order by ap.proposed_at desc limit 1""", payload["reply_id"])
     return None
 
 

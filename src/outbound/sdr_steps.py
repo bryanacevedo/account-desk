@@ -129,6 +129,13 @@ def complete(cur, task_id: int, *, user: dict, outcome: str, text: str | None = 
         # A research-stage play: the SDR wrote this email themselves. It is outreach, so it is recorded as such.
         touch_kind = "sdr_email"
     elif t["kind"] == "call" and outcome != "skipped":
+        # Someone who opted out, asked for no calls or was erased is not called, whatever the task list says.
+        blocked = [r for r in gate.person_reasons(cur, t["person_id"], "call") if r.permanent and r.code in
+                   ("suppressed", "person_left", "person_unreachable")]
+        if blocked:
+            db.run(cur, "update tasks set status = 'skipped', done_at = app_now(), note = %s where id = %s",
+                   f"Not called: {blocked[0].message}", task_id)
+            raise ValueError(f"The desk refused this: {blocked[0].message}. The task is closed.")
         touch_kind = f"call_{outcome}"
         if outcome == "wrong_number":
             db.run(cur, "update people set phone_status = 'invalid' where id = %s", t["person_id"])
@@ -159,6 +166,16 @@ def in_conversation(cur, person_id: int, account_play_id: int | None) -> None:
                    where person_id = %s and state in ('pending', 'active', 'paused')""", person_id)
     db.run(cur, """update messages set status = 'cancelled' where status in ('approved', 'scheduled', 'awaiting_approval',
                    'failed_gate', 'draft') and enrollment_id in (select id from enrollments where person_id = %s)""", person_id)
+    # They are talking to us: the play is engaged, as after a positive reply, so a meeting booked later still
+    # belongs to it and can be credited to it.
+    if account_play_id:
+        from . import plays
+        state = db.val(cur, "select state from account_plays where id = %s", account_play_id)
+        if state == "approving":
+            plays.set_state(cur, account_play_id, "active")
+            state = "active"
+        if state == "active":
+            plays.set_state(cur, account_play_id, "engaged")
 
 
 def connection_accepted(cur, person_id: int, *, user_id: int | None, source: str = "sdr") -> None:

@@ -191,10 +191,12 @@ class SimCrm:
                         r["updated_at"], r["closed_at"], r["won"], r["loss_reason"], r["contact_email"]) for r in rows]
 
     def owners_changed(self, cur, since, limit: int) -> list[CrmOwner]:
+        ts, _, last = (since or "").partition("|")
         rows = db.all(cur, """select c.*, a.primary_domain from sim_crm_owner_changes c join accounts a on a.id = c.account_id
-                              where c.updated_at > coalesce(%s::timestamptz, '-infinity') and c.updated_at <= app_now()
-                              order by c.updated_at, c.id limit %s""", since, limit)
-        return [CrmOwner(r["primary_domain"], r["owner_email"], r["updated_at"]) for r in rows]
+                              where (c.updated_at, lpad(c.id::text, 12, '0')) > (coalesce(nullif(%s, '')::timestamptz, '-infinity'), %s)
+                                and c.updated_at <= app_now()
+                              order by c.updated_at, c.id limit %s""", ts, last, limit)
+        return [CrmOwner(r["primary_domain"], r["owner_email"], r["updated_at"], str(r["id"]).zfill(12)) for r in rows]
 
     def push(self, cur, kind: str, payload: dict, idempotency_key: str) -> str:
         rng = random.Random(f"crm:{idempotency_key}:{db.val(cur, 'select attempts from crm_outbox where idempotency_key = %s', idempotency_key)}")

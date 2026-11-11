@@ -153,6 +153,13 @@ def enroll_referral(cur, payload: dict) -> None:
     account = db.one(cur, "select * from accounts where id = %s", r["account_id"])
     referrer = db.val(cur, "select full_name from people where id = %s", r["person_id"]) or "A colleague"
     email = (ref.get("email") or "").strip().lower() or None
+    # An address in a reply is untrusted: it is used only when it is at this account's own domain.
+    if email and not db.val(cur, "select exists (select 1 from account_domains where account_id = %s and domain = %s)",
+                            account["id"], email.split("@")[-1]):
+        email = None
+    from .privacy import erased
+    if erased(cur, email=email, linkedin_url=None):
+        return
     pid = db.val(cur, "select id from people where email = %s", email) if email else None
     pid = pid or db.val(cur, "select id from people where account_id = %s and lower(full_name) = lower(%s)", account["id"], name)
     if pid is None:
@@ -672,6 +679,11 @@ def stop_enrollment(cur, enrollment_id: int, reason: str, *, close_play: bool = 
                    where id = %s and state in ('pending', 'active', 'paused')""", reason, enrollment_id)
     db.run(cur, """update messages set status = 'cancelled' where enrollment_id = %s
                    and status in ('draft', 'failed_gate', 'awaiting_approval', 'approved', 'scheduled')""", enrollment_id)
+    # Their open call and LinkedIn tasks in this play close too: a stopped person is not called tomorrow.
+    db.run(cur, """update tasks set status = 'skipped', done_at = app_now(), note = 'Closed: their sequence stopped'
+                   where status = 'open' and kind in ('call', 'linkedin_connect', 'linkedin_message')
+                   and (person_id, account_play_id) = (select person_id, account_play_id from enrollments where id = %s)""",
+           enrollment_id)
     if close_play:
         from . import plays
         plays.close_if_empty(cur, db.val(cur, "select account_play_id from enrollments where id = %s", enrollment_id))
@@ -724,6 +736,7 @@ def due_steps(cur, payload: dict) -> None:
                           where e.state = 'active' and e.next_at <= app_now() for update of e skip locked""")
     for e in rows:
         if e["step_index"] >= len(e["sequence"]):
+            db.run(cur, "update enrollments set state = 'done', next_at = null where id = %s", e["id"])
             continue
         step = e["sequence"][e["step_index"]]
         if step["by"] == "sdr":

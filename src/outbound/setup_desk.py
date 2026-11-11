@@ -206,6 +206,10 @@ def import_people(cur, text: str) -> dict:
         if email and "@" not in email:
             refused.append({"row": i, "why": "email is not an address"})
             continue
+        from .privacy import erased
+        if erased(cur, email=email, linkedin_url=r.get("linkedin_url") or None):
+            refused.append({"row": i, "why": "this person was erased on request and is never added again"})
+            continue
         existing = db.val(cur, "select id from people where email = %s", email) if email else None
         if existing is None and r.get("linkedin_url"):
             existing = db.val(cur, "select id from people where linkedin_url = %s", r["linkedin_url"])

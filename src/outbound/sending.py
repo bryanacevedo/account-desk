@@ -113,6 +113,11 @@ def send_one(cur, payload: dict) -> None:
     # Record today's cap where the trigger can check it (guarantee 8), under the lock taken above.
     db.run(cur, "update mailboxes set cap_today = %s, cap_day = app_now()::date where id = %s",
            outreach.mailbox_capacity(cur, mailbox), mailbox["id"])
+    # In live mode the desk sends only with a configured mail provider and LIVE_SEND set; otherwise it waits,
+    # instead of handing mail to nobody and counting it against the cap.
+    if CONFIG.mode == "live" and (not CONFIG.live_send or getattr(adapters.get().email, "name", "").startswith("missing:")):
+        later(now + timedelta(days=1), "sending is not switched on" if not CONFIG.live_send else "no mail provider configured")
+        return
     # The trigger is the last check. A refusal here means a rule changed between the gate and now.
     try:
         with cur.connection.transaction():

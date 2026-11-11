@@ -55,10 +55,12 @@ def check_play(cur, vendor: str, qty: float) -> None:
         return
     if play_month_used(cur, pid, vendor) + qty > float(caps[key]):
         month = db.val(cur, "select to_char(app_now(), 'YYYY-MM')")
-        alerts.raise_alert(cur, kind="play_budget", severity="warn", channel="#outbound-ops", target_user=p["launched_by"],
-                           title=f"{p['name']} reached its monthly cap for {vendor}",
-                           body="It takes no new accounts until next month. Raise the cap on the play to continue.",
-                           object_kind="play", object_id=pid, dedup_key=f"play_budget:{pid}:{vendor}:{month}")
+        # On its own connection: the job that hit the cap rolls back, and the manager must still hear of it.
+        with db.pool().connection() as own, own.transaction(), own.cursor() as c:
+            alerts.raise_alert(c, kind="play_budget", severity="warn", channel="#outbound-ops", target_user=p["launched_by"],
+                               title=f"{p['name']} reached its monthly cap for {vendor}",
+                               body="It takes no new accounts until next month. Raise the cap on the play to continue.",
+                               object_kind="play", object_id=pid, dedup_key=f"play_budget:{pid}:{vendor}:{month}")
         raise PlayOverBudget(f"{p['name']}: {vendor}")
 
 
@@ -118,6 +120,8 @@ def paid_call(cur, adapter: str, operation: str, *, vendor: str, qty: float, pur
 
 def charge_llm(cur, *, model: str, input_tokens: int, output_tokens: int, cost_cents: float, purpose: str,
                account_id: int | None = None) -> None:
-    db.run(cur, "insert into ledger (vendor, unit, qty, cost_cents, purpose, account_id, play_id) values "
-                "('anthropic', 'tokens', %s, %s, %s, %s, %s)", input_tokens + output_tokens, cost_cents, purpose, account_id,
-           current_play.get())
+    # Anthropic billed the call whether or not the job that made it later rolls back: recorded on its own connection.
+    with db.pool().connection() as own, own.transaction(), own.cursor() as c:
+        db.run(c, "insert into ledger (vendor, unit, qty, cost_cents, purpose, account_id, play_id) values "
+                  "('anthropic', 'tokens', %s, %s, %s, %s, %s)", input_tokens + output_tokens, cost_cents, purpose, account_id,
+               current_play.get())

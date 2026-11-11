@@ -199,7 +199,7 @@ def apply_owner(cur, account_id: int, owner_email: str) -> str:
     email = owner_email.strip().lower()
     a = db.one(cur, "select id, name, owner_id from accounts where id = %s for update", account_id)
     db.run(cur, "update accounts set crm_owner_email = %s where id = %s", email, account_id)
-    new = db.one(cur, "select id, name, role from users where email = %s", email)
+    new = db.one(cur, "select id, name, role from users where email = %s and active", email)
     if new is None or new["role"] != "sdr":
         alerts.raise_alert(cur, kind="owner_not_on_desk", severity="info", channel="#outbound-ops",
                            title=f"{a['name']} now belongs to {email} in the CRM",
@@ -246,9 +246,8 @@ def crm_sync(cur, payload: dict) -> None:
     if since:
         db.run(cur, """insert into settings (key, value) values ('crm_cursor', %s)
                        on conflict (key) do update set value = excluded.value""", J(since))
-    if unknown:
-        db.run(cur, """insert into settings (key, value) values ('crm_unknown_accounts', %s)
-                       on conflict (key) do update set value = excluded.value""", J(unknown))
+    db.run(cur, """insert into settings (key, value) values ('crm_unknown_accounts', %s)
+                   on conflict (key) do update set value = excluded.value""", J(unknown))
     # Owners, with their own cursor.
     from . import signals as _s
     owner_since = db.val(cur, "select value #>> '{}' from settings where key = 'crm_owner_cursor'")
@@ -258,7 +257,7 @@ def crm_sync(cur, payload: dict) -> None:
             aid, _ = _s.resolve_account(cur, o.account_domain, None)
             if aid:
                 apply_owner(cur, aid, o.owner_email)
-            owner_since = o.updated_at.isoformat() if hasattr(o.updated_at, "isoformat") else str(o.updated_at)
+            owner_since = (o.updated_at.isoformat() if hasattr(o.updated_at, "isoformat") else str(o.updated_at)) + "|" + o.change_id
         if len(batch) < 200:
             break
     if owner_since:

@@ -7,6 +7,14 @@ import hashlib
 from . import audit, db
 
 
+def erased(cur, *, email: str | None, linkedin_url: str | None) -> bool:
+    """Whether this address or profile belongs to someone erased on request: they are never added again."""
+    return bool(db.val(cur, """select exists (select 1 from suppressions where
+                                 (kind = 'email_hash' and %s <> '' and value = encode(sha256(convert_to(%s, 'UTF8')), 'hex'))
+                              or (kind = 'linkedin_hash' and value = %s))""",
+                       (email or "").lower(), (email or "").lower(), linkedin_hash(linkedin_url) if linkedin_url else ""))
+
+
 def linkedin_hash(url: str) -> str:
     """The same profile however it is written: no scheme, no www, no trailing slash, lower case."""
     u = url.strip().lower().split("://")[-1].removeprefix("www.").rstrip("/")
@@ -19,18 +27,22 @@ def erase(cur, person_id: int, *, actor_id: int | None) -> dict:
         return {"ok": False, "reason": "No such person"}
     email = (p["email"] or "").lower()
     counts = {}
-    counts["learnings"] = db.run(cur, "delete from learnings where quote ilike %s", f"%{p['full_name']}%")
+    name_like = "%" + p["full_name"].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    counts["learnings"] = db.run(cur, "delete from learnings where quote ilike %s", name_like)
     counts["replies"] = db.run(cur, "delete from replies where person_id = %s or (%s <> '' and from_addr = %s)",
                                person_id, email, email)
     counts["touches"] = db.run(cur, "delete from touches where person_id = %s", person_id)
     counts["facts"] = db.run(cur, "delete from facts where person_id = %s", person_id)
     counts["tasks"] = db.run(cur, "delete from tasks where person_id = %s", person_id)
     counts["meetings"] = db.run(cur, "delete from meetings where person_id = %s", person_id)
-    counts["signals"] = db.run(cur, "update signals set person_id = null, evidence = evidence - 'quote' where person_id = %s",
-                               person_id)
+    # The quote goes (a signal keeps a link or a quote, so it becomes a placeholder) and the name leaves the summary.
+    counts["signals"] = db.run(cur, """update signals set person_id = null, evidence = evidence
+                                         || jsonb_build_object('summary', replace(evidence->>'summary', %s, 'Someone'))
+                                         || case when evidence ? 'quote' then '{"quote": "Removed on request"}'::jsonb else '{}'::jsonb end
+                                       where person_id = %s""", p["full_name"], person_id)
     counts["deals"] = db.run(cur, "update opportunities set contact_email = null where %s <> '' and contact_email = %s", email, email)
     counts["llm_calls_by_name"] = db.run(cur, "update llm_calls set output = '{}'::jsonb where output::text ilike %s",
-                                         f"%{p['full_name']}%")
+                                         "%" + p["full_name"].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
     if p["linkedin_url"]:
         db.run(cur, "insert into suppressions (kind, value, reason, source) values ('linkedin_hash', %s, 'Erased on request', 'erasure')",
                linkedin_hash(p["linkedin_url"]))

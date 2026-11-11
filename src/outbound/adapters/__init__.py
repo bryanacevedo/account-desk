@@ -138,12 +138,13 @@ class CrmOwner:
     account_domain: str
     owner_email: str
     updated_at: object
+    change_id: str = ""  # with updated_at, the cursor: changes sharing a timestamp are never skipped
 
 
 class Crm(Protocol):
     def push(self, cur, kind: str, payload: dict, idempotency_key: str) -> str: ...
     def deals_changed(self, cur, since: str | None, limit: int) -> list[CrmDeal]: ...  # since is 'time|crm_id', oldest first
-    def owners_changed(self, cur, since, limit: int) -> list[CrmOwner]: ...  # oldest change first
+    def owners_changed(self, cur, since: str | None, limit: int) -> list[CrmOwner]: ...  # since is 'time|change_id', oldest first
 
 
 @dataclass
