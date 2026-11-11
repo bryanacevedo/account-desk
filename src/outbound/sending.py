@@ -30,8 +30,10 @@ def headers_for(message: dict, person: dict, play_key: str) -> dict:
 
 @jobs.handler("send_due")
 def send_due(cur, payload: dict) -> None:
-    ids = [r["id"] for r in db.all(cur, """select id from messages where status = 'scheduled' and scheduled_for <= app_now()
-                                           order by scheduled_for limit 200""")]
+    ids = [r["id"] for r in db.all(cur, """select m.id from messages m join enrollments e on e.id = m.enrollment_id
+                                           where m.status = 'scheduled' and m.scheduled_for <= app_now()
+                                             and e.state = 'active'
+                                           order by m.scheduled_for limit 200""")]
     for mid in ids:
         jobs.enqueue(cur, "send_one", {"message_id": mid}, dedupe_key=f"send:{mid}", max_attempts=3)
 
@@ -39,10 +41,14 @@ def send_due(cur, payload: dict) -> None:
 @jobs.handler("send_one")
 def send_one(cur, payload: dict) -> None:
     timeutil.load_holidays(cur)
+    eid = db.val(cur, "select enrollment_id from messages where id = %s", payload["message_id"])
+    if eid is None:
+        return
+    # Lock order is enrollment, then message: the same order stop-first uses, so the two never deadlock.
+    e = db.one(cur, "select * from enrollments where id = %s for update", eid)
     m = db.one(cur, "select * from messages where id = %s for update skip locked", payload["message_id"])
     if m is None or m["status"] != "scheduled":
         return
-    e = db.one(cur, "select * from enrollments where id = %s for update", m["enrollment_id"])
     ap = db.one(cur, "select ap.*, pl.key as play_key from account_plays ap join plays pl on pl.id = ap.play_id "
                      "where ap.id = %s", e["account_play_id"])
     person = db.one(cur, "select * from people where id = %s", e["person_id"])
@@ -54,8 +60,15 @@ def send_one(cur, payload: dict) -> None:
         db.run(cur, "update enrollments set next_at = %s where id = %s", at, e["id"])
         log.debug("message %s waits: %s", m["id"], why)
 
+    if e["state"] in ("stopped", "done"):
+        db.run(cur, "update messages set status = 'cancelled' where id = %s", m["id"])
+        return
     if e["state"] != "active":
-        return  # paused: the resume reschedules it
+        db.run(cur, "update messages set status = 'approved' where id = %s", m["id"])  # the resume reschedules it
+        return
+    if db.val(cur, "select status from plays where id = %s", ap["play_id"]) != "live":
+        later(now + timedelta(hours=12), "play paused")
+        return
     reasons = gate.person_reasons(cur, person["id"], "email", account_play_id=ap["id"], enrollment_id=e["id"])
     permanent = [r for r in reasons if r.permanent]
     if permanent:
@@ -86,7 +99,9 @@ def send_one(cur, payload: dict) -> None:
                                target_user=ap["owner_id"], dedup_key=f"no_mailbox:{ap['owner_id']}:{now:%Y-%m-%d}")
             return
         db.run(cur, "update enrollments set mailbox_id = %s where id = %s", mailbox["id"], e["id"])
-    domain_cap = db.val(cur, "select daily_cap from sending_domains where domain = %s", mailbox["domain"])
+    # Lock the mailbox and its domain while counting, so two workers cannot both take the last slot.
+    db.one(cur, "select id from mailboxes where id = %s for update", mailbox["id"])
+    domain_cap = db.val(cur, "select daily_cap from sending_domains where domain = %s for update", mailbox["domain"])
     domain_today = db.val(cur, """select count(*) from messages m join mailboxes mb on mb.id = m.mailbox_id
                                   where mb.domain = %s and m.sent_at >= date_trunc('day', app_now())
                                   and m.status in ('sent','sending','send_unknown')""", mailbox["domain"])
@@ -102,9 +117,40 @@ def send_one(cur, payload: dict) -> None:
     except psycopg.errors.RaiseException as exc:
         outreach.stop_enrollment(cur, e["id"], "refused: " + str(exc).split("\n")[0][:120])
         return
-    result = adapters.get().email.send(cur, {**m, "mailbox_id": mailbox["id"]}, mailbox, person,
-                                       headers_for(m, person, ap["play_key"]))
+    # 'sending' commits with this job. The provider call is a separate job, so a crash after the provider accepted
+    # the email leaves the message in 'sending', which the sweep resolves by asking the provider, never by resending.
+    jobs.enqueue(cur, "send_provider", {"message_id": m["id"]}, dedupe_key=f"provider:{m['id']}", max_attempts=1)
+
+
+@jobs.handler("send_provider")
+def send_provider(cur, payload: dict) -> None:
+    m = db.one(cur, "select * from messages where id = %s for update", payload["message_id"])
+    if m is None or m["status"] != "sending":
+        return
+    e = db.one(cur, "select * from enrollments where id = %s", m["enrollment_id"])
+    ap = db.one(cur, "select ap.*, pl.key as play_key from account_plays ap join plays pl on pl.id = ap.play_id "
+                     "where ap.id = %s", e["account_play_id"])
+    person = db.one(cur, "select * from people where id = %s", e["person_id"])
+    mailbox = db.one(cur, "select * from mailboxes where id = %s", m["mailbox_id"])
+    try:
+        result = adapters.get().email.send(cur, m, mailbox, person, headers_for(m, person, ap["play_key"]))
+    except Exception as exc:  # a crash talking to the provider: we cannot know whether it left
+        result = SendResultLike("unknown", None, f"{type(exc).__name__}: {exc}")
     record_result(cur, m["id"], result.outcome, result.provider_id, result.error)
+
+
+class SendResultLike:
+    def __init__(self, outcome: str, provider_id: str | None, error: str | None) -> None:
+        self.outcome, self.provider_id, self.error = outcome, provider_id, error
+
+
+@jobs.handler("sweep_sending")
+def sweep_sending(cur, payload: dict) -> None:
+    """Messages left in 'sending' for more than 15 minutes: a worker died mid-send. Ask the provider."""
+    for r in db.all(cur, """select id from messages where status = 'sending'
+                            and sent_at < app_now() - interval '15 minutes' for update skip locked"""):
+        db.run(cur, "update messages set status = 'send_unknown' where id = %s", r["id"])
+        jobs.enqueue(cur, "reconcile_send", {"message_id": r["id"]}, dedupe_key=f"reconcile:{r['id']}")
 
 
 def record_result(cur, message_id: int, outcome: str, provider_id: str | None, error: str | None) -> None:
@@ -147,8 +193,7 @@ def reconcile_send(cur, payload: dict) -> None:
         record_result(cur, m["id"], "sent", r.provider_id, None)
     elif r.outcome == "failed":
         # It never left. Put it back in line; the gate runs again before the retry.
-        db.run(cur, "update messages set status = 'scheduled', sent_at = null, scheduled_for = app_now() where id = %s",
-               m["id"])
+        resolve_unknown(cur, m["id"], sent=False)
     else:
         alerts.raise_alert(cur, kind="send_unknown", severity="warn", channel="#outbound-ops",
                            title="A send's outcome is unknown", body="The provider cannot say whether it went out. "
@@ -234,3 +279,19 @@ def telemetry(cur, payload: dict) -> None:
             alerts.raise_alert(cur, kind="spam_rate", severity="urgent", channel="#outbound-ops",
                                title=f"{t.domain} spam rate {t.spam_rate:.2%}", body="Every mailbox on it is paused.",
                                dedup_key=f"spam:{t.domain}:{db.val(cur, 'select app_now()::date')}")
+
+
+def resolve_unknown(cur, message_id: int, *, sent: bool, provider_id: str | None = None) -> None:
+    """The provider (or a person checking the mailbox's sent folder) says what happened to an unknown send."""
+    m = db.one(cur, "select * from messages where id = %s for update", message_id)
+    if m["status"] != "send_unknown":
+        return
+    if sent:
+        record_result(cur, message_id, "sent", provider_id or m["provider_id"], None)
+        return
+    e = db.one(cur, "select state from enrollments where id = %s", m["enrollment_id"])
+    if e["state"] == "active":
+        db.run(cur, "update messages set status = 'scheduled', sent_at = null, scheduled_for = app_now() where id = %s",
+               message_id)
+    else:
+        db.run(cur, "update messages set status = 'cancelled', sent_at = null where id = %s", message_id)

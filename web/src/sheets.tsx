@@ -598,7 +598,7 @@ export function LiftBlock({ lift }: { lift: any }) {
       {lift.enough && lift.difference !== null ? (
         <div>Meeting rate is <b>{pct(lift.difference, 1)}</b> points {lift.difference >= 0 ? "higher" : "lower"} when contacted, with 90% confidence between {pct(lift.interval[0], 1)} and {pct(lift.interval[1], 1)}.</div>
       ) : (
-        <div className="mute">Not enough accounts yet. Telling a {pct(lift.detectable_lift)} difference apart needs {n0(lift.needed.holdout)} not contacted and {n0(lift.needed.treated)} contacted; there are {h.accounts} and {t.accounts}.</div>
+        <div className="mute">Not enough accounts yet to tell a {pct(lift.detectable_lift)}-point difference from chance. That needs {n0(lift.still_needed.holdout)} more not contacted and {n0(lift.still_needed.treated)} more contacted.</div>
       )}
     </div>
   );

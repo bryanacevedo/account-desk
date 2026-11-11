@@ -41,3 +41,4 @@ class Portraits:
         n = self.next[g]
         self.next[g] = (n + 1) % 100
         return f"https://randomuser.me/api/portraits/{g}/{n}.jpg"
+SUF = "field stone line wise path mark gate wave light craft forge peak loop grid port bridge".split()

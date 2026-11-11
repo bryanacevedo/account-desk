@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 
 from . import (
     adapters,
@@ -352,13 +353,20 @@ def approve(cur, message_id: int, *, user_id: int, subject: str | None = None, b
     m = db.one(cur, "select * from messages where id = %s for update", message_id)
     if m["status"] not in ("awaiting_approval", "failed_gate"):
         raise ValueError(f"Message is {m['status']}, not waiting for approval")
+    if m["status"] == "failed_gate" and body is None:
+        raise ValueError("This draft failed the checks. Rewrite it before approving.")
+    e = db.one(cur, "select person_id, account_play_id, id from enrollments where id = %s", m["enrollment_id"])
+    blocking = [r for r in gate.person_reasons(cur, e["person_id"], "email", account_play_id=e["account_play_id"],
+                                               enrollment_id=e["id"]) if r.permanent]
+    if blocking:
+        raise ValueError(f"This person cannot be emailed: {blocking[0].message}")
     edited = False
     if (subject is not None and subject != m["subject"]) or (body is not None and body != m["body"]):
         edited = True
         db.run(cur, "update messages set subject = coalesce(%s, subject), body = coalesce(%s, body), edited = true "
                     "where id = %s", subject, body, message_id)
         m = db.one(cur, "select * from messages where id = %s", message_id)
-        problems = _edit_checks(m)
+        problems = _edit_checks(m, cur)
         if problems:
             raise ValueError("; ".join(problems))
     _approve(cur, m, user_id=user_id, mode="person")
@@ -366,9 +374,24 @@ def approve(cur, message_id: int, *, user_id: int, subject: str | None = None, b
     return db.one(cur, "select * from messages where id = %s", message_id)
 
 
-def _edit_checks(m: dict) -> list[str]:
-    """A person's edit still has to keep the footer, and stay clear of dashes and merge fields."""
+def _edit_checks(m: dict, cur=None) -> list[str]:
+    """A person's edit is checked as text: the footer stays, no dashes, merge fields, banned or spam phrases,
+    no link in a first email, and every number and name must be in the account's citable facts."""
     out = []
+    text = m["body"].split("\n\n--\n")[0]
+    low = (m["subject"] or "").lower() + " " + text.lower()
+    out += [f"Uses \"{b}\"" for b in copy_gate.BANNED if b in low]
+    out += [f"Spam-filter word \"{w}\"" for w in copy_gate.SPAM_HARD if re.search(r"\b" + re.escape(w) + r"\b", low)]
+    if m["step_index"] == 0 and copy_gate.URL.search(text):
+        out.append("First emails carry no links")
+    if cur is not None:
+        e = db.one(cur, "select ap.account_id from enrollments e join account_plays ap on ap.id = e.account_play_id "
+                        "where e.id = %s", m["enrollment_id"])
+        facts = " ".join(f["text"] for f in account_facts(cur, e["account_id"], 30))
+        for num in copy_gate.NUMBER.findall(text):
+            core = num.strip("$%.,")
+            if core and core not in facts.replace(",", "") and not re.search(re.escape(num) + r"[- ]?(min|minutes|hour)", text):
+                out.append(f"The number {num} is not in any fact we hold about them")
     if "won't write again" not in m["body"]:
         out.append("The opt-out line at the bottom has to stay")
     if any(d in m["body"] for d in copy_gate.DASHES):
@@ -479,6 +502,14 @@ def due_steps(cur, payload: dict) -> None:
     timeutil.load_holidays(cur)
     lapse = int(db.val(cur, "select value from settings where key = 'approval_lapse_business_days'") or 5)
     now = db.val(cur, "select app_now()")
+    # A first email nobody approved in time lapses too, so its play can close.
+    for e in db.all(cur, """select e.id, e.next_at, p.country from enrollments e join people p on p.id = e.person_id
+                            where e.state = 'pending' and e.next_at is not null for update of e skip locked"""):
+        if timeutil.business_days_between(e["next_at"], now, e["country"]) > lapse:
+            db.run(cur, "update messages set status = 'cancelled' where enrollment_id = %s and status in "
+                        "('awaiting_approval', 'failed_gate', 'draft')", e["id"])
+            db.run(cur, "update enrollments set state = 'done', stop_reason = 'approval_lapsed', next_at = null "
+                        "where id = %s", e["id"])
     rows = db.all(cur, """select e.*, ap.owner_id, pl.sequence, p.country, p.full_name, p.phone from enrollments e
                           join account_plays ap on ap.id = e.account_play_id join plays pl on pl.id = ap.play_id
                           join people p on p.id = e.person_id
@@ -546,8 +577,9 @@ def research_job(cur, payload: dict) -> None:
     enrollments = []
     for p in people:
         mailbox = pick_mailbox(cur, ap["owner_id"], ap["id"])
-        eid = db.val(cur, """insert into enrollments (account_play_id, person_id, persona_key, state, mailbox_id)
-                             values (%s,%s,%s,'pending',%s) returning id""", ap["id"], p["id"], p["persona_key"], mailbox)
+        eid = db.val(cur, """insert into enrollments (account_play_id, person_id, persona_key, state, mailbox_id, next_at)
+                             values (%s,%s,%s,'pending',%s,app_now()) returning id""", ap["id"], p["id"], p["persona_key"],
+                     mailbox)
         enrollments.append(eid)
     if play["autonomy"] == "research":
         # The desk researched; the rep writes. Each person becomes a set of tasks.

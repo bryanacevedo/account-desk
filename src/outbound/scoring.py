@@ -93,11 +93,23 @@ def compute(inputs: dict) -> dict:
             "negative": round(neg, 2), "reason_signal_id": reason}
 
 
+_icp_cache: dict = {}
+
+
+def _icp(cur) -> dict:
+    """The published ICP, read once per version instead of once per account."""
+    latest = db.val(cur, "select max(id) from icp_versions")
+    if _icp_cache.get("id") != latest:
+        _icp_cache.clear()
+        _icp_cache.update(db.one(cur, "select id, rules from icp_versions where id = %s", latest))
+    return _icp_cache
+
+
 def gather_inputs(cur, account_id: int, at: datetime) -> dict | None:
     a = db.one(cur, "select * from accounts where id = %s", account_id)
     if a is None:
         return None
-    icp = db.one(cur, "select id, rules from icp_versions order by published_at desc, id desc limit 1")
+    icp = _icp(cur)
     f = fit(icp["rules"], a)
     sigs = db.all(cur, """
         select s.id, s.type_key as type, t.weight::float as weight, t.half_life_days::float as half_life,
@@ -105,7 +117,7 @@ def gather_inputs(cur, account_id: int, at: datetime) -> dict | None:
                greatest(0, extract(epoch from (%s - s.observed_at)) / 86400.0)::float as age_days
         from signals s join signal_types t on t.key = s.type_key
         where s.account_id = %s and s.status = 'matched' and t.enabled
-          and s.observed_at > %s - (t.half_life_days * 3 || ' days')::interval
+          and s.observed_at > %s - (t.half_life_days * 6 || ' days')::interval
           and s.observed_at <= %s
         order by s.observed_at desc""", at, account_id, at, at)
     eng = db.one(cur, """
@@ -157,10 +169,19 @@ def _rescore_job(cur, payload: dict) -> None:
 
 @jobs.handler("rescore_all")
 def _rescore_all(cur, payload: dict) -> None:
-    """Nightly decay: every account with a recent signal or a stored score."""
+    """Nightly decay. Splits the work into batches of 500, each its own job and transaction, so one failure does
+    not roll back the night and no lock is held for long."""
     ids = [r["id"] for r in db.all(cur, """
-        select distinct a.id from accounts a
-        where exists (select 1 from signals s where s.account_id = a.id and s.observed_at > app_now() - interval '180 days')
-           or exists (select 1 from account_scores sc where sc.account_id = a.id and sc.priority > 0)""")]
-    for aid in ids:
+        select a.id from accounts a
+        where exists (select 1 from signals s where s.account_id = a.id and s.observed_at > app_now() - interval '365 days')
+           or exists (select 1 from account_scores sc where sc.account_id = a.id and sc.priority > 0)
+        order by a.id""")]
+    stamp = db.val(cur, "select to_char(app_now(), 'YYYYMMDDHH24MI')")
+    for i in range(0, len(ids), 500):
+        jobs.enqueue(cur, "rescore_batch", {"ids": ids[i:i + 500]}, dedupe_key=f"rescore_batch:{stamp}:{i}")
+
+
+@jobs.handler("rescore_batch")
+def _rescore_batch(cur, payload: dict) -> None:
+    for aid in payload["ids"]:
         rescore(cur, aid)

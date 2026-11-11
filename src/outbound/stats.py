@@ -50,11 +50,12 @@ def n_per_arm(base: float, lift: float, *, alpha: float = 0.10, power: float = 0
     return math.ceil(num / (p1 - p2) ** 2)
 
 
-def lift_report(treated_k: int, treated_n: int, hold_k: int, hold_n: int, *, conf: float = 0.90,
-                assumed_lift: float = 0.04) -> dict:
-    """Everything the Results page shows about one comparison. Below the needed size it says so, with the number."""
+def lift_report(treated_k: int, treated_n: int, hold_k: int, hold_n: int, *, conf: float = 0.90) -> dict:
+    """Everything the Results page shows about one comparison. The difference worth detecting is a doubling of the
+    observed base rate (at least 2 points); below the sample that needs, it says how many accounts are still needed."""
     base = hold_k / hold_n if hold_n else (treated_k / treated_n if treated_n else 0.02)
     base = max(base, 0.01)
+    assumed_lift = max(0.02, base)
     ratio = (treated_n / hold_n) if hold_n else 4.0
     need_hold = n_per_arm(base, assumed_lift, ratio=max(ratio, 1.0))
     need_treated = math.ceil(need_hold * max(ratio, 1.0))
@@ -65,4 +66,5 @@ def lift_report(treated_k: int, treated_n: int, hold_k: int, hold_n: int, *, con
             "holdout": {"meetings": hold_k, "accounts": hold_n, "rate": hold_k / hold_n if hold_n else None},
             "difference": d if (treated_n and hold_n) else None, "interval": [lo, hi] if (treated_n and hold_n) else None,
             "enough": enough, "needed": {"holdout": need_hold, "treated": need_treated},
+            "still_needed": {"holdout": max(0, need_hold - hold_n), "treated": max(0, need_treated - treated_n)},
             "detectable_lift": assumed_lift, "confidence": conf}

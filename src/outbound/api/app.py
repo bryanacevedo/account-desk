@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
+import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -92,10 +93,31 @@ def rate_limit(request: Request, limit: int = 120, window: float = 60.0) -> None
         q.append(now)
 
 
+_jwks = None
+
+
+def _access_email(request: Request) -> str | None:
+    """Cloudflare Access signs every request it lets through. Verify the token; never trust a plain header."""
+    global _jwks
+    import jwt
+    token = request.headers.get("Cf-Access-Jwt-Assertion") or request.cookies.get("CF_Authorization")
+    if not token:
+        return None
+    if _jwks is None:
+        _jwks = jwt.PyJWKClient(f"https://{CONFIG.access_team_domain}/cdn-cgi/access/certs", cache_keys=True)
+    try:
+        key = _jwks.get_signing_key_from_jwt(token).key
+        claims = jwt.decode(token, key, algorithms=["RS256"], audience=CONFIG.access_aud,
+                            issuer=f"https://{CONFIG.access_team_domain}")
+    except Exception:
+        return None
+    return (claims.get("email") or "").strip().lower() or None
+
+
 def current_user(request: Request) -> dict:
     with db.tx() as cur:
         if CONFIG.auth_mode == "header":
-            email = request.headers.get(CONFIG.auth_header, "").strip().lower()
+            email = _access_email(request)
             u = db.one(cur, "select * from users where email = %s and active", email) if email else None
         else:
             raw = request.headers.get("X-Acting-As") or request.query_params.get("as")
@@ -292,9 +314,12 @@ def approve(message_id: int, body: Approve, u: dict = Depends(writer)) -> dict:
     with db.tx() as cur:
         _own_message(cur, message_id, u)
         try:
-            outreach.approve(cur, message_id, user_id=u["id"], subject=body.subject, body=body.body)
+            with cur.connection.transaction():
+                outreach.approve(cur, message_id, user_id=u["id"], subject=body.subject, body=body.body)
         except ValueError as exc:
             raise bad_request(exc) from exc
+        except psycopg.errors.RaiseException as exc:
+            raise HTTPException(422, str(exc).split("\n")[0]) from exc
         return views.message(cur, message_id)
 
 
@@ -326,6 +351,12 @@ def handle_reply(reply_id: int, body: Handle, u: dict = Depends(writer)) -> dict
         r = db.one(cur, "select * from replies where id = %s", reply_id)
         if r is None:
             raise HTTPException(404, "No such reply.")
+        if u["role"] == "sdr" and r["account_id"]:
+            owner = db.val(cur, """select coalesce((select ap.owner_id from account_plays ap where ap.account_id = %s
+                                   order by ap.proposed_at desc limit 1), (select owner_id from accounts where id = %s))""",
+                           r["account_id"], r["account_id"])
+            if owner not in (None, u["id"]):
+                raise HTTPException(403, "This reply belongs to another SDR's account.")
         if body.outcome == "meeting_booked":
             if not r["account_id"]:
                 raise HTTPException(422, "This reply is not tied to an account.")
@@ -355,6 +386,9 @@ class MeetingStatus(BaseModel):
 @app.post("/api/meetings/{meeting_id}/status")
 def meeting_status(meeting_id: int, body: MeetingStatus, u: dict = Depends(writer)) -> dict:
     with db.tx() as cur:
+        owner = db.val(cur, "select owner_id from meetings where id = %s", meeting_id)
+        if u["role"] == "sdr" and owner not in (None, u["id"]):
+            raise HTTPException(403, "This meeting belongs to another SDR.")
         pipeline.set_meeting_status(cur, meeting_id, body.status, user_id=u["id"])
         kept = 0
         if body.notes:
@@ -380,7 +414,10 @@ def change_play(play_id: int, body: PlayChange, u: dict = Depends(writer)) -> di
         if body.status:
             if body.status == "live" and u["role"] != "manager":
                 raise HTTPException(403, "A manager launches plays.")
-            db.run(cur, "update plays set status = %s where id = %s", body.status, play_id)
+            db.run(cur, """update plays set status = %s,
+                           launched_by = case when %s = 'live' then coalesce(launched_by, %s) else launched_by end,
+                           launched_at = case when %s = 'live' then coalesce(launched_at, app_now()) else launched_at end
+                           where id = %s""", body.status, body.status, u["id"], body.status, play_id)
         if body.autonomy and body.autonomy != p["autonomy"]:
             order = views.STAGES
             if order.index(body.autonomy) > order.index(p["autonomy"]):
@@ -393,6 +430,20 @@ def change_play(play_id: int, body: PlayChange, u: dict = Depends(writer)) -> di
             db.run(cur, "insert into play_stage_changes (play_id, from_stage, to_stage, reason, decided_by) "
                         "values (%s,%s,%s,%s,%s)", play_id, p["autonomy"], body.autonomy, body.reason, u["id"])
         audit.log(cur, "person", "play_changed", "play", play_id, body.model_dump(), actor_id=u["id"])
+    return {"ok": True}
+
+
+class Outcome(BaseModel):
+    sent: bool
+
+
+@app.post("/api/messages/{message_id}/outcome")
+def message_outcome(message_id: int, body: Outcome, u: dict = Depends(writer)) -> dict:
+    """A person checked the mailbox's sent folder for a send whose outcome the provider could not report."""
+    need(u, "gtm", "manager")
+    with db.tx() as cur:
+        sending.resolve_unknown(cur, message_id, sent=body.sent)
+        audit.log(cur, "person", "send_outcome", "message", message_id, {"sent": body.sent}, actor_id=u["id"])
     return {"ok": True}
 
 

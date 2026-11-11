@@ -165,3 +165,108 @@ def test_a_live_play_needs_a_launcher_who_did_not_write_it(cur, scene):
         with cur.connection.transaction():
             db.run(cur, "update plays set status = 'live', created_by = %s, launched_by = %s, launched_at = now() where id = %s",
                    scene["user"], scene["user"], scene["play"])
+
+
+# ---------------------------------------------------------------- regressions from the first code review
+
+def give_mailbox(cur, scene) -> int:
+    db.run(cur, "insert into sending_domains (domain, registered_at) values ('t-send.example', '2026-01-01') on conflict do nothing")
+    mb = db.val(cur, """insert into mailboxes (address, domain, provider, display_name, user_id, warmup_started, ramp_start)
+                        values (%s, 't-send.example', 'google', 'T', %s, '2026-01-01', '2026-01-15') returning id""",
+                f"t{id(cur)}@t-send.example", scene["user"])
+    db.run(cur, "update messages set mailbox_id = %s where id = %s", mb, scene["message"])
+    return mb
+
+
+def test_recording_a_send_already_under_way_is_not_refused(cur, scene):
+    """A kill switch flipped while an email is in flight must not erase the record that it left."""
+    db.run(cur, "insert into sending_domains (domain, registered_at) values ('t-send.example', '2026-01-01') on conflict do nothing")
+    mb = db.val(cur, """insert into mailboxes (address, domain, provider, display_name, user_id, warmup_started, ramp_start)
+                        values (%s, 't-send.example', 'google', 'T', %s, '2026-01-01', '2026-01-15') returning id""",
+                f"t{id(cur)}@t-send.example", scene["user"])
+    send(cur, scene["message"])
+    db.run(cur, "update messages set mailbox_id = %s where id = %s", mb, scene["message"])
+    db.run(cur, "update settings set value = 'true' where key = 'kill_switch'")
+    with cur.connection.transaction():
+        db.run(cur, "update messages set status = 'sent' where id = %s", scene["message"])
+    assert db.val(cur, "select status from messages where id = %s", scene["message"]) == "sent"
+
+
+def test_a_job_left_running_by_a_dead_worker_is_reclaimed(cur, scene):
+    from outbound import jobs
+    jid = db.val(cur, """insert into jobs (kind, status, attempts, locked_at, locked_by, dedupe_key)
+                         values ('send_one', 'running', 1, now() - interval '1 hour', 'dead-worker', 'reap-test') returning id""")
+    assert jobs.reap(cur) >= 1
+    assert db.val(cur, "select status from jobs where id = %s", jid) == "queued"
+
+
+def test_an_unknown_send_resolved_as_not_sent_on_a_stopped_person_is_cancelled(cur, scene):
+    from outbound import sending
+    send(cur, scene["message"])
+    give_mailbox(cur, scene)
+    db.run(cur, "update messages set status = 'send_unknown' where id = %s", scene["message"])
+    db.run(cur, "update enrollments set state = 'stopped', stop_reason = 'replied_positive' where id = %s", scene["enrollment"])
+    sending.resolve_unknown(cur, scene["message"], sent=False)
+    assert db.val(cur, "select status from messages where id = %s", scene["message"]) == "cancelled"
+
+
+def test_a_first_email_nobody_approves_lapses(cur, scene):
+    from outbound import outreach
+    db.run(cur, "update settings set value = '5' where key = 'approval_lapse_business_days'")
+    db.run(cur, "insert into settings (key, value) values ('approval_lapse_business_days', '5') on conflict do nothing")
+    db.run(cur, "update messages set status = 'cancelled' where id = %s", scene["message"])
+    p = db.val(cur, "insert into people (account_id, full_name, source) values (%s, 'Late One', 't') returning id", scene["account"])
+    e = db.val(cur, """insert into enrollments (account_play_id, person_id, persona_key, state, next_at)
+                       values (%s, %s, 'cfo', 'pending', app_now() - interval '20 days') returning id""", scene["ap"], p)
+    db.run(cur, """insert into messages (enrollment_id, step_index, channel, subject, body, status, body_hash)
+                   values (%s, 0, 'email', 's', 'b', 'awaiting_approval', '')""", e)
+    db.run(cur, "insert into settings (key, value) values ('send_window', '[[\"08:30\",\"11:30\"]]') on conflict do nothing")
+    outreach.due_steps(cur, {})
+    assert db.val(cur, "select state from enrollments where id = %s", e) == "done"
+
+
+def test_a_lost_expansion_deal_leaves_a_customer_a_customer(cur, scene):
+    from outbound import pipeline
+    db.run(cur, "update accounts set lifecycle = 'customer' where id = %s", scene["account"])
+    db.run(cur, """insert into opportunities (account_id, crm_id, name, amount_cents, stage, created_at, closed_at, won)
+                   values (%s, 'won-1', 'First deal', 100, 'Closed Won', now() - interval '300 days', now() - interval '200 days', true)""",
+           scene["account"])
+    db.run(cur, """insert into opportunities (account_id, crm_id, name, amount_cents, stage, created_at)
+                   values (%s, 'exp-1', 'Expansion', 100, 'Evaluation', now() - interval '20 days')""", scene["account"])
+    pipeline.opportunity_closed(cur, "exp-1", False, db.val(cur, "select app_now()"))
+    assert db.val(cur, "select lifecycle from accounts where id = %s", scene["account"]) == "customer"
+
+
+def test_influenced_counts_a_play_that_is_still_open(cur, scene):
+    from outbound import pipeline
+    db.run(cur, "update account_plays set proposed_at = app_now() - interval '110 days', state = 'meeting' where id = %s",
+           scene["ap"])
+    oid = pipeline.opportunity_created(cur, account_id=scene["account"], crm_id="infl-1", name="x", amount_cents=1,
+                                       stage="Discovery", created_at=db.val(cur, "select app_now()"))
+    assert db.val(cur, "select attribution from opportunities where id = %s", oid) == "influenced"
+
+
+def test_a_failed_draft_cannot_be_approved_unchanged(cur, scene):
+    from outbound import outreach
+    db.run(cur, "update messages set status = 'cancelled' where id = %s", scene["message"])
+    p = db.val(cur, "insert into people (account_id, full_name, source) values (%s, 'Failed Draft', 't') returning id",
+               scene["account"])
+    e = db.val(cur, "insert into enrollments (account_play_id, person_id, persona_key, state) values (%s,%s,'cfo','pending') "
+                    "returning id", scene["ap"], p)
+    m = db.val(cur, """insert into messages (enrollment_id, step_index, channel, subject, body, status, body_hash)
+                       values (%s, 0, 'email', 's', 'b', 'failed_gate', '') returning id""", e)
+    with pytest.raises(ValueError, match="Rewrite"):
+        outreach.approve(cur, m, user_id=scene["user"])
+
+
+def test_production_settings_refuse_unsafe_defaults(monkeypatch):
+    from outbound.config import Config
+    for k in ("WEBHOOK_SECRET", "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD", "LIVE_SEND", "PUBLIC_DEMO"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("MODE", "live")
+    with pytest.raises(SystemExit, match="WEBHOOK_SECRET"):
+        Config().validate()
+    monkeypatch.setenv("MODE", "demo")
+    monkeypatch.setenv("AUTH_MODE", "header")
+    with pytest.raises(SystemExit, match="CF_ACCESS"):
+        Config().validate()

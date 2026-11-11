@@ -167,20 +167,28 @@ def signals_page(cur) -> dict:
 
 
 def signal_performance(cur) -> list[dict]:
-    """For each signal type: accounts it triggered, and meetings within 60 days, treated against comparison group."""
+    """For each signal type: accounts it started a play for, and meetings within 60 days, treated against the
+    comparison group. Aggregates from account plays (thousands), never from all signals (millions)."""
     rows = db.all(cur, """
+        with ap as (
+          select s.type_key, ap.arm, ap.account_id, ap.proposed_at
+          from account_plays ap join signals s on s.id = ap.trigger_signal_id
+        ), outcome as (
+          select ap.*, exists (select 1 from meetings m where m.account_id = ap.account_id
+                               and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days') as met,
+                       exists (select 1 from replies r where r.account_id = ap.account_id and r.hot
+                               and r.received_at between ap.proposed_at and ap.proposed_at + interval '60 days') as pos
+          from ap
+        )
         select t.key, t.label, t.because, t.weight, t.half_life_days,
-          (select count(*) from signals s where s.type_key = t.key and s.status = 'matched') as seen,
-          count(ap.id) filter (where ap.arm = 'treated') as treated,
-          count(ap.id) filter (where ap.arm = 'holdout') as holdout,
-          count(ap.id) filter (where ap.arm = 'treated' and exists (select 1 from meetings m where m.account_id = ap.account_id
-              and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days')) as treated_meetings,
-          count(ap.id) filter (where ap.arm = 'holdout' and exists (select 1 from meetings m where m.account_id = ap.account_id
-              and m.booked_at between ap.proposed_at and ap.proposed_at + interval '60 days')) as holdout_meetings,
-          count(ap.id) filter (where ap.arm = 'treated' and exists (select 1 from replies r where r.account_id = ap.account_id
-              and r.hot and r.received_at between ap.proposed_at and ap.proposed_at + interval '60 days')) as positive
-        from signal_types t left join signals s on s.type_key = t.key
-        left join account_plays ap on ap.trigger_signal_id = s.id
+          (select count(*) from signals s where s.type_key = t.key and s.status = 'matched'
+             and s.ingested_at > app_now() - interval '90 days') as seen,
+          count(o.*) filter (where o.arm = 'treated') as treated,
+          count(o.*) filter (where o.arm = 'holdout') as holdout,
+          count(o.*) filter (where o.arm = 'treated' and o.met) as treated_meetings,
+          count(o.*) filter (where o.arm = 'holdout' and o.met) as holdout_meetings,
+          count(o.*) filter (where o.arm = 'treated' and o.pos) as positive
+        from signal_types t left join outcome o on o.type_key = t.key
         group by t.key order by t.weight desc""")
     for r in rows:
         r["meeting_rate"] = (r["treated_meetings"] / r["treated"]) if r["treated"] else None

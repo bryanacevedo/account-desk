@@ -15,8 +15,8 @@ OPEN = ("proposed", "accepted", "researching", "approving", "active", "engaged",
 CLOSED = ("converted", "lost", "stopped", "skipped", "expired", "held_out")
 
 ALLOWED = {
-    "proposed": {"accepted", "skipped", "expired", "stopped"},
-    "accepted": {"researching", "stopped"},
+    "proposed": {"accepted", "skipped", "expired", "stopped", "lost"},
+    "accepted": {"researching", "stopped", "lost"},
     "researching": {"approving", "active", "stopped", "lost"},
     "approving": {"active", "stopped", "lost", "engaged"},
     "active": {"engaged", "meeting", "stopped", "lost", "converted"},
@@ -179,9 +179,16 @@ def expire_proposals(cur, payload: dict) -> None:
 @jobs.handler("close_stale_plays")
 def close_stale(cur, payload: dict) -> None:
     """The time-based exits of 22.19."""
-    for r in db.all(cur, """select id from account_plays where state in ('accepted', 'researching')
-                            and coalesce(decided_at, proposed_at) < app_now() - interval '4 days'"""):
-        set_state(cur, r["id"], "stopped", reason="research_failed")
+    timeutil.load_holidays(cur)
+    now = db.val(cur, "select app_now()")
+    for r in db.all(cur, """select id, account_id, owner_id, coalesce(decided_at, proposed_at) as since from account_plays
+                            where state in ('accepted', 'researching')"""):
+        if timeutil.business_days_between(r["since"], now) > 2:
+            set_state(cur, r["id"], "stopped", reason="research_failed")
+            from . import alerts
+            alerts.raise_alert(cur, kind="research_failed", severity="warn", channel="#outbound-ops",
+                               title="Research did not finish for an accepted account", body="Check the job log.",
+                               object_kind="account_play", object_id=r["id"], dedup_key=f"research_failed:{r['id']}")
     for r in db.all(cur, """select ap.id from account_plays ap where ap.state = 'engaged' and not exists (
                               select 1 from replies r where r.account_id = ap.account_id and r.hot
                               and r.received_at > app_now() - interval '21 days')"""):
@@ -201,7 +208,7 @@ def close_stale(cur, payload: dict) -> None:
         set_state(cur, r["id"], "stopped", reason="sequence_finished")
     # CRM turned the account into a customer or an open opportunity elsewhere.
     for r in db.all(cur, """select ap.id, a.lifecycle from account_plays ap join accounts a on a.id = ap.account_id
-                            where ap.state in ('proposed','accepted','researching','approving','active','engaged')
+                            where ap.state in ('proposed','accepted','researching','approving','active','engaged','meeting')
                             and a.lifecycle in ('customer', 'open_opp')"""):
         set_state(cur, r["id"], "stopped",
                   reason="became_customer" if r["lifecycle"] == "customer" else "opportunity_elsewhere")
@@ -209,3 +216,42 @@ def close_stale(cur, payload: dict) -> None:
 
 def cooldown_for(reason: str) -> timedelta:
     return timedelta(days=COOLDOWN.get(reason, 30))
+
+
+DEMOTE = {"autonomous": "supervised", "supervised": "draft", "draft": "draft", "research": "research"}
+
+
+@jobs.handler("autonomy_watch")
+def autonomy_watch(cur, payload: dict) -> None:
+    """Automatic demotion (docs/SPEC.md section 9): a complaint, a day with bounces over 3%, or SDRs editing more than
+    30% of the last 20 drafts moves a play down one stage. Promotion is never automatic."""
+    from . import alerts
+    for p in db.all(cur, "select * from plays where status = 'live' and autonomy in ('supervised', 'autonomous')"):
+        why = None
+        complaints = db.val(cur, """select count(*) from deliveries d join messages m on m.id = d.message_id
+                                    join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
+                                    where ap.play_id = %s and d.event = 'complaint'
+                                    and d.at > coalesce((select max(at) from play_stage_changes where play_id = %s), '-infinity')""",
+                            p["id"], p["id"])
+        day = db.one(cur, """select count(*) filter (where d.event = 'sent') as sent,
+                                    count(*) filter (where d.event = 'bounced_hard') as bounced
+                             from deliveries d join messages m on m.id = d.message_id join enrollments e on e.id = m.enrollment_id
+                             join account_plays ap on ap.id = e.account_play_id
+                             where ap.play_id = %s and d.at > app_now() - interval '1 day'""", p["id"])
+        last = db.all(cur, """select m.edited from messages m join enrollments e on e.id = m.enrollment_id
+                              join account_plays ap on ap.id = e.account_play_id
+                              where ap.play_id = %s and m.approval_mode = 'person' order by m.approved_at desc limit 20""", p["id"])
+        if complaints:
+            why = "A spam complaint"
+        elif day["sent"] >= 20 and day["bounced"] / day["sent"] > 0.03:
+            why = f"Bounce rate {day['bounced'] / day['sent']:.1%} in a day"
+        elif len(last) == 20 and sum(1 for m in last if m["edited"]) > 6:
+            why = "SDRs edited more than 30% of the last 20 drafts"
+        if why:
+            to = DEMOTE[p["autonomy"]]
+            db.run(cur, "update plays set autonomy = %s where id = %s", to, p["id"])
+            db.run(cur, "insert into play_stage_changes (play_id, from_stage, to_stage, reason) values (%s,%s,%s,%s)",
+                   p["id"], p["autonomy"], to, why)
+            alerts.raise_alert(cur, kind="demoted", severity="warn", channel="#outbound-ops",
+                               title=f"{p['name']} moved back to {to}", body=why, object_kind="play", object_id=p["id"],
+                               dedup_key=f"demote:{p['id']}:{p['autonomy']}")

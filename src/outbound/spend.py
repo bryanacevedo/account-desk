@@ -48,14 +48,18 @@ def paid_call(cur, adapter: str, operation: str, *, vendor: str, qty: float, pur
         yield info
         ok = True
     finally:
+        # The vendor charged us whether or not the surrounding job later rolls back, so the record of the call is
+        # written on its own connection and committed at once. A retry shows as a second charge, which it was.
         ms = int((time.perf_counter() - started) * 1000)
-        call_id = db.val(cur, "insert into adapter_calls (adapter, operation, paid, ok, ms, detail) "
-                              "values (%s,%s,%s,%s,%s,%s) returning id", adapter, operation, ok, ok, ms, J(info))
-        if ok:
-            charged = info.get("charged_qty", qty)
-            db.run(cur, "insert into ledger (vendor, unit, qty, cost_cents, purpose, account_id, adapter_call_id) "
-                        "values (%s,%s,%s,%s,%s,%s,%s)", vendor, UNITS.get(vendor, "credits"), charged,
-                   round(charged * RATES.get(vendor, 0), 4), purpose, account_id, call_id)
+        with db.pool().connection() as own:
+            with own.transaction(), own.cursor() as c:
+                call_id = db.val(c, "insert into adapter_calls (adapter, operation, paid, ok, ms, detail) "
+                                    "values (%s,%s,%s,%s,%s,%s) returning id", adapter, operation, ok, ok, ms, J(info))
+                if ok:
+                    charged = info.get("charged_qty", qty)
+                    db.run(c, "insert into ledger (vendor, unit, qty, cost_cents, purpose, account_id, adapter_call_id) "
+                              "values (%s,%s,%s,%s,%s,%s,%s)", vendor, UNITS.get(vendor, "credits"), charged,
+                           round(charged * RATES.get(vendor, 0), 4), purpose, account_id, call_id)
 
 
 def charge_llm(cur, *, model: str, input_tokens: int, output_tokens: int, cost_cents: float, purpose: str,

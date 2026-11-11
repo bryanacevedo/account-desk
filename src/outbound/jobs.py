@@ -90,6 +90,16 @@ def run_ready(limit: int = 200) -> int:
     return ran
 
 
+def reap(cur, stale_minutes: int = 10) -> int:
+    """Jobs a dead worker left in 'running' go back in line (or die after their last try). Uses the real clock:
+    a lock is held in real time even when the demo's clock is simulated."""
+    n = db.run(cur, """update jobs set status = case when attempts >= max_attempts then 'dead' else 'queued' end,
+                       last_error = coalesce(last_error, '') || ' [reclaimed after the worker stopped]',
+                       locked_by = null, run_at = app_now()
+                       where status = 'running' and locked_at < now() - (%s || ' minutes')::interval""", stale_minutes)
+    return n
+
+
 def run_forever(poll_seconds: float = 2.0) -> None:  # pragma: no cover - the live worker loop
     while True:
         try:

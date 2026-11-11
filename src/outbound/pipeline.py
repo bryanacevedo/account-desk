@@ -58,13 +58,15 @@ def opportunity_created(cur, *, account_id: int, crm_id: str, name: str, amount_
                         created_at: datetime) -> int:
     """Attribution: sourced when created within 90 days after a meeting from an account play; else influenced when
     the account had an open play in the 90 days before; sourced wins."""
+    # Sourced: a meeting from an account play, booked within the 90 days before the opportunity.
     sourced = db.one(cur, """select m.account_play_id, ap.play_id from meetings m join account_plays ap on ap.id = m.account_play_id
-                             where m.account_id = %s and m.starts_at <= %s and m.starts_at > %s - interval '90 days'
-                             and m.status in ('held', 'booked') order by m.starts_at desc limit 1""",
+                             where m.account_id = %s and m.booked_at <= %s and m.booked_at > %s - interval '90 days'
+                             and m.status in ('held', 'booked') order by m.booked_at desc limit 1""",
                      account_id, created_at, created_at)
+    # Influenced: the account had a treated account play open at any time in the 90 days before.
     influenced = None if sourced else db.one(cur, """select id as account_play_id, play_id from account_plays
-                     where account_id = %s and arm = 'treated' and proposed_at > %s - interval '90 days'
-                     and proposed_at <= %s and state not in ('proposed', 'skipped', 'expired')
+                     where account_id = %s and arm = 'treated' and proposed_at <= %s
+                       and (closed_at is null or closed_at >= %s - interval '90 days')
                      order by proposed_at desc limit 1""", account_id, created_at, created_at)
     att = "sourced" if sourced else "influenced" if influenced else "none"
     src = sourced or influenced or {}
@@ -85,7 +87,13 @@ def opportunity_closed(cur, crm_id: str, won: bool, closed_at: datetime) -> None
     o = db.one(cur, "update opportunities set won = %s, closed_at = %s, stage = %s where crm_id = %s returning account_id",
                won, closed_at, "Closed Won" if won else "Closed Lost", crm_id)
     if o:
-        db.run(cur, "update accounts set lifecycle = %s where id = %s", "customer" if won else "prospect", o["account_id"])
+        # A lost expansion deal leaves a customer a customer; another open deal keeps the account an open opportunity.
+        db.run(cur, """update accounts a set lifecycle = case
+                         when exists (select 1 from opportunities x where x.account_id = a.id and x.won) then 'customer'
+                         when exists (select 1 from opportunities x where x.account_id = a.id and x.closed_at is null)
+                           then 'open_opp'
+                         else 'prospect' end
+                       where a.id = %s and a.lifecycle in ('open_opp', 'prospect', 'customer')""", o["account_id"])
 
 
 @jobs.handler("crm_push")

@@ -139,8 +139,9 @@ def ingest(cur, *, from_addr: str, subject: str | None, raw: str, received_at: d
     if row is None:
         return None
     rid = row["id"]
-    if found["person_id"]:
+    if found["person_id"] or found["account_id"]:
         stop_first(cur, found["person_id"], found["account_id"], rid)
+    if found["person_id"]:
         db.run(cur, """insert into touches (account_id, person_id, channel, direction, kind, at, source, dedup_key,
                                             account_play_id)
                        values (%s,%s,%s,'in','reply',%s,'desk',%s,
@@ -152,16 +153,17 @@ def ingest(cur, *, from_addr: str, subject: str | None, raw: str, received_at: d
     return rid
 
 
-def stop_first(cur, person_id: int, account_id: int | None, reply_id: int) -> None:
-    db.run(cur, """update enrollments set state = 'paused', pause_reason = 'reply_received', next_at = null
-                   where person_id = %s and state = 'active'""", person_id)
+def stop_first(cur, person_id: int | None, account_id: int | None, reply_id: int) -> None:
+    if person_id:
+        db.run(cur, """update enrollments set state = 'paused', pause_reason = 'reply_received', next_at = null
+                       where person_id = %s and state = 'active'""", person_id)
     if account_id:
         db.run(cur, """update enrollments e set state = 'paused', pause_reason = 'account_reply', next_at = null
                        from account_plays ap where ap.id = e.account_play_id and ap.account_id = %s
-                       and e.state = 'active' and e.person_id <> %s""", account_id, person_id)
+                       and e.state = 'active' and e.person_id is distinct from %s""", account_id, person_id)
     db.run(cur, """update messages set status = 'approved' where status = 'scheduled' and enrollment_id in
                    (select id from enrollments where state = 'paused' and person_id in
-                    (select p.id from people p where p.account_id = %s or p.id = %s))""", account_id or 0, person_id)
+                    (select p.id from people p where p.account_id = %s or p.id = %s))""", account_id or 0, person_id or 0)
 
 
 @jobs.handler("classify_reply")
@@ -329,6 +331,14 @@ def act(cur, r: dict) -> None:
         jobs.enqueue(cur, "resume_after_positive", {"account_id": aid, "person_id": pid},
                      run_at=timeutil.add_business_days(r["received_at"], 3), dedupe_key=f"rap:{r['id']}")
         return
+    # Before the desk has written to anyone, a reply is recorded and shown to the owner; no play state changes (22.19).
+    if ap and ap["state"] in ("proposed", "accepted", "researching"):
+        if label in ("not_now", "not_interested") and aid:
+            alerts.raise_alert(cur, kind="early_reply", severity="info", channel="#outbound-ops", target_user=ap["owner_id"],
+                               object_kind="reply", object_id=r["id"], title="A reply arrived before any outreach",
+                               body=r["cleaned"][:300], dedup_key=f"early:{r['id']}")
+        db.run(cur, "update replies set handled_at = app_now(), outcome = 'noted_before_outreach' where id = %s", r["id"])
+        return
     # Everything else stops the person; the account's others resume unless the play ends.
     if pid:
         _stop_person(cur, pid, label)
@@ -396,9 +406,9 @@ def resume_after_positive(cur, payload: dict) -> None:
 def handle(cur, reply_id: int, *, user_id: int, outcome: str, label: str | None = None) -> None:
     """A person answered the reply, or labelled one the desk was unsure about."""
     r = db.one(cur, "select * from replies where id = %s for update", reply_id)
-    if label and label != r["label"]:
-        db.run(cur, "update replies set label = %s, classified_by = 'person', needs_review = false, hot = %s where id = %s",
-               label, label in HOT, reply_id)
+    if label and (label != r["label"] or r["needs_review"]):
+        db.run(cur, "update replies set label = %s, classified_by = 'person', needs_review = false, hot = %s, "
+                    "handled_at = null where id = %s", label, label in HOT, reply_id)
         r = db.one(cur, "select * from replies where id = %s", reply_id)
         db.run(cur, "update tasks set status = 'done', done_at = app_now() where reply_id = %s and kind = 'review_reply'",
                reply_id)

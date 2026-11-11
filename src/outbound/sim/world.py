@@ -68,11 +68,16 @@ def build(cur, *, seed: int = 7, n_accounts: int = 260, start: datetime) -> dict
     portraits = N.Portraits(random.Random(seed + 1))
     accounts: list[int] = []
     for i in range(n_accounts):
-        while True:
-            name = f"{rng.choice(N.PRE)} {rng.choice(N.POST)}"
+        for attempt in range(200):
+            if attempt < 20:
+                name = f"{rng.choice(N.PRE)} {rng.choice(N.POST)}"
+            else:  # past the simple pairs, compound names give about 15,000 more
+                name = f"{rng.choice(N.PRE)}{rng.choice(N.SUF)} {rng.choice(N.POST)}"
             if name not in used_names:
                 used_names.add(name)
                 break
+        else:
+            raise RuntimeError("The name space is exhausted; add words to sim/names.py")
         slug = name.lower().replace(" ", "")
         domain = slug + rng.choice([".com", ".io", ".co", ".ai", ".com", ".io"])
         industry = _pick(rng, INDUSTRIES)

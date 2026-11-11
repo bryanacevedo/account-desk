@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from dataclasses import dataclass, field
 
 
@@ -19,7 +20,11 @@ class Config:
     auth_mode: str = field(default_factory=lambda: os.environ.get("AUTH_MODE", "demo"))  # demo | header
     auth_header: str = field(default_factory=lambda: os.environ.get("AUTH_HEADER", "Cf-Access-Authenticated-User-Email"))
     write_key: str = field(default_factory=lambda: os.environ.get("WRITE_KEY", ""))
-    webhook_secret: str = field(default_factory=lambda: os.environ.get("WEBHOOK_SECRET", "demo-webhook-secret"))
+    # Unset means a random secret for this process only: fine for a demo that resets, refused in live mode.
+    webhook_secret: str = field(default_factory=lambda: os.environ.get("WEBHOOK_SECRET") or secrets.token_hex(32))
+    webhook_secret_set: bool = field(default_factory=lambda: bool(os.environ.get("WEBHOOK_SECRET")))
+    access_team_domain: str = field(default_factory=lambda: os.environ.get("CF_ACCESS_TEAM_DOMAIN", ""))
+    access_aud: str = field(default_factory=lambda: os.environ.get("CF_ACCESS_AUD", ""))
     public_url: str = field(default_factory=lambda: os.environ.get("PUBLIC_URL", "http://localhost:8800"))
     sender_company: str = field(default_factory=lambda: os.environ.get("SENDER_COMPANY", "Lumen Ledger"))
     sender_address: str = field(default_factory=lambda: os.environ.get(
@@ -37,6 +42,10 @@ class Config:
             raise SystemExit("LIVE_SEND=1 needs MODE=live. Refusing to start.")
         if self.public_demo and self.live_send:
             raise SystemExit("The public demo never sends. Unset LIVE_SEND.")
+        if self.mode == "live" and not self.webhook_secret_set:
+            raise SystemExit("MODE=live needs WEBHOOK_SECRET set. Refusing to start.")
+        if self.auth_mode == "header" and not (self.access_team_domain and self.access_aud):
+            raise SystemExit("AUTH_MODE=header needs CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD to verify the signed token.")
 
 
 CONFIG = Config()

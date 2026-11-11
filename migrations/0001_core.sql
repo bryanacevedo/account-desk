@@ -413,6 +413,8 @@ declare
   e record; ap record; p record; a record;
 begin
   if new.status not in ('sending', 'sent') or old.status = new.status then return new; end if;
+  -- Recording the outcome of a send already under way is not a new send: the email has left (or may have).
+  if old.status in ('sending', 'send_unknown') then return new; end if;
   if new.approved_hash is distinct from new.body_hash then
     raise exception 'send refused: body changed after approval (message %)', new.id using errcode = 'P0001';
   end if;

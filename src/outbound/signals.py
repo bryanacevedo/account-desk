@@ -149,8 +149,10 @@ def move_person(cur, person_id: int, new_account_id: int, *, corroborated_by: st
     db.run(cur, """update people set account_id = %s, email = null, email_status = 'unknown', email_verified_at = null,
                    email_verified_by = null, status = 'active', persona_key = null where id = %s""",
            new_account_id, person_id)
-    db.run(cur, """update enrollments set state = 'stopped', stop_reason = 'person_moved'
-                   where person_id = %s and state in ('pending', 'active', 'paused')""", person_id)
+    from . import outreach
+    for e in db.all(cur, "select id from enrollments where person_id = %s and state in ('pending','active','paused')",
+                    person_id):
+        outreach.stop_enrollment(cur, e["id"], "person_moved")
     audit.log(cur, "desk", "person_moved", "person", person_id,
               {"from": p["account_id"], "to": new_account_id, "by": corroborated_by})
 
