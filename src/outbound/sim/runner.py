@@ -27,10 +27,22 @@ def setup(*, start: datetime, seed: int = 7, n_accounts: int = 700) -> dict:
     with db.tx() as cur:
         load.load_catalog(cur, start=start)
         info = world.build(cur, seed=seed, n_accounts=n_accounts, start=start)
+        _sim_placement(cur, random.Random(seed), start)
         for r in db.all(cur, "select id from accounts"):
             scoring.rescore(cur, r["id"])
         # Earlier history: a few months of signals already ingested, so scores start warm.
     return info
+
+
+def _sim_placement(cur, rng: random.Random, start: datetime) -> None:
+    """Hidden truth for seed tests and simulated buyers: most mailboxes land well; one starts landing in spam at
+    Outlook about four weeks in, so the desk has something real to catch (a 21-day test run never reaches it)."""
+    boxes = [r["id"] for r in db.all(cur, "select id from mailboxes order by id")]
+    for i, mb in enumerate(boxes):
+        worse = i == 2
+        db.run(cur, """insert into sim_mailboxes (mailbox_id, gmail, outlook, worsens_from, worse_outlook)
+                       values (%s, %s, %s, %s, %s)""", mb, round(rng.uniform(0.9, 0.98), 2), round(rng.uniform(0.86, 0.96), 2),
+               start + timedelta(days=27) if worse else None, 0.6 if worse else None)
 
 
 def _queue_day_signals(cur, rng: random.Random, day: datetime) -> int:
@@ -65,6 +77,12 @@ def _process_events(cur, until: datetime) -> int:
                                provider_id=f"sim-ev-{ev['id']}")
                 db.run(cur, "update replies set extracted = extracted || %s where provider_id = %s",
                        J({"_sim_kind": p.get("kind")}), f"sim-ev-{ev['id']}")
+        elif ev["kind"] == "li_accept":
+            from .. import sdr_steps
+            sdr_steps.connection_accepted(cur, p["person_id"], user_id=None, source="linkedin")
+        elif ev["kind"] == "li_reply":
+            from .. import sdr_steps
+            sdr_steps.linkedin_reply(cur, p["person_id"], text=p["text"], received_at=ev["at"], provider_id=f"sim-ev-{ev['id']}")
         elif ev["kind"] == "complaint":
             from .. import sending
             sending.record_delivery_event(cur, p["message_id"], "complaint", {"source": "feedback loop"})
@@ -76,6 +94,47 @@ def _process_events(cur, until: datetime) -> int:
         db.run(cur, "update sim_events set done = true where id = %s", ev["id"])
         n += 1
     return n
+
+
+LI_REPLIES = ["Thanks for connecting. What does this look like for a team our size?",
+              "Happy to chat. Can you send a couple of times next week?",
+              "Appreciate the note. We are not looking at this right now.",
+              "Interesting timing, we were just talking about billing. Who should I loop in?"]
+
+
+def work_task(cur, rng: random.Random, t: dict, u: dict, at: datetime) -> None:
+    """One SDR task, done the way people do them: most get done, some skipped, calls mostly reach voicemail."""
+    from .. import sdr_steps
+    need = t["need"] or 0.3
+    user = {"id": u["id"], "role": u["role"]}
+    if rng.random() < 0.15:
+        outcome = "skipped"
+    elif t["kind"] == "linkedin_connect":
+        outcome = "sent" if rng.random() < 0.92 else "already_connected"
+    elif t["kind"] == "linkedin_message":
+        connected = db.val(cur, "select exists (select 1 from touches where person_id = %s and kind = 'linkedin_accepted')",
+                           t["person_id"])
+        outcome = "sent" if connected else "not_connected"
+    elif t["kind"] == "call":
+        r = rng.random()
+        spoke = 0.08 + 0.14 * need
+        outcome = "connected" if r < spoke else "wrong_number" if r < spoke + 0.04 else "voicemail" if r < spoke + 0.5 else "no_answer"
+    else:
+        outcome = "done"
+    try:
+        sdr_steps.complete(cur, t["id"], user=user, outcome=outcome)
+    except ValueError:
+        db.run(cur, "update tasks set status = 'skipped', done_at = %s, note = 'Not sent: refused by the desk' "
+                    "where id = %s and status = 'open'", at, t["id"])
+        return
+    # What the buyer does on LinkedIn, later.
+    if t["kind"] == "linkedin_connect" and outcome == "sent":
+        if rng.random() < 0.22 + 0.35 * need:
+            db.run(cur, "insert into sim_events (at, kind, payload) values (%s, 'li_accept', %s)",
+                   at + timedelta(hours=rng.randint(3, 96)), J({"person_id": t["person_id"]}))
+    if t["kind"] == "linkedin_message" and outcome == "sent" and rng.random() < 0.06 + 0.2 * need:
+        db.run(cur, "insert into sim_events (at, kind, payload) values (%s, 'li_reply', %s)",
+               at + timedelta(hours=rng.randint(2, 72)), J({"person_id": t["person_id"], "text": rng.choice(LI_REPLIES)}))
 
 
 def _working(at: datetime, tzname: str) -> bool:
@@ -100,7 +159,7 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
         # Drafts: approve most, edit a few, reject a few.
         for m in db.all(cur, """select m.id, m.body, m.status from messages m join enrollments e on e.id = m.enrollment_id
                                 join account_plays ap on ap.id = e.account_play_id
-                                where ap.owner_id = %s and m.status in ('awaiting_approval', 'failed_gate')
+                                where ap.owner_id = %s and m.status in ('awaiting_approval', 'failed_gate') and m.channel = 'email'
                                 order by m.created_at limit 6""", u["id"]):
             roll = rng.random()
             try:
@@ -138,12 +197,13 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
                     replies.handle(cur, r["id"], user_id=u["id"], outcome="meeting_booked")
                 else:
                     replies.handle(cur, r["id"], user_id=u["id"], outcome="answered")
-        # Tasks: calls and LinkedIn steps, done or skipped.
-        for t in db.all(cur, """select id from tasks where owner_id = %s and status = 'open' and kind in
-                                ('call','linkedin_connect','linkedin_message','research','referral') and due_at <= %s
-                                order by due_at limit 6""", u["id"], at):
-            db.run(cur, "update tasks set status = %s, done_at = %s where id = %s",
-                   "done" if rng.random() < 0.75 else "skipped", at, t["id"])
+        # Tasks: calls and LinkedIn steps, worked the way an SDR would, with outcomes the desk records.
+        for t in db.all(cur, """select t.id, t.kind, t.person_id, sa.need::float as need from tasks t
+                                left join people p on p.id = t.person_id left join sim_accounts sa on sa.account_id = p.account_id
+                                where t.owner_id = %s and t.status = 'open' and t.kind in
+                                ('call','linkedin_connect','linkedin_message','research','referral') and t.due_at <= %s
+                                order by t.due_at limit 6""", u["id"], at):
+            work_task(cur, rng, t, u, at)
 
 
 # What buyers say on first calls, weighted so some themes recur across calls the way they do in real life.

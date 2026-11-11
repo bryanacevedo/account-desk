@@ -140,7 +140,8 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 
 .section { display: grid; gap: 12px; align-content: start; }
 .section > header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
-.section h2 { font-size: 15px; line-height: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.section h2 { font-size: 15px; line-height: 22px; font-weight: 600; letter-spacing: -0.01em; display: flex; align-items: center; }
+.section h2 .h-icon { color: var(--faint); margin-right: 8px; flex: none; }
 .section h2 .count { color: var(--faint); font-weight: 500; margin-left: 6px; }
 .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; }
 .split { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 40px; align-items: start; }
@@ -161,12 +162,16 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .cell-main { display: grid; gap: 1px; min-width: 0; }
 .cell-main .t { font-weight: 540; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cell-main .s { font-size: 12.5px; color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.empty { padding: 28px 0; color: var(--mute); }
+.empty { padding: 22px 0; color: var(--mute); display: flex; align-items: center; gap: 14px; }
+.empty-icon { width: 36px; height: 36px; border-radius: 10px; background: var(--well); color: var(--faint); display: grid; place-items: center; flex: none; }
 .empty b { display: block; color: var(--ink); font-weight: 560; margin-bottom: 2px; }
 
 /* ------------------------------------------------------------------ status: a glyph and a word */
 
-.status { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; color: var(--ink-2); }
+.status { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; color: var(--ink-2); min-width: 0; }
+/* A long status (a pause reason) wraps inside its own cell instead of running into the next one. */
+.row > .status { white-space: normal; align-items: flex-start; line-height: 1.35; }
+.row > .status svg { margin-top: 2px; }
 .glyph { width: 9px; height: 9px; flex: none; display: inline-block; }
 .glyph.ok { border-radius: 50%; background: var(--ok); }
 .glyph.go { border-radius: 50%; background: var(--accent); }
@@ -325,3 +330,30 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
   .kv { grid-template-columns: 110px minmax(0, 1fr); }
 }
 @media (min-width: 901px) { .phone-nav { display: none; } }
+
+/* ------------------------------------------------------------------ signal icons */
+
+.sig-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--well); color: var(--ink-2); flex: none; }
+.sig-label { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.sig-label .sig-icon { width: 22px; height: 22px; border-radius: 6px; background: transparent; color: var(--mute); }
+.timeline .sig-icon { width: 28px; height: 28px; }
+.timeline li { grid-template-columns: 76px 28px minmax(0, 1fr); }
+
+/* ------------------------------------------------------------------ play editor */
+
+.editor { display: grid; gap: 28px; }
+.choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 16px; }
+.choice { display: flex; align-items: center; gap: 10px; min-height: 40px; cursor: pointer; }
+.choice input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; flex: none; }
+.form-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: end; }
+@media (max-width: 900px) { .choices, .form-row { grid-template-columns: minmax(0, 1fr); } .choice { min-height: 44px; } }
+/* In a side panel figures wrap; a hairline would then open the second line, so panels space them instead. */
+.sheet .fig { border-left: 0 !important; padding: 0 32px 0 0; }
+
+/* Person sheet: inline links to other sheets, rows of a history that open what they record, a do-not-contact note. */
+.link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+.link:hover { text-decoration: underline; }
+.link-row { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.link-row:hover .t { color: var(--accent); }
+.link-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.notice { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 10px 12px; border-radius: 8px; background: var(--well); margin: 4px 0 16px; }

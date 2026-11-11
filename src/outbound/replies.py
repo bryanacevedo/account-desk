@@ -127,9 +127,17 @@ def match(cur, from_addr: str, thread_key: str | None) -> dict:
 
 
 def ingest(cur, *, from_addr: str, subject: str | None, raw: str, received_at: datetime, thread_key: str | None = None,
-           channel: str = "email", provider_id: str | None = None) -> int | None:
-    """Store, stop first, then queue classification. Returns the reply id (None for a duplicate)."""
-    found = match(cur, from_addr, thread_key)
+           channel: str = "email", provider_id: str | None = None, person_id: int | None = None) -> int | None:
+    """Store, stop first, then queue classification. Returns the reply id (None for a duplicate). A LinkedIn message
+    comes with the person already known."""
+    if person_id is not None:
+        p = db.one(cur, "select id, account_id from people where id = %s", person_id)
+        found = {"message_id": db.val(cur, """select m.id from messages m join enrollments e on e.id = m.enrollment_id
+                                             where e.person_id = %s and m.status = 'sent' and m.channel = %s
+                                             order by m.sent_at desc limit 1""", person_id, channel),
+                 "person_id": p["id"], "account_id": p["account_id"]}
+    else:
+        found = match(cur, from_addr, thread_key)
     cleaned = clean(raw)
     row = db.one(cur, """insert into replies (message_id, person_id, account_id, channel, received_at, from_addr, subject,
                                               raw, cleaned, language, provider_id)
@@ -254,7 +262,7 @@ def resume(cur, enrollment_id: int, at: datetime | None = None) -> None:
 def _stop_person(cur, person_id: int, reason: str) -> None:
     for e in db.all(cur, "select id from enrollments where person_id = %s and state in ('pending','active','paused')",
                     person_id):
-        outreach.stop_enrollment(cur, e["id"], reason)
+        outreach.stop_enrollment(cur, e["id"], reason, close_play=False)
 
 
 def _sla(cur, r: dict, owner: int) -> datetime:

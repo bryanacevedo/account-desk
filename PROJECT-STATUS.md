@@ -8,7 +8,7 @@ v1 is built end to end on simulated vendors. **Public** at https://github.com/br
 
 Checked on 2026-11-11 by running them:
 
-- `pytest` on real Postgres 18: 79 passed (77 then, plus 2 eval replays) in about 5 seconds, including a 21-day simulation of the whole desk (140 accounts) followed by checks of every promise against what happened, and 9 regression tests for the first code review's blocking findings.
+- `pytest` on real Postgres 18: 107 passed on 2026-11-11 after the layer work (79 at first publish) (77 then, plus 2 eval replays) in about 5 seconds, including a 21-day simulation of the whole desk (140 accounts) followed by checks of every promise against what happened, and 9 regression tests for the first code review's blocking findings.
 - `ruff check src tests`: clean. `tsc --noEmit` and `vite build`: clean.
 - `make demo`: 460 invented accounts, 60 simulated days in about 25 seconds; opens on 2026-11-11 with work waiting for each SDR.
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Not yet walked by a fresh reviewer against `docs/DESIGN-CHECKLIST.md`, and not yet checked at phone width.
@@ -41,8 +41,21 @@ Checked on 2026-11-11 by running them:
 
 ## Next
 
-1. A fresh hands-on design review of every screen against `docs/DESIGN-CHECKLIST.md`, including phone width.
-2. A play editor for GTM (draft, edit, preview matching accounts) and launch with a cost card for the manager: plays are only seeded in code today (Bryan asked who creates them, 2026-11-11).
-3. Evals for drafts and briefs with live calls (the reply set is done).
-4. The MCP server, live adapters vendor by vendor (Apollo, a verifier, Instantly or Smartlead, HeyReach, HubSpot, Slack, Google Postmaster).
-5. A second fresh code review.
+The layer review (`docs/LAYER-REVIEW.md`, 2026-11-11) found the email path deep and most of what sits off it thin. Done since: placement, LinkedIn and calls, the person sheet. Remaining, in the review's order of harm:
+
+1. Pipeline outside the simulator: opportunities only come from the simulator and nothing closes them in a running desk; the CRM is push-only.
+2. Meetings after booking: no date on booking, no held or no-show or notes in the UI, no booking webhook.
+3. Standing up a real desk: users, mailboxes, domains, ICP, plays and accounts only come from the demo seed.
+4. Referrals and job changes stop at a task.
+5. Deliverability inputs are static: SPF, DKIM, DMARC and blocklists are seed values with no check job.
+6. Evals for drafts and briefs with live calls; the MCP server; live vendor adapters; a second fresh code review.
+
+## Done since the first review (2026-11-11)
+
+- Play editor: GTM writes a play with a live preview of matching accounts and a worst-case cost card, saved as a draft; a manager who did not write it launches it. Checked in the browser.
+- Plays with no email step activate directly; tested end to end.
+- Inbox placement (decision 15): weekly seed tests per mailbox at Gmail and Outlook hold or pause a mailbox, a missing test counts as unknown, and a mailbox that goes quiet next to its peers raises an alert. Shown on Inboxes as "Where mail lands". 4 tests. The 0001 table that was never written to is replaced.
+- LinkedIn and calls (decision 16): drafted notes through the copy checks, sent through the send guard, every outcome a touch, LinkedIn replies as replies, guarantee 20 in the trigger, a monitor for it, results by channel on Results. 16 tests. Checked in the browser: a note marked sent shows on the person's history and LinkedIn row.
+- People open a person sheet from an account: how to reach them, their plays, and one history across email, LinkedIn, calls and signals.
+- Icons within the Instrument identity (status icons in ink, green for healthy, amber and red only where someone must act); relative times spelled out ("2 days ago"), Bryan's call.
+- The flaky monitor test was the slow-first-touch alert catching late approvals by simulated SDRs, which is its job; the test now fails only when a play is stuck inside the desk, and that found a real one (decision 17). Simulator picks now use its seeded generator instead of SQL `random()`.

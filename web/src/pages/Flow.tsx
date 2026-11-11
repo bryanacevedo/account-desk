@@ -1,4 +1,5 @@
 import { Avatar } from "../marks";
+import { SignalIcon, SignalLabel } from "../signalIcons";
 import { ArrowSquareOut } from "@phosphor-icons/react";
 import {
   Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, n0, navigate, pct, usePath, useData,
@@ -101,7 +102,7 @@ export function Signals() {
           {data.sources.map((s: any) => (
             <div key={s.key} className="row" style={{ gridTemplateColumns: S_COLS }}>
               <div className="cell-main"><span className="t">{s.label}</span><span className="s">{s.paid ? `Paid: ${s.provider.charAt(0).toLowerCase()}${s.provider.slice(1)}` : s.provider}</span></div>
-              <span className="mute">{s.cadence_minutes >= 1440 ? "day" : s.cadence_minutes >= 60 ? `${s.cadence_minutes / 60} h` : `${s.cadence_minutes} min`}</span>
+              <span className="mute">{s.cadence_minutes >= 1440 ? "daily" : s.cadence_minutes >= 60 ? `every ${s.cadence_minutes / 60} hours` : `every ${s.cadence_minutes} minutes`}</span>
               <span className="num">{s.key === "webhook" ? "Pushed to us" : s.error ? <Status kind="stop">Failed</Status> : ago(s.last_run)}</span>
               <span className="num">{s.fetched ?? ""}</span><span className="num">{s.matched ?? ""}</span><span className="num strong">{s.week}</span>
             </div>
@@ -118,12 +119,13 @@ function Feed({ rows }: { rows: any[] }) {
   return (
     <div className="ledger">
       {rows.map((s: any) => (
-        <div key={s.id} className="row" style={{ gridTemplateColumns: "92px minmax(0,1fr) minmax(0,1.6fr) 36px" }}>
-          <span className="mute small">{ago(s.ingested_at)}</span>
+        <div key={s.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) minmax(0,1.6fr) 84px 36px" }}>
+          <SignalIcon type={s.type_key} />
           {s.account_id
             ? <button className="cell-main" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }} onClick={() => openSheet("account", s.account_id)}><span className="t">{s.name}</span><span className="s">{s.label}</span></button>
             : <div className="cell-main"><span className="t">{s.raw_domain || s.raw_company || "Unknown company"}</span><span className="s">{s.label}</span></div>}
           <span className="clip hide-sm">{s.evidence.summary}</span>
+          <span className="num mute small hide-sm">{ago(s.ingested_at)}</span>
           {s.evidence.url ? <a className="iconbtn" href={s.evidence.url} target="_blank" rel="noreferrer noopener" aria-label="Open the source"><ArrowSquareOut size={15} /></a> : <span />}
         </div>
       ))}
@@ -139,7 +141,7 @@ function Types({ rows }: { rows: any[] }) {
         <div className="row head" style={{ gridTemplateColumns: T_COLS }}><span>Signal</span><span className="num">Weight</span><span className="num">Seen</span><span className="num">Plays started</span><span className="num">Held back</span><span>Meetings within 60 days</span></div>
         {rows.map((r) => (
           <div key={r.key} className="row" style={{ gridTemplateColumns: T_COLS }} title={r.because}>
-            <div className="cell-main"><span className="t">{r.label}</span><span className="s">{r.because}</span></div>
+            <div className="cell-main"><span className="t"><SignalLabel type={r.key} label={r.label} /></span><span className="s" style={{ paddingLeft: 30 }}>{r.because}</span></div>
             <span className="num">{Number(r.weight) > 0 ? `+${Number(r.weight)}` : Number(r.weight)}</span>
             <span className="num">{r.seen}</span>
             <span className="num">{r.treated}</span><span className="num">{r.holdout}</span>
@@ -156,18 +158,20 @@ const T_COLS = "minmax(0,1.6fr) 60px 56px 96px 80px minmax(160px,1.2fr)";
 
 export function Plays() {
   const { data, error, reload } = useData<any>("/api/plays");
+  const me = useData<any>("/api/me").data;
   if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
   if (!data) return <div className="page"><div className="head"><h1>Plays</h1></div><Loading /></div>;
   return (
     <div className="page">
-      <div className="head"><div><h1>Plays</h1></div></div>
+      <div className="head"><div><h1>Plays</h1></div>
+        {me?.user.role === "gtm" ? <button className="btn" onClick={() => openSheet("playedit", "new")}>New play</button> : null}</div>
       <div className="ledger">
         <div className="row head" style={{ gridTemplateColumns: P_COLS }}><span>Play</span><span>Who writes</span><span className="num">Accounts</span><span className="num">Positive</span><span className="num">Meetings</span><span className="num">Signal to first email</span></div>
         {data.plays.map((p: any) => {
           const f = p.funnel;
           return (
             <button key={p.id} className="row" style={{ gridTemplateColumns: P_COLS }} onClick={() => openSheet("play", p.id)}>
-              <div className="cell-main"><span className="t">{p.name}</span><span className="s">{p.status === "live" ? (p.urgent ? "Live, decide within a day" : "Live") : cap(p.status)}</span></div>
+              <div className="cell-main"><span className="t">{p.name}</span><span className="s">{p.status === "live" ? (p.urgent ? "Live, decide within a day" : "Live") : p.status === "draft" ? "Draft, waiting for a manager" : cap(p.status)}</span></div>
               <span className="mute clip hide-sm">{STAGE[p.autonomy]}</span>
               <span className="num">{f.proposed}</span>
               <span className="num">{f.positive}</span>

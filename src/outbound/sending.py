@@ -241,7 +241,8 @@ def record_delivery_event(cur, message_id: int, event: str, detail: dict | None 
 
 @jobs.handler("mailbox_health")
 def mailbox_health(cur, payload: dict) -> None:
-    """Rolling 14-day hard-bounce rate per mailbox from 50 sends: warn at 1.5%, pause at 2%."""
+    """Rolling 14-day hard-bounce rate per mailbox from 50 sends: warn at 1.5%, pause at 2%. Then the reply-rate
+    check against peers, which asks for a seed test when a mailbox goes quiet."""
     for r in db.all(cur, """select mb.id, mb.address, mb.status,
                count(*) filter (where d.event = 'sent') as sent,
                count(*) filter (where d.event = 'bounced_hard') as bounced
@@ -261,6 +262,75 @@ def mailbox_health(cur, payload: dict) -> None:
                                title=f"{r['address']} bounce rate {rate:.1%}", body="Watch the data source.",
                                object_kind="mailbox", object_id=r["id"],
                                dedup_key=f"mbwarn:{r['id']}:{db.val(cur, 'select app_now()::date')}")
+    for d in reply_rate_drops(cur):
+        week = db.val(cur, "select to_char(app_now(), 'IYYY-IW')")
+        alerts.raise_alert(cur, kind="reply_drop", severity="warn", channel="#outbound-ops",
+                           title=f"{d['address']} replies at under half its peers' rate",
+                           body=f"{d['replied']} replies to {d['sent']} emails in 30 days; its peers' rate predicts "
+                                f"{d['expected']}. It may be landing in spam. A seed test will check.",
+                           object_kind="mailbox", object_id=d["id"], dedup_key=f"replydrop:{d['id']}:{week}")
+        if not db.val(cur, "select exists (select 1 from placement_tests where mailbox_id = %s "
+                           "and at > app_now() - interval '3 days')", d["id"]):
+            jobs.enqueue(cur, "placement_tests", {"mailbox_id": d["id"]}, dedupe_key=f"placement:{d['id']}")
+
+
+@jobs.handler("placement_tests")
+def placement_tests(cur, payload: dict) -> None:
+    """A seed test for every mailbox in use (or the one named): record where its mail landed at each provider, then
+    hold or pause it. Paused mailboxes are tested too, so a person can see when one has recovered."""
+    one = payload.get("mailbox_id")
+    boxes = db.all(cur, "select * from mailboxes where status <> 'retired' and (%s::bigint is null or id = %s) order by id",
+                   one, one)
+    hold = float(outreach.setting(cur, "placement_hold_below", 0.8))
+    pause = float(outreach.setting(cur, "placement_pause_below", 0.5))
+    for mb in boxes:
+        results = adapters.get().telemetry.placement(cur, mb)
+        for r in results:
+            db.run(cur, """insert into placement_tests (mailbox_id, provider, seeds, inbox, spam, missing)
+                           values (%s, %s, %s, %s, %s, %s)""", mb["id"], r.provider, r.seeds, r.inbox, r.spam, r.missing)
+        worst = min(results, key=lambda r: r.inbox / r.seeds, default=None)
+        if worst is None:
+            continue
+        rate, where, today = worst.inbox / worst.seeds, PROVIDER[worst.provider], db.val(cur, "select app_now()::date")
+        if rate < pause and mb["status"] == "active":
+            db.run(cur, "update mailboxes set status = 'paused', pause_reason = %s where id = %s",
+                   f"Inbox placement {rate:.0%} at {where}", mb["id"])
+            alerts.raise_alert(cur, kind="placement_pause", severity="urgent", channel="#outbound-ops",
+                               title=f"{mb['address']} paused: {rate:.0%} inbox at {where}",
+                               body=f"{worst.spam} of {worst.seeds} seed inboxes put it in spam, {worst.missing} never got it.",
+                               object_kind="mailbox", object_id=mb["id"], dedup_key=f"placepause:{mb['id']}:{today}")
+        elif rate < hold:
+            alerts.raise_alert(cur, kind="placement_hold", severity="warn", channel="#outbound-ops",
+                               title=f"{mb['address']} {rate:.0%} inbox at {where}",
+                               body="Held at 10 a day until a seed test comes back healthy. Check its content and volume.",
+                               object_kind="mailbox", object_id=mb["id"], dedup_key=f"placehold:{mb['id']}:{today}")
+
+
+PROVIDER = {"gmail": "Gmail", "outlook": "Outlook"}
+
+
+def reply_rate_drops(cur) -> list[dict]:
+    """Mailboxes replying at under half their peers' rate over 30 days, the cheap sign that mail lands in spam
+    (tracking is off, so nothing else shows it). Only where the peers' rate predicts at least 5 replies, so one quiet
+    week is not an alert. Peers are the other mailboxes sending for the same plays."""
+    return db.all(cur, """
+        with sent as (
+          select m.id, m.mailbox_id, e.account_play_id from messages m join enrollments e on e.id = m.enrollment_id
+          where m.channel = 'email' and m.status = 'sent' and m.sent_at > app_now() - interval '30 days'),
+        per as (
+          select s.mailbox_id, ap.play_id, count(*) as sent,
+                 count(*) filter (where exists (select 1 from replies r where r.message_id = s.id
+                   and coalesce(r.label, 'other') not in ('bounce', 'auto_reply', 'out_of_office'))) as replied
+          from sent s join account_plays ap on ap.id = s.account_play_id group by 1, 2),
+        mine as (
+          select p.mailbox_id, sum(p.sent) as sent, sum(p.replied) as replied,
+                 sum(p.sent * (select coalesce(sum(o.replied)::float / nullif(sum(o.sent), 0), 0) from per o
+                               where o.play_id = p.play_id and o.mailbox_id <> p.mailbox_id)) as expected
+          from per p group by 1)
+        select mb.id, mb.address, x.sent, x.replied, round(x.expected::numeric, 1) as expected from mine x
+        join mailboxes mb on mb.id = x.mailbox_id
+        where mb.status = 'active' and x.sent >= 60 and x.expected >= 5 and x.replied < 0.5 * x.expected
+        order by mb.id""")
 
 
 @jobs.handler("telemetry")

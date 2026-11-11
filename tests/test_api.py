@@ -136,3 +136,77 @@ def test_opt_out_links_in_sent_emails_still_open(client):
     path = re.search(r"/u/\d+/[0-9a-f]+", body).group(0)
     o._unsub_secret = None  # a fresh process
     assert client.get(path).status_code == 200
+
+
+PLAY = {"name": "Test play from the editor", "hypothesis": "Companies hiring billing staff feel the manual work.",
+        "angle": "The roles they are hiring for and the work those people would do.", "personas": ["controller", "cfo"],
+        "max_people": 2, "holdout_pct": 20, "urgent": False, "latency_hours": 48,
+        "trigger": {"any_of": ["hiring_function"], "fit_tiers": ["A", "B"], "min_priority": 30, "within_days": 30},
+        "sequence": [{"day": 0, "channel": "email", "job": "open", "by": "desk"},
+                     {"day": 4, "channel": "call", "job": "call", "by": "sdr"}]}
+
+
+def test_gtm_writes_a_play_and_only_another_manager_launches_it(client):
+    gtm, mgr, sdr = (str(user(r)) for r in ("gtm", "manager", "sdr"))
+    assert client.post("/api/plays", json=PLAY, headers={"X-Acting-As": sdr}).status_code == 403
+    r = client.post("/api/plays", json=PLAY, headers={"X-Acting-As": gtm})
+    assert r.status_code == 200
+    pid = r.json()["id"]
+    with db.tx() as cur:
+        assert db.val(cur, "select status from plays where id = %s", pid) == "draft"
+    edited = {**PLAY, "max_people": 3}
+    assert client.put(f"/api/plays/{pid}", json=edited, headers={"X-Acting-As": gtm}).status_code == 200
+    assert client.post(f"/api/plays/{pid}", json={"status": "live", "reason": "test"}, headers={"X-Acting-As": gtm}).status_code == 403
+    assert client.post(f"/api/plays/{pid}", json={"status": "live", "reason": "test"}, headers={"X-Acting-As": mgr}).status_code == 200
+    with db.tx() as cur:
+        row = db.one(cur, "select status, max_people, version, launched_by from plays where id = %s", pid)
+    assert row["status"] == "live" and row["max_people"] == 3 and row["version"] == 2 and row["launched_by"] == int(mgr)
+
+
+def test_preview_checks_the_play_and_hides_cost_from_sdrs(client):
+    sdr, mgr = str(user("sdr")), str(user("manager"))
+    assert client.post("/api/play-preview", json={**PLAY, "trigger": {**PLAY["trigger"], "any_of": ["nonsense"]}},
+                       headers={"X-Acting-As": mgr}).status_code == 422
+    bad = {**PLAY, "sequence": [{"day": 0, "channel": "call", "job": "call", "by": "desk"}]}
+    assert client.post("/api/play-preview", json=bad, headers={"X-Acting-As": mgr}).status_code == 422
+    r = client.post("/api/play-preview", json=PLAY, headers={"X-Acting-As": mgr}).json()
+    assert {"free_now", "per_month", "sample"} <= set(r["preview"]) and r["cost"]["per_account"]["credits"]["phone_finder"] == 2
+    assert "cost" not in client.post("/api/play-preview", json=PLAY, headers={"X-Acting-As": sdr}).json()
+
+
+def test_a_play_without_emails_runs_on_calls_and_linkedin(client):
+    """No email step: people are chosen without needing an address, nothing waits for approval, and the steps
+    become the SDR's tasks."""
+    from outbound import outreach, plays
+    gtm, mgr = str(user("gtm")), str(user("manager"))
+    body = {**PLAY, "name": "Call and connect only",
+            "sequence": [{"day": 0, "channel": "linkedin_connect", "job": "connect", "by": "sdr"},
+                         {"day": 2, "channel": "call", "job": "call", "by": "sdr"}]}
+    pid = client.post("/api/plays", json=body, headers={"X-Acting-As": gtm}).json()["id"]
+    client.post(f"/api/plays/{pid}", json={"status": "live", "reason": "test"}, headers={"X-Acting-As": mgr})
+    with db.tx() as cur:
+        acct = db.val(cur, """select a.id from accounts a where a.fit_tier in ('A','B') and a.lifecycle = 'prospect'
+                              and not exists (select 1 from account_plays x where x.account_id = a.id and x.state in
+                                ('proposed','accepted','researching','approving','active','engaged','meeting'))
+                              and not exists (select 1 from holds h where h.account_id = a.id and h.until > app_now())
+                              and exists (select 1 from people p where p.account_id = a.id and p.linkedin_url is not null
+                                and p.title ~* '(controller|accounting|cfo|finance)')
+                              order by a.id limit 1""")
+        sig = db.val(cur, "select id from signals where account_id = %s order by id desc limit 1", acct) or db.val(
+            cur, """insert into signals (type_key, source, external_id, account_id, observed_at, strength, evidence, status)
+                    values ('hiring_function', 'jobs_feed', 'test-noemail', %s, app_now(), 0.8,
+                            '{"summary": "x", "url": "https://x"}', 'matched') returning id""", acct)
+        play = db.one(cur, "select * from plays where id = %s", pid)
+        score = {"priority": 60, "inputs": {"signals": []}}
+        signal = db.one(cur, """select s.id, s.type_key, s.observed_at, s.strength, s.evidence, s.person_id, t.label,
+                                t.because, t.weight from signals s join signal_types t on t.key = s.type_key where s.id = %s""", sig)
+        ap = plays.propose(cur, acct, {**play, "holdout_pct": 0}, signal, score)
+        owner = db.val(cur, "select owner_id from account_plays where id = %s", ap)
+        plays.decide(cur, ap, accept=True, user_id=owner or int(gtm))
+        outreach.research_job(cur, {"account_play_id": ap})
+        state = db.val(cur, "select state from account_plays where id = %s", ap)
+        emails = db.val(cur, """select count(*) from messages m join enrollments e on e.id = m.enrollment_id
+                                where e.account_play_id = %s""", ap)
+        active = db.val(cur, "select count(*) from enrollments where account_play_id = %s and state = 'active'", ap)
+        db.run(cur, "rollback")  # leave the shared world as it was
+    assert state == "active" and emails == 0 and active >= 1

@@ -48,6 +48,15 @@ class DomainTelemetry:
     as_of: object | None = None
 
 
+@dataclass
+class PlacementResult:
+    provider: str                # gmail | outlook
+    seeds: int
+    inbox: int
+    spam: int
+    missing: int
+
+
 class PeopleSearch(Protocol):
     def search(self, cur, account: dict, title_patterns: list[str], limit: int) -> list[Candidate]: ...
     def saved(self, cur, candidate: Candidate, person_id: int) -> None: ...
@@ -78,6 +87,7 @@ class EmailChannel(Protocol):
 
 class Telemetry(Protocol):
     def domains(self, cur, domains: list[str]) -> list[DomainTelemetry]: ...
+    def placement(self, cur, mailbox: dict) -> list[PlacementResult]: ...  # a seed test, one result per provider
 
 
 class Chat(Protocol):

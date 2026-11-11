@@ -28,7 +28,7 @@ def today(cur, user: dict) -> dict:
                a.id as account_id, p.name as play
         from messages m join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
         join people pe on pe.id = e.person_id join accounts a on a.id = ap.account_id join plays p on p.id = ap.play_id
-        where m.status in ('awaiting_approval', 'failed_gate') and {mine} order by m.created_at limit 60""", *args)
+        where m.status in ('awaiting_approval', 'failed_gate') and m.channel = 'email' and {mine} order by m.created_at limit 60""", *args)
     hot = db.all(cur, """
         select r.id, r.received_at, r.label, r.cleaned, r.sla_due_at, pe.full_name, pe.photo_url, pe.title, a.name as company,
                a.id as account_id
@@ -38,9 +38,10 @@ def today(cur, user: dict) -> dict:
         where (t.owner_id = %s or %s) order by r.sla_due_at nulls last, r.received_at limit 40""",
         uid, user["role"] != "sdr")
     tasks = db.all(cur, """
-        select t.id, t.kind, t.title, t.due_at, t.note, pe.full_name, pe.photo_url, pe.title as person_title, pe.phone,
-               pe.linkedin_url, a.name as company, a.id as account_id
-        from tasks t left join people pe on pe.id = t.person_id
+        select t.id, t.kind, t.title, t.due_at, t.note, pe.id as person_id, pe.full_name, pe.photo_url, pe.title as person_title,
+               pe.phone, pe.linkedin_url, a.name as company, a.id as account_id, t.message_id, m.body as draft,
+               m.status as draft_status, m.gate -> 'failures' as draft_failures
+        from tasks t left join people pe on pe.id = t.person_id left join messages m on m.id = t.message_id
         left join account_plays ap on ap.id = t.account_play_id left join accounts a on a.id = coalesce(ap.account_id, pe.account_id)
         where t.status = 'open' and t.kind not in ('reply', 'review_reply') and t.owner_id = %s and t.due_at <= app_now() + interval '1 day'
         order by t.due_at limit 50""", uid)
@@ -71,13 +72,13 @@ def accounts(cur, *, q: str | None, view: str, owner: int | None, limit: int = 2
     return db.all(cur, f"""
         select a.id, a.name, a.primary_domain, a.industry, a.employees, a.hq_country, a.fit_tier, a.lifecycle,
                sc.priority, sc.fit, sc.intent, sc.engagement, u.name as owner, ap.state as play_state, p.name as play,
-               rs.label as reason, rs.observed_at as reason_at, coalesce(sh.delta, 0) as week_change,
+               rs.label as reason, rs.type_key as reason_type, rs.observed_at as reason_at, coalesce(sh.delta, 0) as week_change,
                lp.state as last_state, hd.until as hold_until
         from accounts a left join account_scores sc on sc.account_id = a.id
         left join users u on u.id = a.owner_id
         left join account_plays ap on ap.account_id = a.id and ap.state in {OPEN}
         left join plays p on p.id = ap.play_id
-        left join lateral (select t.label, s.observed_at from signals s join signal_types t on t.key = s.type_key
+        left join lateral (select t.label, s.type_key, s.observed_at from signals s join signal_types t on t.key = s.type_key
                            where s.id = sc.reason_signal_id) rs on true
         left join lateral (select state from account_plays x where x.account_id = a.id
                            order by x.proposed_at desc limit 1) lp on true
@@ -148,6 +149,58 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
     return {"account": a, "score": score, "contributions": contributions, "signals": sigs, "plays": plays_,
             "current": current, "people": people, "gaps": gaps, "messages": messages, "replies": reps,
             "meetings": meetings, "opportunities": opps, "holds": holds, "calendar": calendar}
+
+
+# ---------------------------------------------------------------- tasks
+
+def task(cur, task_id: int) -> dict | None:
+    t = db.one(cur, """select t.*, pe.full_name, pe.photo_url, pe.title as person_title, pe.phone, pe.phone_status,
+                              pe.linkedin_url, a.name as company, a.id as account_id, pl.name as play,
+                              m.body as draft, m.status as draft_status, m.gate, m.citations, u.name as owner
+                       from tasks t left join people pe on pe.id = t.person_id
+                       left join account_plays ap on ap.id = t.account_play_id left join plays pl on pl.id = ap.play_id
+                       left join accounts a on a.id = coalesce(ap.account_id, pe.account_id)
+                       left join messages m on m.id = t.message_id left join users u on u.id = t.owner_id
+                       where t.id = %s""", task_id)
+    if t is None:
+        return None
+    from .sdr_steps import CALL_OUTCOMES, LINKEDIN_OUTCOMES, note_limit
+    ids = (t["citations"] or {}).get("ids", []) if t["citations"] else []
+    t["sources"] = db.all(cur, "select id, kind, text, source_url as url from facts where id = any(%s)", ids) if ids else []
+    t["outcomes"] = LINKEDIN_OUTCOMES.get(t["kind"]) or (CALL_OUTCOMES if t["kind"] == "call" else {"done": "Done"})
+    t["max_chars"] = note_limit(cur) if t["kind"] == "linkedin_connect" else None
+    return t
+
+
+# ---------------------------------------------------------------- people
+
+def person(cur, person_id: int) -> dict | None:
+    """One person, everything the desk has done with them, oldest commitments first: plays they were in, every touch
+    on every channel, their replies and meetings, signals they set off, and whether they may be contacted at all."""
+    p = db.one(cur, """select p.*, a.name as company, a.primary_domain, a.id as account_id from people p
+                       left join accounts a on a.id = p.account_id where p.id = %s""", person_id)
+    if p is None:
+        return None
+    enrollments = db.all(cur, """select e.id, e.state, e.step_index, e.stop_reason, e.pause_reason, e.next_at, e.created_at,
+                                        e.persona_key, pl.name as play, pl.sequence, ap.id as account_play_id, ap.state as play_state
+                                 from enrollments e join account_plays ap on ap.id = e.account_play_id
+                                 join plays pl on pl.id = ap.play_id where e.person_id = %s order by e.created_at desc""", person_id)
+    touches = db.all(cur, """select t.id, t.channel, t.direction, t.kind, t.at, t.source, t.message_id, m.subject, m.step_index
+                             from touches t left join messages m on m.id = t.message_id
+                             where t.person_id = %s order by t.at desc limit 100""", person_id)
+    reps = db.all(cur, """select id, received_at, label, cleaned, hot, channel from replies where person_id = %s
+                          order by received_at desc""", person_id)
+    meetings = db.all(cur, "select id, starts_at, status from meetings where person_id = %s order by starts_at desc", person_id)
+    sigs = db.all(cur, """select s.id, s.type_key, t.label, s.observed_at, s.evidence from signals s
+                          join signal_types t on t.key = s.type_key where s.person_id = %s order by s.observed_at desc limit 20""",
+                  person_id)
+    blocked = db.all(cur, """select kind, reason, created_at from suppressions
+                             where (expires_at is null or expires_at > app_now()) and (
+                               (kind = 'person' and value = %s) or (kind = 'email' and value = %s) or (kind = 'phone' and value = %s)
+                               or (kind = 'domain' and value = split_part(%s, '@', 2)))""",
+                     str(person_id), p["email"] or "", p["phone"] or "", p["email"] or "")
+    return {"person": p, "enrollments": enrollments, "touches": touches, "replies": reps, "meetings": meetings,
+            "signals": sigs, "suppressed": blocked}
 
 
 # ---------------------------------------------------------------- signals
@@ -228,7 +281,7 @@ def plays_page(cur, *, money: bool) -> list[dict]:
                    count(*) filter (where status = 'sent') as sent,
                    count(*) filter (where status = 'failed_gate') as failed
             from messages m join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
-            where ap.play_id = %s""", p["id"])
+            where ap.play_id = %s and m.channel = 'email'""", p["id"])
         bounces = db.val(cur, """select count(*) from deliveries d join messages m on m.id = d.message_id
                                  join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
                                  where ap.play_id = %s and d.event = 'bounced_hard'""", p["id"])
@@ -257,10 +310,10 @@ def promotion_check(cur, play: dict) -> dict:
         return {"next": None, "ready": False, "checks": []}
     last = db.all(cur, """select m.edited, m.status from messages m join enrollments e on e.id = m.enrollment_id
                           join account_plays ap on ap.id = e.account_play_id
-                          where ap.play_id = %s and m.approval_mode = 'person' order by m.approved_at desc limit 50""", play["id"])
+                          where ap.play_id = %s and m.approval_mode = 'person' and m.channel = 'email' order by m.approved_at desc limit 50""", play["id"])
     unedited = sum(1 for m in last if not m["edited"])
     sent = db.val(cur, """select count(*) from messages m join enrollments e on e.id = m.enrollment_id
-                          join account_plays ap on ap.id = e.account_play_id where ap.play_id = %s and m.status = 'sent'""",
+                          join account_plays ap on ap.id = e.account_play_id where ap.play_id = %s and m.status = 'sent' and m.channel = 'email'""",
                   play["id"]) or 0
     bounces = db.val(cur, """select count(*) from deliveries d join messages m on m.id = d.message_id
                              join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
@@ -339,8 +392,11 @@ def deliverability(cur) -> dict:
                                        count(*) filter (where event = 'bounced_hard') as bounced,
                                        count(*) filter (where event = 'complaint') as complaints
                                 from deliveries where mailbox_id = %s and at > app_now() - interval '14 days'""", m["id"])
+        seeds = db.all(cur, """select distinct on (provider) provider, inbox, spam, missing, seeds, at from placement_tests
+                               where mailbox_id = %s order by provider, at desc""", m["id"])
         boxes.append({**m, **stats_, "today": outreach.sent_today(cur, m["id"]), "cap": outreach.mailbox_capacity(cur, m),
-                      "blocked": outreach.mailbox_sendable(cur, m)})
+                      "blocked": outreach.mailbox_sendable(cur, m), "placement": {r["provider"]: r for r in seeds},
+                      "placement_at": min((r["at"] for r in seeds), default=None)})
     forecast = db.all(cur, """select date_trunc('day', scheduled_for) as day, count(*) as scheduled from messages
                               where status = 'scheduled' and scheduled_for < app_now() + interval '14 days'
                               group by 1 order by 1""")
@@ -351,7 +407,9 @@ def deliverability(cur) -> dict:
         w["play"] = names.get(key, key)
         w["step"] = int(step or 0) + 1
     capacity = sum(b["cap"] for b in boxes if not b["blocked"])
-    return {"domains": domains, "mailboxes": boxes, "forecast": forecast, "capacity": capacity, "watch": watch}
+    thresholds = {k: float(outreach.setting(cur, k, d)) for k, d in (("placement_hold_below", 0.8), ("placement_pause_below", 0.5))}
+    return {"domains": domains, "mailboxes": boxes, "forecast": forecast, "capacity": capacity, "watch": watch,
+            "placement": thresholds}
 
 
 # ---------------------------------------------------------------- results
@@ -388,8 +446,27 @@ def results(cur, *, money: bool) -> dict:
         from learnings l join call_notes cn on cn.id = l.call_note_id join meetings m on m.id = cn.meeting_id
         join accounts a on a.id = m.account_id left join plays p on p.id = l.play_id
         group by l.kind, l.text order by calls desc, last_at desc""")
+    # Each channel judged on its own terms over 90 days: people reached there, how many answered there, and meetings
+    # within 30 days of their first touch there. A person reached on two channels counts in both.
+    channels = db.all(cur, """
+        with first_out as (
+          select channel, person_id, min(at) as first_at from touches
+          where direction = 'out' and channel in ('email', 'linkedin', 'call') and person_id is not null
+            and at > app_now() - interval '90 days' group by 1, 2)
+        select o.channel, count(*) as reached,
+               count(*) filter (where exists (select 1 from replies r where r.person_id = o.person_id
+                   and r.channel = o.channel and r.received_at >= o.first_at
+                   and coalesce(r.label, 'other') not in ('out_of_office', 'auto_reply', 'bounce'))) as replied,
+               count(*) filter (where exists (select 1 from touches t where t.person_id = o.person_id
+                   and t.kind = 'linkedin_accepted' and t.at >= o.first_at)) as accepted,
+               count(*) filter (where exists (select 1 from touches t where t.person_id = o.person_id
+                   and t.kind = 'call_connected' and t.at >= o.first_at)) as spoke,
+               count(*) filter (where exists (select 1 from meetings m where m.person_id = o.person_id
+                   and m.booked_at between o.first_at and o.first_at + interval '30 days')) as meetings
+        from first_out o group by 1 order by reached desc""")
     out = {"funnel": f, "lift": stats.lift_report(f["meetings"], f["proposed"], f["holdout_meetings"], f["holdout"]),
-           "opportunities": opps, "sla": sla, "labels": labels, "signals": signal_performance(cur), "learnings": learn}
+           "opportunities": opps, "sla": sla, "labels": labels, "signals": signal_performance(cur), "learnings": learn,
+           "channels": channels}
     if money:
         spend = db.all(cur, """select vendor, unit, sum(qty) as qty, sum(cost_cents) as cost_cents from ledger
                                where at >= date_trunc('month', app_now()) group by vendor, unit order by vendor""")

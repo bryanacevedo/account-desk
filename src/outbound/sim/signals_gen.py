@@ -123,8 +123,9 @@ def day_signals(cur, rng: random.Random, day_start: datetime) -> dict[str, list[
             at = day_start + timedelta(minutes=rng.randint(0, 24 * 60 - 1))
             person = None
             if person_level:
-                person = db.one(cur, "select full_name, email, linkedin_url from people where account_id = %s "
-                                     "order by random() limit 1", acct["id"])
+                pool = db.all(cur, "select full_name, email, linkedin_url from people where account_id = %s order by id",
+                              acct["id"])
+                person = rng.choice(pool) if pool else None
             raw = {"type": kind, "external_id": f"{source}-{kind}-{acct['id']}-{rng.randint(10**8, 10**9)}",
                    "observed_at": at, "domain": rng.choice([acct["primary_domain"], "www." + acct["primary_domain"]]),
                    "strength": round(min(1.0, rng.uniform(0.4, 0.9) + 0.15 * acct["need"]), 2),
@@ -148,13 +149,16 @@ def day_signals(cur, rng: random.Random, day_start: datetime) -> dict[str, list[
             "domain": dom, "strength": 0.5, "evidence": evidence(rng, kind, fake, at, None)})
     # Job changes: a known person moves. Most are reported by two sources a few days apart.
     if rng.random() < 0.35:
-        mover = db.one(cur, """select p.id, p.full_name, p.linkedin_url, p.email, p.is_champion, p.account_id
+        # Picks use the sim's seeded generator, never SQL random(), so the same seeds replay the same world.
+        movers = db.all(cur, """select p.id, p.full_name, p.linkedin_url, p.email, p.is_champion, p.account_id
                                from people p join accounts a on a.id = p.account_id
                                where p.status = 'active' and p.title ~* '(cfo|finance|controller|accounting|revenue|billing)'
-                               order by random() limit 1""")
-        target = db.one(cur, """select a.id, a.primary_domain, a.name from accounts a join sim_accounts sa on sa.account_id = a.id
-                                where a.lifecycle = 'prospect' and a.id <> %s order by random() limit 1""",
-                        mover["account_id"] if mover else 0)
+                               order by p.id""")
+        mover = rng.choice(movers) if movers else None
+        targets = db.all(cur, """select a.id, a.primary_domain, a.name from accounts a join sim_accounts sa on sa.account_id = a.id
+                                where a.lifecycle = 'prospect' and a.id <> %s order by a.id""",
+                         mover["account_id"] if mover else 0)
+        target = rng.choice(targets) if targets else None
         if mover and target:
             kind = "champion_moved" if mover["is_champion"] else "job_change"
             ev = {"summary": f"{mover['full_name']} joined {target['name']}.", "url": f"https://social.example.net/in/{mover['id']}",

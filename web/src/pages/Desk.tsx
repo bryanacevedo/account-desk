@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { EnvelopeSimple, LinkedinLogo, Phone } from "@phosphor-icons/react";
 import { api } from "../api";
 import {
   Bar, Empty, Failed, Fig, Loading, Section, Status, ago, cap, day, money, n0, pct, useBusy, useData,
 } from "../lib";
 import { LABEL, LiftBlock, openSheet } from "../sheets";
+import { SignalLabel } from "../signalIcons";
 
 // ---------------------------------------------------------------- Deliverability
 
@@ -32,7 +34,7 @@ export function Deliverability() {
               <div key={d.domain} className="row" style={{ gridTemplateColumns: D_COLS }}>
                 <div className="cell-main"><span className="t">{d.domain}</span><span className="s">DMARC {d.dmarc_policy}{d.blocklisted ? ", on a blocklist" : ""}</span></div>
                 <Status kind={auth ? "ok" : "stop"}>{auth ? "SPF, DKIM, DMARC aligned" : "Incomplete"}</Status>
-                <span className="num">{d.age_days} d</span>
+                <span className="num">{d.age_days} days</span>
                 <span className="num">{d.spam_rate === null ? <span className="mute">Not reported yet</span> : pct(d.spam_rate, 2)}</span>
                 <span className="num">{d.mailboxes}</span>
               </div>
@@ -42,7 +44,7 @@ export function Deliverability() {
       </Section>
       <Section title="Mailboxes">
         <div className="ledger">
-          <div className="row head" style={{ gridTemplateColumns: M_COLS }}><span>Mailbox</span><span>Status</span><span className="num">Today</span><span className="num">Sent, 14 d</span><span className="num">Bounced</span></div>
+          <div className="row head" style={{ gridTemplateColumns: M_COLS }}><span>Mailbox</span><span>Status</span><span className="num">Today</span><span className="num">Sent, 14 days</span><span className="num">Bounced</span></div>
           {data.mailboxes.map((m: any) => (
             <div key={m.id} className="row" style={{ gridTemplateColumns: M_COLS }}>
               <div className="cell-main"><span className="t">{m.address}</span><span className="s">{m.owner}, {cap(m.provider)}</span></div>
@@ -50,6 +52,18 @@ export function Deliverability() {
               <span className="num">{m.today} <span className="faint">of {m.cap}</span></span>
               <span className="num">{m.sent}</span>
               <span className="num">{m.sent ? pct(m.bounced / m.sent, 1) : ""}</span>
+            </div>
+          ))}
+        </div>
+      </Section>
+      <Section title="Where mail lands" right={<span className="mute small">Seed tests, weekly. Under {pct(data.placement.placement_hold_below, 0)} holds a mailbox at 10 a day, under {pct(data.placement.placement_pause_below, 0)} pauses it.</span>}>
+        <div className="ledger">
+          <div className="row head" style={{ gridTemplateColumns: P_COLS }}><span>Mailbox</span><span>Gmail</span><span>Outlook</span><span className="num hide-sm">Tested</span></div>
+          {data.mailboxes.map((m: any) => (
+            <div key={m.id} className="row" style={{ gridTemplateColumns: P_COLS }}>
+              <div className="cell-main"><span className="t">{m.address}</span><span className="s only-sm">{m.placement_at ? `Tested ${ago(m.placement_at)}` : "Not tested yet"}</span></div>
+              {["gmail", "outlook"].map((p) => <Inbox key={p} r={m.placement[p]} t={data.placement} />)}
+              <span className="num mute small hide-sm">{m.placement_at ? ago(m.placement_at) : "Not yet"}</span>
             </div>
           ))}
         </div>
@@ -71,6 +85,18 @@ export function Deliverability() {
     </div>
   );
 }
+/** One provider's seed result: the inbox share, flagged only when it holds or pauses the mailbox. */
+function Inbox({ r, t }: { r: any; t: { placement_hold_below: number; placement_pause_below: number } }) {
+  if (!r) return <span className="mute">Not tested</span>;
+  const rate = r.inbox / r.seeds;
+  const title = `${r.inbox} inbox, ${r.spam} spam, ${r.missing} missing, of ${r.seeds} seed inboxes`;
+  if (rate < t.placement_pause_below) return <span title={title}><Status kind="stop">{pct(rate, 0)} inbox</Status></span>;
+  if (rate < t.placement_hold_below) return <span title={title}><Status kind="hold">{pct(rate, 0)} inbox</Status></span>;
+  return <span title={title}><Status kind="ok">{pct(rate, 0)} inbox</Status></span>;
+}
+
+const C_COLS = "minmax(0,1fr) 120px minmax(0,1.3fr) 170px";
+const P_COLS = "minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr) 110px";
 const D_COLS = "minmax(0,1.4fr) minmax(0,1.4fr) 64px 90px 90px";
 const M_COLS = "minmax(0,1.6fr) minmax(0,1.4fr) 90px 90px 80px";
 
@@ -99,7 +125,7 @@ export function Results() {
           <div className="funnel">
             <Bar label="Offered to an SDR" value={f.proposed} of={of} />
             <Bar label="Accepted" value={f.accepted} of={of} hint={pct(f.accepted / of)} />
-            <Bar label="Emailed" value={f.contacted} of={of} hint={pct(f.contacted / of)} />
+            <Bar label="Contacted" value={f.contacted} of={of} hint={pct(f.contacted / of)} />
             <Bar label="Replied" value={f.replied} of={of} hint={pct(f.replied / of)} />
             <Bar label="Positive reply" value={f.positive} of={of} hint={pct(f.positive / of)} tone="accent" />
             <Bar label="Meeting" value={f.meetings} of={of} hint={pct(f.meetings / of)} tone="accent" />
@@ -107,12 +133,31 @@ export function Results() {
         </Section>
         <Section title="Meetings: contacted against held back"><LiftBlock lift={data.lift} /></Section>
       </div>
+      <Section title="By channel" right={<span className="mute small">Last 90 days. Someone reached on two channels counts in both.</span>}>
+        {data.channels.length ? (
+          <div className="ledger">
+            <div className="row head" style={{ gridTemplateColumns: C_COLS }}><span>Channel</span><span className="num">People reached</span><span className="num">Answered there</span><span className="num hide-sm">Meetings within 30 days</span></div>
+            {data.channels.map((c: any) => {
+              const answered = c.channel === "linkedin" ? c.accepted : c.channel === "call" ? c.spoke : c.replied;
+              const word = c.channel === "linkedin" ? "accepted" : c.channel === "call" ? "spoke" : "replied";
+              return (
+                <div key={c.channel} className="row" style={{ gridTemplateColumns: C_COLS }}>
+                  <span className="sig-label"><span className="sig-icon">{c.channel === "linkedin" ? <LinkedinLogo size={15} /> : c.channel === "call" ? <Phone size={15} /> : <EnvelopeSimple size={15} />}</span>{c.channel === "linkedin" ? "LinkedIn" : c.channel === "call" ? "Calls" : "Email"}</span>
+                  <span className="num">{n0(c.reached)}</span>
+                  <span className="num">{pct(answered / c.reached, 0)} <span className="mute small">{word}{c.channel === "linkedin" && c.replied ? `, ${pct(c.replied / c.reached, 0)} replied` : ""}</span></span>
+                  <span className="num hide-sm">{n0(c.meetings)} <span className="mute small">{pct(c.meetings / c.reached, 1)}</span></span>
+                </div>
+              );
+            })}
+          </div>
+        ) : <Empty title="Nobody reached yet" />}
+      </Section>
       <Section title="Which signals turn into meetings">
         <div className="ledger">
           <div className="row head" style={{ gridTemplateColumns: "minmax(0,1.4fr) 110px minmax(160px,1.6fr)" }}><span>Signal</span><span className="num">Plays started</span><span>Meetings within 60 days</span></div>
           {data.signals.filter((s: any) => s.treated > 0).sort((a: any, b: any) => (b.meeting_rate || 0) - (a.meeting_rate || 0)).map((s: any) => (
             <div key={s.key} className="row" style={{ gridTemplateColumns: "minmax(0,1.4fr) 110px minmax(160px,1.6fr)" }}>
-              <span className="clip">{s.label}</span>
+              <span className="clip"><SignalLabel type={s.key} label={s.label} /></span>
               <span className="num">{s.treated}</span>
               <Bar label="" value={s.meeting_rate || 0} of={Math.max(0.0001, ...data.signals.map((x: any) => x.meeting_rate || 0))} shown={pct(s.meeting_rate)} hint={`${s.treated_meetings} of ${s.treated}`} />
             </div>
@@ -326,7 +371,7 @@ function WeightRow({ t, canEdit }: { t: any; canEdit: boolean }) {
   const save = (enabled = t.enabled) => run(() => api(`/api/signal-types/${t.key}`, { method: "POST", body: { weight: Number(w), half_life_days: Number(h), enabled } }), "Saved. Scores update shortly.");
   return (
     <div className="row" style={{ gridTemplateColumns: W_COLS }}>
-      <div className="cell-main"><span className="t">{t.label}</span><span className="s">{t.because}</span></div>
+      <div className="cell-main"><span className="t"><SignalLabel type={t.key} label={t.label} /></span><span className="s" style={{ paddingLeft: 30 }}>{t.because}</span></div>
       {canEdit ? <input className="input num" style={{ width: 80, justifySelf: "end" }} value={w} onChange={(e) => setW(e.target.value)} onBlur={() => dirty && save()} aria-label={`Weight for ${t.label}`} inputMode="decimal" /> : <span className="num">{Number(t.weight)}</span>}
       {canEdit ? <input className="input num" style={{ width: 80, justifySelf: "end" }} value={h} onChange={(e) => setH(e.target.value)} onBlur={() => dirty && save()} aria-label={`Half-life for ${t.label}`} inputMode="decimal" /> : <span className="num">{Number(t.half_life_days)}</span>}
       <input type="checkbox" checked={t.enabled} disabled={!canEdit || busy} onChange={(e) => save(e.target.checked)} aria-label={`${t.label} on`} style={{ width: 18, height: 18, accentColor: "var(--accent)" }} />

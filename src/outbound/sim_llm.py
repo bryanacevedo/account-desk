@@ -129,8 +129,38 @@ def draft(p: dict) -> dict:
     return {"subject": subj, "sentences": s}
 
 
+CONNECT_WHY = ["I work with finance teams on usage billing and would be glad to connect.",
+               "I spend my days on billing and close for finance teams, so this caught my eye.",
+               "Billing is what I work on, so it seemed worth connecting."]
+LI_ASK = ["Open to comparing notes on how you invoice usage?", "Would a short call on your billing setup be useful?",
+          "Worth a few minutes to compare notes?"]
+
+
+@sim("draft_linkedin")
+def draft_linkedin(p: dict) -> dict:
+    r = _rng("li", p["person"]["id"], p["step"]["index"], p.get("attempt", 1))
+    first, company = p["person"]["first_name"], p["company"]
+    facts = p["facts"]
+    public = [f for f in facts if f["kind"].startswith("signal:")] + [f for f in facts if f["kind"] in ("page:billing", "page:careers")]
+    lead = public[0] if public else None
+    s: list[dict] = [{"text": f"{first},", "kind": "courtesy", "fact_ids": []}]
+    c = _claim(company, lead) if lead else None
+    if c:
+        s.append({"text": c, "kind": "claim", "fact_ids": [lead["id"]]})
+    if p["step"]["job"] == "connect":
+        # A redraft after a length failure drops the courtesy line, the way a person would trim it.
+        if p.get("attempt", 1) == 1:
+            s.append({"text": r.choice(CONNECT_WHY), "kind": "courtesy", "fact_ids": []})
+    else:
+        s.append({"text": r.choice(WHY.get(p.get("persona_key") or "cfo", WHY["cfo"])), "kind": "courtesy", "fact_ids": []})
+        s.append({"text": r.choice(LI_ASK), "kind": "ask", "fact_ids": []})
+    return {"sentences": s}
+
+
 POS_WORDS = ("good timing", "happy to", "let's talk", "lets talk", "does thursday", "send a couple", "case study",
-             "pricing look", "evaluating", "nos interesa", "klingt interessant", "how does this work")
+             "pricing look", "evaluating", "nos interesa", "klingt interessant", "how does this work",
+             "find a time", "30 minutes", "walk me through", "early next week", "add priya", "rollout",
+             "forward to our cfo", "fair point", "exactly the mess", "thursday or friday")
 
 
 @sim("classify")
@@ -151,7 +181,8 @@ def classify(p: dict) -> dict:
         mon = re.search(r"(january|february|march|april|may|june|july|august|september|october|november|december)", t)
         out.update(label="not_now", confidence=0.84, return_date=mon.group(1) if mon else None)
     elif any(w in t for w in POS_WORDS):
-        label = "meeting_request" if any(w in t for w in ("times", "thursday", "call", "termin", "hablar")) else (
+        label = "meeting_request" if any(w in t for w in ("times", "thursday", "call", "termin", "hablar", "find a time",
+                                                            "30 minutes", "early next week", "invite")) else (
             "question" if "?" in t else "interested")
         out.update(label=label, confidence=0.82)
     elif any(w in t for w in ("not interested", "all set", "built this in house", "don't follow up")):

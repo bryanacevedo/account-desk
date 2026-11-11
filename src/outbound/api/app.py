@@ -30,10 +30,12 @@ from .. import (  # noqa: F401
     monitors,
     outreach,
     pipeline,
+    play_editor,
     plays,
     replies,
     scheduler,
     scoring,
+    sdr_steps,
     sending,
     signals,
     views,
@@ -177,7 +179,7 @@ def me(u: dict = Depends(current_user)) -> dict:
                             u["id"], u["role"] != "sdr", u["id"]),
             "approvals": db.val(cur, """select count(*) from messages m join enrollments e on e.id = m.enrollment_id
                                         join account_plays ap on ap.id = e.account_play_id
-                                        where m.status in ('awaiting_approval','failed_gate') and (ap.owner_id = %s or %s)""",
+                                        where m.status in ('awaiting_approval','failed_gate') and m.channel = 'email' and (ap.owner_id = %s or %s)""",
                                 u["id"], u["role"] != "sdr"),
             "replies": db.val(cur, "select count(*) from replies where needs_review and handled_at is null"),
         }
@@ -210,6 +212,15 @@ def account(account_id: int, u: dict = Depends(current_user)) -> dict:
     if a is None:
         raise HTTPException(404, "No such account.")
     return a
+
+
+@app.get("/api/people/{person_id}")
+def person(person_id: int, u: dict = Depends(current_user)) -> dict:
+    with db.tx() as cur:
+        p = views.person(cur, person_id)
+    if p is None:
+        raise HTTPException(404, "No such person.")
+    return p
 
 
 @app.get("/api/signals")
@@ -379,14 +390,57 @@ def handle_reply(reply_id: int, body: Handle, u: dict = Depends(writer)) -> dict
         return views.reply(cur, reply_id)
 
 
-@app.post("/api/tasks/{task_id}/done")
-def task_done(task_id: int, skipped: bool = False, u: dict = Depends(writer)) -> dict:
+@app.get("/api/tasks/{task_id}")
+def task(task_id: int, u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
-        n = db.run(cur, "update tasks set status = %s, done_at = app_now() where id = %s and status = 'open' "
-                        "and (owner_id = %s or %s)", "skipped" if skipped else "done", task_id, u["id"], u["role"] != "sdr")
-    if not n:
-        raise HTTPException(404, "No open task with that id for you.")
-    return {"ok": True}
+        t = views.task(cur, task_id)
+    if t is None:
+        raise HTTPException(404, "No such task.")
+    return t
+
+
+class TaskOutcome(BaseModel):
+    outcome: str = Field("done", max_length=40)
+    text: str | None = Field(None, max_length=3000)  # the LinkedIn note as sent, when the SDR edited it
+    note: str | None = Field(None, max_length=2000)
+
+
+@app.post("/api/tasks/{task_id}/done")
+def task_done(task_id: int, body: TaskOutcome | None = None, skipped: bool = False, u: dict = Depends(writer)) -> dict:
+    """What happened with a call or LinkedIn task. LinkedIn 'sent' goes through the send guard."""
+    body = body or TaskOutcome(outcome="skipped" if skipped else "done")
+    try:
+        with db.tx() as cur:
+            return sdr_steps.complete(cur, task_id, user=u, outcome=body.outcome, text=body.text, note=body.note)
+    except ValueError as exc:
+        # A refusal by the send guard closes the task in its own transaction, so it stays closed.
+        if "The task is closed" in str(exc):
+            with db.tx() as cur:
+                db.run(cur, "update tasks set status = 'skipped', done_at = app_now(), note = %s where id = %s "
+                            "and status = 'open'", str(exc)[:500], task_id)
+        raise HTTPException(409 if "refused" in str(exc) else 400, str(exc)) from None
+
+
+class LinkedInEvent(BaseModel):
+    event: Literal["accepted", "reply"]
+    text: str | None = Field(None, max_length=20_000)
+
+
+@app.post("/api/people/{person_id}/linkedin")
+def linkedin_event(person_id: int, body: LinkedInEvent, u: dict = Depends(writer)) -> dict:
+    """The SDR records what happened on LinkedIn: they accepted the request, or they wrote back (pasted here)."""
+    with db.tx() as cur:
+        if not db.val(cur, "select exists (select 1 from people where id = %s)", person_id):
+            raise HTTPException(404, "No such person.")
+        if body.event == "accepted":
+            sdr_steps.connection_accepted(cur, person_id, user_id=u["id"])
+            return {"ok": True}
+        if not (body.text or "").strip():
+            raise HTTPException(400, "Paste what they wrote.")
+        now = db.val(cur, "select app_now()")
+        rid = sdr_steps.linkedin_reply(cur, person_id, text=body.text, received_at=now,
+                                       provider_id=f"li-manual:{person_id}:{now.isoformat()}")
+        return {"ok": True, "reply_id": rid}
 
 
 class MeetingStatus(BaseModel):
@@ -426,6 +480,8 @@ def change_play(play_id: int, body: PlayChange, u: dict = Depends(writer)) -> di
         if body.status:
             if body.status == "live" and u["role"] != "manager":
                 raise HTTPException(403, "A manager launches plays.")
+            if body.status == "live" and p["created_by"] == u["id"]:
+                raise HTTPException(422, "The person who wrote a play cannot launch it.")
             db.run(cur, """update plays set status = %s,
                            launched_by = case when %s = 'live' then coalesce(launched_by, %s) else launched_by end,
                            launched_at = case when %s = 'live' then coalesce(launched_at, app_now()) else launched_at end
@@ -442,6 +498,61 @@ def change_play(play_id: int, body: PlayChange, u: dict = Depends(writer)) -> di
             db.run(cur, "insert into play_stage_changes (play_id, from_stage, to_stage, reason, decided_by) "
                         "values (%s,%s,%s,%s,%s)", play_id, p["autonomy"], body.autonomy, body.reason, u["id"])
         audit.log(cur, "person", "play_changed", "play", play_id, body.model_dump(), actor_id=u["id"])
+    return {"ok": True}
+
+
+def _play_in(cur, body: play_editor.PlayIn) -> None:
+    try:
+        play_editor.check_names(cur, body)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.post("/api/play-preview")
+def play_preview(body: play_editor.PlayIn, u: dict = Depends(current_user)) -> dict:
+    """What a play, saved or not, would match today and cost a month."""
+    with db.tx() as cur:
+        _play_in(cur, body)
+        pv = play_editor.preview(cur, body)
+        out = {"preview": pv}
+        if money(u):
+            out["cost"] = play_editor.cost(cur, body, pv["per_month_contacted"])
+        return out
+
+
+@app.post("/api/plays")
+def create_play(body: play_editor.PlayIn, u: dict = Depends(writer)) -> dict:
+    need(u, "gtm")
+    with db.tx() as cur:
+        _play_in(cur, body)
+        key = play_editor.slug(body.name)
+        while db.val(cur, "select exists (select 1 from plays where key = %s)", key):
+            key = f"{key}_2" if not key[-1].isdigit() else key[:-1] + str(int(key[-1]) + 1)
+        pid = db.val(cur, """insert into plays (key, name, hypothesis, trigger, personas, max_people, sequence, angle, autonomy,
+                                                status, holdout_pct, owner_id, created_by, urgent, latency_hours, lia_ref)
+                             values (%s,%s,%s,%s,%s,%s,%s,%s,'draft','draft',%s,%s,%s,%s,%s,'LIA-2026-07') returning id""",
+                     key, body.name, body.hypothesis, db.J(body.trigger.model_dump()), body.personas, body.max_people,
+                     db.J([s.model_dump() for s in body.sequence]), body.angle, body.holdout_pct, u["id"], u["id"],
+                     body.urgent, body.latency_hours)
+        audit.log(cur, "person", "play_created", "play", pid, {"name": body.name}, actor_id=u["id"])
+    return {"ok": True, "id": pid}
+
+
+@app.put("/api/plays/{play_id}")
+def edit_play(play_id: int, body: play_editor.PlayIn, u: dict = Depends(writer)) -> dict:
+    need(u, "gtm")
+    with db.tx() as cur:
+        p = db.one(cur, "select * from plays where id = %s for update", play_id)
+        if p is None:
+            raise HTTPException(404, "No such play.")
+        _play_in(cur, body)
+        db.run(cur, """update plays set name = %s, hypothesis = %s, trigger = %s, personas = %s, max_people = %s,
+                       sequence = %s, angle = %s, holdout_pct = %s, urgent = %s, latency_hours = %s, version = version + 1
+                       where id = %s""", body.name, body.hypothesis, db.J(body.trigger.model_dump()), body.personas,
+                   body.max_people, db.J([s.model_dump() for s in body.sequence]), body.angle, body.holdout_pct,
+                   body.urgent, body.latency_hours, play_id)
+        audit.log(cur, "person", "play_edited", "play", play_id, {"version": p["version"] + 1, "before": {
+            k: p[k] for k in ("name", "trigger", "personas", "max_people", "sequence", "holdout_pct")}}, actor_id=u["id"])
     return {"ok": True}
 
 

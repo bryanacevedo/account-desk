@@ -31,7 +31,9 @@ STOPWORDS_CAPS = {"I", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "
                   # Ordinary business terms, not names: a draft may use them without a source.
                   "CRM", "SaaS", "B2B", "B2C", "ARR", "MRR", "ROI", "KPI", "SOC", "GTM", "CEO", "COO", "CTO", "CRO",
                   "RevOps", "FinOps", "ASC", "GAAP", "IFRS", "SLA", "SQL", "AI", "US", "UK", "EU"}
-LIMITS = {"open": (40, 120), "follow_up": (15, 90), "bump": (10, 60), "break_up": (8, 60)}
+LIMITS = {"open": (40, 120), "follow_up": (15, 90), "bump": (10, 60), "break_up": (8, 60),
+          # LinkedIn: a connect note is a line or two; a message reads like a short email without the frame.
+          "connect": (6, 45), "message": (15, 90)}
 PREFIXES = re.compile(r"^(dr|mr|mrs|ms|mx|prof)\.?\s+", re.I)
 
 
@@ -69,12 +71,16 @@ def similarity(a: str, b: str) -> float:
 
 
 def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int, str], our_names: list[str],
-          other_bodies: list[str], private_ids: set[int] | None = None) -> Verdict:
+          other_bodies: list[str], private_ids: set[int] | None = None, channel: str = "email",
+          max_chars: int | None = None) -> Verdict:
+    """The same checks for every channel. LinkedIn text has no subject and no footer, a connect note has a
+    character cap (the setting), and LinkedIn carries no links at all."""
     f: list[dict] = []
     w: list[dict] = []
     sentences = draft["sentences"]
     text = " ".join(s["text"] for s in sentences)
-    subject = draft["subject"].strip()
+    subject = (draft.get("subject") or "").strip()
+    linkedin = channel == "linkedin"
 
     def fail(code: str, msg: str) -> None:
         f.append({"code": code, "message": msg})
@@ -85,11 +91,15 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
     n = words(" ".join(s["text"] for s in sentences[1:]))  # greeting excluded
     if not lo <= n <= hi:
         fail("length", f"{n} words; this step needs {lo} to {hi}")
-    sw = len(subject.split())
-    if not 1 <= sw <= 6:
-        fail("subject_length", f"Subject has {sw} words; 1 to 6")
-    if subject.isupper() and len(subject) > 3:
-        fail("subject_caps", "Subject is all capitals")
+    if linkedin:
+        if max_chars and len(text) > max_chars:
+            fail("too_long", f"{len(text)} characters; a connect note fits in {max_chars}")
+    else:
+        sw = len(subject.split())
+        if not 1 <= sw <= 6:
+            fail("subject_length", f"Subject has {sw} words; 1 to 6")
+        if subject.isupper() and len(subject) > 3:
+            fail("subject_caps", "Subject is all capitals")
     first = clean_first_name(person.get("first_name"), person.get("full_name"))
     if not sentences or not sentences[0]["text"].strip().startswith(first):
         fail("opening", f"Does not open with {first}")
@@ -110,7 +120,7 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
             elif not bad:
                 cited_claims += 1
         cited_text += [facts[i] for i in ids if i in facts]
-    if job in ("open", "follow_up") and cited_claims == 0:
+    if job in ("open", "follow_up", "connect", "message") and cited_claims == 0:
         fail("not_about_them", "Says nothing sourced about their company")
     source = " ".join(cited_text)
     for s in sentences:
@@ -142,7 +152,9 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
     if text.count("!") > 1:
         fail("exclamation", "More than one exclamation mark")
     links = URL.findall(text)
-    if links and job == "open":
+    if links and linkedin:
+        fail("link", "LinkedIn notes and messages carry no links")
+    elif links and job == "open":
         fail("link", "First emails carry no links")
     elif len(links) > 1:
         fail("link", "More than one link")
@@ -154,7 +166,7 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
         w.append({"code": "spam_soft", "message": "Softer spam words: " + ", ".join(soft)})
     for other in other_bodies:
         if similarity(text, other) > 0.6:
-            fail("near_duplicate", "Nearly the same as another email to this company")
+            fail("near_duplicate", "Nearly the same as another note to this company")
             break
     # Keep each failure once.
     seen, uniq = set(), []

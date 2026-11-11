@@ -26,10 +26,28 @@ def test_no_job_died(world):
 
 
 def test_every_monitor_passes(world):
+    """No check finds a fault in the system. A first email late because a person has not approved or rewritten its
+    draft is the alert doing its job (simulated SDRs are sometimes slow), so those count only when the desk itself
+    is the hold-up: a flagged play must be waiting on a draft in a person's hands."""
     with db.tx() as cur:
         results = monitors.run_all(cur, {})
-    failing = [r for r in results if not r["ok"] and r["monitor"] not in ("source_silent", "alerts_undelivered")]
-    assert failing == []
+        cur.execute(monitors.MONITORS["slow_first_touch"]["sql"])
+        late = [r["id"] for r in cur.fetchall()]
+        cur.execute("""select ap.id from account_plays ap where ap.id = any(%s) and not (ap.state = 'approving' and exists (
+                         select 1 from enrollments e join messages m on m.enrollment_id = e.id
+                         where e.account_play_id = ap.id and m.status in ('awaiting_approval', 'failed_gate')))""", (late,))
+        stuck_in_desk = [r["id"] for r in cur.fetchall()]
+        detail = [db.one(cur, """select ap.id, ap.state, p.sequence, (select json_agg(json_build_object('st', e.state,
+                    'step', e.step_index, 'stop', e.stop_reason, 'msgs', (select json_agg(json_build_object('st', m.status,
+                    'ch', m.channel, 'step', m.step_index)) from messages m where m.enrollment_id = e.id)))
+                    from enrollments e where e.account_play_id = ap.id) as enr,
+                    (select json_agg(json_build_object('k', t.kind, 'st', t.status, 'note', t.note)) from tasks t
+                     where t.account_play_id = ap.id) as tasks
+                    from account_plays ap join plays p on p.id = ap.play_id where ap.id = %s""", i) for i in stuck_in_desk]
+    assert stuck_in_desk == [], detail
+    failing = [r for r in results if not r["ok"]
+               and r["monitor"] not in ("source_silent", "alerts_undelivered", "slow_first_touch")]
+    assert failing == [], failing
 
 
 def test_comparison_group_never_contacted(world):
@@ -66,8 +84,8 @@ def test_mailbox_caps_were_respected(world):
 
 
 def test_every_email_carries_the_legal_footer(world):
-    assert v("select count(*) from messages where status = 'sent' and body not like '%%won''t write again%%'") == 0
-    assert v("select count(*) from messages where status = 'sent' and body not like '%%400 Market Street%%'") == 0
+    assert v("select count(*) from messages where status = 'sent' and channel = 'email' and body not like '%%won''t write again%%'") == 0
+    assert v("select count(*) from messages where status = 'sent' and channel = 'email' and body not like '%%400 Market Street%%'") == 0
 
 
 def test_no_sent_email_cites_tracking_data(world):

@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { LinkedinLogo, Phone, MagnifyingGlass } from "@phosphor-icons/react";
+import { CalendarCheck, ChatCircleText, Lightbulb, LinkedinLogo, MagnifyingGlass, PencilSimpleLine, Phone } from "@phosphor-icons/react";
 import { api } from "../api";
 import { Avatar, Logo } from "../marks";
+import { SignalLabel } from "../signalIcons";
 import {
   Empty, Failed, Fig, Loading, Section, Seg, Status, ago, ahead, cap, day, dayTime, n0, navigate, useBusy, useData,
   weekday, withParam, usePath,
@@ -36,7 +37,7 @@ export function Today() {
         <Fig value={data.meetings.length} label="Meetings this week" />
       </div>
 
-      <Section title="Replies">
+      <Section title="Replies" icon={ChatCircleText}>
         {data.replies.length ? (
           <div className="ledger">
             {data.replies.map((r: any) => {
@@ -58,7 +59,7 @@ export function Today() {
         ) : <Empty title="No replies waiting" />}
       </Section>
 
-      <Section title={me?.user.role === "sdr" ? "Accounts proposed to you" : "Accounts proposed to the team"}>
+      <Section icon={Lightbulb} title={me?.user.role === "sdr" ? "Accounts proposed to you" : "Accounts proposed to the team"}>
         {data.proposals.length ? (
           <div className="ledger">
             {data.proposals.map((p: any) => (
@@ -67,7 +68,7 @@ export function Today() {
                 <button className="cell-main" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }} onClick={() => openSheet("account", p.account_id)}>
                   <span className="t">{p.name}</span><span className="s">{p.play}{p.urgent ? ", decide today" : ""}{me?.user.role !== "sdr" && p.owner ? `, ${p.owner}` : ""}</span><span className="s only-sm">{p.why_now.summary}</span>
                 </button>
-                <div className="cell-main hide-sm"><span className="t" style={{ fontWeight: 450 }}>{p.why_now.summary}</span><span className="s">{p.why_now.label}, {ago(p.why_now.observed_at)}</span></div>
+                <div className="cell-main hide-sm"><span className="t" style={{ fontWeight: 450 }}>{p.why_now.summary}</span><span className="s"><SignalLabel type={p.why_now.type} label={`${p.why_now.label}, ${ago(p.why_now.observed_at)}`} /></span></div>
                 <span className="num hide-sm"><span className="mute small">Priority </span>{p.priority}</span>
                 {skipping === p.id ? (
                   <div className="actions">
@@ -88,7 +89,7 @@ export function Today() {
       </Section>
 
       <div className="two">
-        <Section title="Emails to approve">
+        <Section title="Emails to approve" icon={PencilSimpleLine}>
           {data.approvals.length ? (
             <div className="ledger">
               {data.approvals.slice(0, 8).map((m: any) => (
@@ -101,7 +102,7 @@ export function Today() {
             </div>
           ) : <Empty title="All approved" />}
         </Section>
-        <Section title="Calls and LinkedIn">
+        <Section title="Calls and LinkedIn" icon={Phone}>
           {data.tasks.length ? (
             <div className="ledger">
               {data.tasks.slice(0, 8).map((t: any) => <TaskRow key={t.id} t={t} />)}
@@ -111,7 +112,7 @@ export function Today() {
       </div>
 
       {data.meetings.length ? (
-        <Section title="Meetings this week">
+        <Section title="Meetings this week" icon={CalendarCheck}>
           <div className="ledger">
             {data.meetings.map((m: any) => (
               <button key={m.id} className="row" style={{ gridTemplateColumns: "120px minmax(0,1fr) auto" }} onClick={() => openSheet("account", m.account_id)}>
@@ -128,19 +129,14 @@ export function Today() {
 }
 
 function TaskRow({ t }: { t: any }) {
-  const [busy, run] = useBusy();
-  const icon = t.kind === "call" ? <Phone size={16} /> : t.kind.startsWith("linkedin") ? <LinkedinLogo size={16} /> : <MagnifyingGlass size={16} />;
+  const Ic = t.kind === "call" ? Phone : t.kind.startsWith("linkedin") ? LinkedinLogo : MagnifyingGlass;
+  const hint = t.draft_status === "failed_gate" ? "Note needs a rewrite" : t.draft ? "Note drafted" : t.kind === "call" ? t.phone : "";
   return (
-    <div className="row" style={{ gridTemplateColumns: "20px minmax(0,1fr) auto" }}>
-      <span className="mute">{icon}</span>
-      <button className="cell-main" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }} onClick={() => t.account_id && openSheet("account", t.account_id)}>
-        <span className="t">{t.title}</span><span className="s">{t.company}{t.note ? `, ${t.note}` : ""}</span>
-      </button>
-      <div className="actions">
-        {t.kind.startsWith("linkedin") && t.linkedin_url ? <a className="btn quiet sm" href={t.linkedin_url} target="_blank" rel="noreferrer noopener">Profile</a> : null}
-        <button className="btn line sm" disabled={busy} onClick={() => run(() => api(`/api/tasks/${t.id}/done`, { method: "POST" }), "Done.")}>Done</button>
-      </div>
-    </div>
+    <button className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }} onClick={() => openSheet("task", t.id)}>
+      <Avatar name={t.full_name || t.company} photo={t.photo_url} />
+      <div className="cell-main"><span className="t">{t.title.replace(/ \(.*\)$/, "")}</span><span className="s">{t.company}{hint ? `, ${hint}` : ""}</span></div>
+      <span className="mute"><Ic size={16} aria-hidden="true" /></span>
+    </button>
   );
 }
 
@@ -175,7 +171,7 @@ export function Accounts() {
               <button key={a.id} className="row" style={{ gridTemplateColumns: COLS }} onClick={() => openSheet("account", a.id)}>
                 <Logo domain={a.primary_domain} name={a.name} />
                 <div className="cell-main"><span className="t">{a.name}</span><span className="s">{a.industry}, {n0(a.employees)} people, tier {a.fit_tier}</span><span className="s only-sm">{a.reason || "No recent signal"}</span></div>
-                <div className="cell-main hide-sm">{a.reason ? <><span className="t" style={{ fontWeight: 450 }}>{a.reason}</span><span className="s">{day(a.reason_at)}</span></> : <span className="mute">No recent signal</span>}</div>
+                <div className="cell-main hide-sm">{a.reason ? <><span className="t" style={{ fontWeight: 450 }}><SignalLabel type={a.reason_type} label={a.reason} /></span><span className="s" style={{ paddingLeft: 30 }}>{day(a.reason_at)}</span></> : <span className="mute">No recent signal</span>}</div>
                 <span className="num strong">{a.priority ?? 0}</span>
                 <span className="num hide-sm" style={{ color: a.week_change > 0 ? "var(--ink)" : "var(--faint)" }}>{a.week_change > 0 ? `+${a.week_change}` : a.week_change < 0 ? a.week_change : ""}</span>
                 <span className="hide-sm">{st ? <Status kind={st[0]}>{st[1]}</Status>

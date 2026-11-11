@@ -8,7 +8,7 @@ import random
 import re
 
 from .. import db
-from . import Adapters, Candidate, DomainTelemetry, Page, SendResult
+from . import Adapters, Candidate, DomainTelemetry, Page, PlacementResult, SendResult
 
 log = logging.getLogger("outbound.sim")
 
@@ -92,7 +92,29 @@ class SimEmail:
         return SendResult("sent" if rng.random() < 0.5 else "failed", f"sim-{idempotency_key}")
 
 
+def sim_inbox_rate(cur, mailbox_id: int, provider: str) -> float:
+    """The simulated truth: how often this mailbox's mail reaches the inbox at a provider today."""
+    t = db.one(cur, "select *, (worsens_from is not null and app_now() >= worsens_from) as worse from sim_mailboxes "
+                    "where mailbox_id = %s", mailbox_id)
+    if t is None:
+        return 0.95
+    if provider == "outlook" and t["worse"]:
+        return float(t["worse_outlook"])
+    return float(t[provider])
+
+
 class SimTelemetry:
+    def placement(self, cur, mailbox: dict) -> list[PlacementResult]:
+        day = db.val(cur, "select app_now()::date")
+        rng = random.Random(f"seed:{mailbox['id']}:{day}")
+        out = []
+        for provider in ("gmail", "outlook"):
+            rate, seeds = sim_inbox_rate(cur, mailbox["id"], provider), 20
+            inbox = sum(rng.random() < rate for _ in range(seeds))
+            missing = sum(rng.random() < 0.15 for _ in range(seeds - inbox))
+            out.append(PlacementResult(provider, seeds, inbox, seeds - inbox - missing, missing))
+        return out
+
     def domains(self, cur, domains: list[str]) -> list[DomainTelemetry]:
         out = []
         for d in domains:

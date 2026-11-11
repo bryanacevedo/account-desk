@@ -92,7 +92,7 @@ def person_reasons(cur, person_id: int, channel: str, *, account_play_id: int | 
         out.append(Reason("other_enrollment", True, "Already in another sequence"))
     cooldown = int(_setting(cur, "person_cooldown_days", 90))
     touched = db.val(cur, """
-        select exists (select 1 from touches t where t.person_id = %s and t.direction = 'out' and t.source = 'desk'
+        select exists (select 1 from touches t where t.person_id = %s and t.direction = 'out' and t.source in ('desk', 'sdr')
                        and t.at > app_now() - (%s || ' days')::interval
                        and (%s::bigint is null or t.account_play_id is distinct from %s::bigint))""",
         person_id, cooldown, account_play_id, account_play_id)

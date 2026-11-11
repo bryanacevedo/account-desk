@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowSquareOut, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowSquareOut, CalendarCheck, EnvelopeSimple, LinkedinLogo, Phone, X } from "@phosphor-icons/react";
 import { api } from "./api";
 import { Avatar, Logo } from "./marks";
+import { SignalIcon, SignalLabel } from "./signalIcons";
+import { PlayEditor, PlayPreview } from "./PlayEditor";
 import {
   Bar, Empty, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTime, money, n0, navigate, pct,
   toast, useBusy, useData, withParam, type Glyph,
@@ -65,8 +67,11 @@ export function SheetHost() {
   const key = sheet;
   if (kind === "account") return <AccountSheet key={`account:${id}`} id={Number(id)} />;
   if (kind === "message") return <MessageSheet key={key} id={Number(id)} />;
+  if (kind === "person") return <PersonSheet key={key} id={Number(id)} />;
+  if (kind === "task") return <TaskSheet key={key} id={Number(id)} />;
   if (kind === "reply") return <ReplySheet key={key} id={Number(id)} />;
   if (kind === "play") return <PlaySheet key={key} id={Number(id)} />;
+  if (kind === "playedit") return <Frame key={key} crumb={id === "new" ? "New play" : "Edit play"}><PlayEditor id={id === "new" ? null : Number(id)} /></Frame>;
   return null;
 }
 
@@ -110,6 +115,218 @@ const stopWord = (r: string | null) => {
 const GOOD_STOPS = new Set(["replied_positive", "meeting_booked", "referral"]);
 
 const PERSONA: Record<string, string> = { cfo: "Finance leader", controller: "Controller", revops: "Revenue operations", data: "Data and systems" };
+
+// ---------------------------------------------------------------- person
+
+const TOUCH: Record<string, string> = {
+  email_sent: "Email sent", reply: "Replied", meeting_booked: "Meeting booked", linkedin_connect: "Connection request sent",
+  linkedin_accepted: "Accepted the connection", linkedin_message: "LinkedIn message sent", linkedin_reply: "Replied on LinkedIn",
+  call_connected: "Call, spoke", call_voicemail: "Call, left a voicemail", call_no_answer: "Call, no answer",
+};
+
+export function PersonSheet({ id }: { id: number }) {
+  const { data, error, reload } = useData<any>(`/api/people/${id}`);
+  if (error) return <Frame crumb="Person"><Failed error={error} retry={reload} /></Frame>;
+  if (!data) return <Frame crumb="Person"><Loading rows={8} /></Frame>;
+  const p = data.person;
+  // One history across channels, newest first. Replies are not repeated as touches.
+  const history = [
+    ...data.touches.filter((t: any) => t.kind !== "reply").map((t: any) => ({ at: t.at, kind: "touch", t })),
+    ...data.replies.map((r: any) => ({ at: r.received_at, kind: "reply", r })),
+    ...data.signals.map((g: any) => ({ at: g.observed_at, kind: "signal", g })),
+  ].sort((x, y) => (x.at < y.at ? 1 : -1));
+  return (
+    <Frame crumb="Person">
+      <div className="who">
+        <Avatar name={p.full_name} photo={p.photo_url} size={44} />
+        <div style={{ minWidth: 0 }}>
+          <h2 className="clip">{p.full_name}</h2>
+          <div className="meta clip">{p.title}{p.company ? <> at <button className="link" onClick={() => openSheet("account", p.account_id)}>{p.company}</button></> : null}</div>
+        </div>
+      </div>
+      {data.suppressed.length ? (
+        <div className="notice"><Status kind="stop">Do not contact</Status><span className="mute">{data.suppressed.map((x: any) => x.reason).join(", ")}</span></div>
+      ) : null}
+      <Section title="How to reach them">
+        <div className="ledger">
+          <Reach label="Email" value={p.email} state={p.email ? (p.email_status === "valid" ? ["ok", "Verified"] : p.email_status === "invalid" ? ["stop", "Bounces"] : ["half", cap(p.email_status)]) : null} />
+          <Reach label="Phone" value={p.phone} state={p.phone ? (p.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(p.phone_status)]) : null} />
+          <Reach label="LinkedIn" value={p.linkedin_url ? <a href={p.linkedin_url} target="_blank" rel="noreferrer noopener">Profile <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
+            state={data.touches.some((x: any) => x.kind === "linkedin_accepted") ? ["ok", "Connected"] : data.touches.some((x: any) => x.kind === "linkedin_connect") ? ["wait", "Request sent"] : null} />
+          {p.status !== "active" ? <Reach label="Status" value={cap(p.status)} /> : null}
+        </div>
+      </Section>
+      {p.linkedin_url ? <LinkedInLog personId={p.id} canAccept={data.touches.some((x: any) => x.kind === "linkedin_connect") && !data.touches.some((x: any) => x.kind === "linkedin_accepted")} onDone={reload} /> : null}
+      <Section title="Plays">
+        {data.enrollments.length ? (
+          <div className="ledger">
+            {data.enrollments.map((e: any) => {
+              const st = ENROLL[e.state] || ["off", cap(e.state)];
+              const word = e.state === "stopped" || e.state === "paused" ? stopWord(e.stop_reason || e.pause_reason) || st[1] : st[1];
+              return (
+                <div key={e.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
+                  <div className="cell-main"><span className="t">{e.play}</span>
+                    <span className="s">{e.state === "active" && e.next_at ? `Step ${e.step_index + 1} of ${e.sequence.length}, ${ahead(e.next_at) === "due" ? "due now" : `next ${ahead(e.next_at)}`}` : `Since ${day(e.created_at)}`}</span></div>
+                  <Status kind={GOOD_STOPS.has(e.stop_reason) ? "ok" : st[0]}>{word}</Status>
+                </div>
+              );
+            })}
+          </div>
+        ) : <Empty title="Not in a play" />}
+      </Section>
+      <Section title="History">
+        {history.length ? (
+          <ul className="timeline">
+            {history.map((h: any, i: number) => (
+              <li key={i}>
+                <span className="at">{day(h.at)}</span>
+                {h.kind === "signal" ? <SignalIcon type={h.g.type_key} /> : <ChannelIcon channel={h.kind === "reply" ? (h.r.channel || "email") : h.t.channel} />}
+                {h.kind === "touch" ? (
+                  h.t.message_id ? (
+                    <button className="cell-main link-row" onClick={() => openSheet("message", h.t.message_id)}>
+                      <span className="t">{TOUCH[h.t.kind] || cap(h.t.kind.replace(/_/g, " "))}</span>
+                      <span className="s">{h.t.subject ? `${h.t.subject}, email ${h.t.step_index + 1}` : ""}</span>
+                    </button>
+                  ) : <div className="cell-main"><span className="t">{TOUCH[h.t.kind] || cap(h.t.kind.replace(/_/g, " "))}</span><span className="s">{h.t.source === "person" ? "Logged by the SDR" : ""}</span></div>
+                ) : h.kind === "reply" ? (
+                  <button className="cell-main link-row" onClick={() => openSheet("reply", h.r.id)}>
+                    <span className="t">Replied, {(LABEL[h.r.label] || LABEL.other)[1].toLowerCase()}</span>
+                    <span className="s" style={{ whiteSpace: "normal" }}>{h.r.cleaned}</span>
+                  </button>
+                ) : (
+                  <div className="cell-main"><span className="t">{h.g.label}</span><span className="s" style={{ whiteSpace: "normal" }}>{h.g.evidence.summary}</span></div>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : <Empty title="Nothing yet" />}
+      </Section>
+    </Frame>
+  );
+}
+
+// ---------------------------------------------------------------- task (LinkedIn and calls, done by the SDR)
+
+export function TaskSheet({ id }: { id: number }) {
+  const { data: t, error, reload } = useData<any>(`/api/tasks/${id}`);
+  const [text, setText] = useState<string | null>(null);
+  const [busy, run] = useBusy();
+  if (error) return <Frame crumb="Task"><Failed error={error} retry={reload} /></Frame>;
+  if (!t) return <Frame crumb="Task"><Loading rows={6} /></Frame>;
+  const linkedin = t.kind.startsWith("linkedin");
+  const body = text ?? t.draft ?? "";
+  const over = t.max_chars && body.length > t.max_chars;
+  const failures: any[] = t.draft_status === "failed_gate" && text === null ? (t.gate?.failures || []) : [];
+  const open = t.status === "open";
+  const done = (outcome: string) => run(async () => {
+    await api(`/api/tasks/${id}/done`, { method: "POST", body: { outcome, text: linkedin && outcome === "sent" ? body : null } });
+    closeSheet();
+  }, t.outcomes[outcome] ? `${t.outcomes[outcome]}.` : "Skipped.");
+  const copy = () => { navigator.clipboard?.writeText(body).then(() => toast("Copied."), () => toast("Select the text and copy it.")); };
+  return (
+    <Frame crumb={linkedin ? "LinkedIn" : t.kind === "call" ? "Call" : "Task"}
+      foot={open ? (
+        <div className="actions" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <button className="btn quiet sm" disabled={busy} onClick={() => done("skipped")}>Skip</button>
+          {Object.entries(t.outcomes as Record<string, string>).map(([k, l], i) => (
+            <button key={k} className={i === 0 ? "btn sm" : "btn line sm"} disabled={busy || (k === "sent" && (!body || !!over))} onClick={() => done(k)}>{l}</button>
+          ))}
+        </div>
+      ) : null}>
+      <div className="who">
+        <Avatar name={t.full_name} photo={t.photo_url} size={44} />
+        <div style={{ minWidth: 0 }}>
+          <h2 className="clip"><button className="link-row" onClick={() => openSheet("person", t.person_id)}>{t.full_name}</button></h2>
+          <div className="meta clip">{t.person_title}{t.company ? <> at <button className="link" onClick={() => openSheet("account", t.account_id)}>{t.company}</button></> : null}{t.play ? `, ${t.play}` : ""}</div>
+        </div>
+      </div>
+      {!open ? <div className="notice"><Status kind={t.status === "done" ? "ok" : "off"}>{t.note || cap(t.status)}</Status></div> : null}
+      {linkedin ? (
+        <Section title={t.kind === "linkedin_connect" ? "Connection note" : "Message"}
+          right={t.linkedin_url ? <a className="btn quiet sm" href={t.linkedin_url} target="_blank" rel="noreferrer noopener">Open profile <ArrowSquareOut size={12} /></a> : null}>
+          {t.draft !== null ? (
+            <>
+              <textarea className="input" rows={t.kind === "linkedin_connect" ? 4 : 6} value={body} disabled={!open}
+                onChange={(e) => setText(e.target.value)} aria-label="Note to send" />
+              <div className="actions" style={{ justifyContent: "space-between", marginTop: 8 }}>
+                <span className={over ? "small" : "mute small"} style={over ? { color: "var(--stop)" } : undefined}>
+                  {t.max_chars ? `${body.length} of ${t.max_chars} characters` : `${body.length} characters`}{text !== null ? ", edited: checked again when you send" : ""}
+                </span>
+                <button className="btn quiet sm" onClick={copy}>Copy</button>
+              </div>
+              {failures.length ? (
+                <div className="ledger" style={{ marginTop: 12 }}>
+                  {failures.map((f: any, i: number) => <div key={i} className="row" style={{ gridTemplateColumns: "minmax(0,1fr)" }}><Status kind="stop">{f.message}</Status></div>)}
+                </div>
+              ) : null}
+            </>
+          ) : <Empty title="No note drafted" />}
+        </Section>
+      ) : null}
+      {t.kind === "call" ? (
+        <Section title="Number">
+          <div className="ledger"><Reach label="Phone" value={t.phone} state={t.phone ? (t.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(t.phone_status)]) : null} /></div>
+        </Section>
+      ) : null}
+      {t.sources?.length ? (
+        <Section title="What it rests on">
+          <div className="ledger">
+            {t.sources.map((f: any) => (
+              <div key={f.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
+                <span style={{ whiteSpace: "normal" }}>{f.text}</span>
+                {f.url ? <a className="mute" href={f.url} target="_blank" rel="noreferrer noopener" aria-label="Source"><ArrowSquareOut size={14} /></a> : <span />}
+              </div>
+            ))}
+          </div>
+        </Section>
+      ) : null}
+      {t.kind === "call" && open ? <p className="mute small">If you spoke with them, the desk stops its own steps for them: you are in the conversation now.</p> : null}
+    </Frame>
+  );
+}
+
+/** What happened on LinkedIn, recorded by the SDR: an accepted request, or their message pasted in (it becomes a
+ *  reply, so their emails stop first). */
+function LinkedInLog({ personId, canAccept, onDone }: { personId: number; canAccept: boolean; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [busy, run] = useBusy();
+  return (
+    <Section title="LinkedIn" right={
+      <div className="actions">
+        {canAccept ? <button className="btn line sm" disabled={busy} onClick={() => run(async () => { await api(`/api/people/${personId}/linkedin`, { method: "POST", body: { event: "accepted" } }); onDone(); }, "Recorded.")}>They accepted</button> : null}
+        <button className="btn line sm" onClick={() => setOpen(!open)}>{open ? "Cancel" : "They wrote back"}</button>
+      </div>}>
+      {open ? (
+        <>
+          <textarea className="input" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste their message" aria-label="Their LinkedIn message" />
+          <div className="actions" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+            <button className="btn sm" disabled={busy || !text.trim()} onClick={() => run(async () => {
+              const r = await api<any>(`/api/people/${personId}/linkedin`, { method: "POST", body: { event: "reply", text } });
+              setOpen(false); setText(""); onDone();
+              if (r.reply_id) openSheet("reply", r.reply_id);
+            }, "Saved as a reply. Their emails are paused.")}>Save as a reply</button>
+          </div>
+        </>
+      ) : <p className="mute small" style={{ margin: 0 }}>An accepted request is recorded and pauses nothing. A message from them is a reply: their emails stop first.</p>}
+    </Section>
+  );
+}
+
+function Reach({ label, value, state }: { label: string; value: ReactNode; state?: [Glyph, string] | null }) {
+  return (
+    <div className="row" style={{ gridTemplateColumns: "96px minmax(0,1fr) auto" }}>
+      <span className="mute">{label}</span>
+      <span className="clip">{value || <span className="faint">Not found</span>}</span>
+      {state ? <Status kind={state[0]}>{state[1]}</Status> : <span />}
+    </div>
+  );
+}
+
+function ChannelIcon({ channel }: { channel: string }) {
+  const Ic = channel === "linkedin" ? LinkedinLogo : channel === "call" ? Phone : channel === "meeting" ? CalendarCheck : EnvelopeSimple;
+  return <span className="sig-icon"><Ic size={15} aria-hidden="true" /></span>;
+}
 
 // ---------------------------------------------------------------- account
 
@@ -169,10 +386,14 @@ function WhyNow({ why }: { why: any }) {
 }
 
 // One bar per kind of signal: two pricing visits are one reason, pulling harder.
-function grouped(contribs: any[]): { label: string; value: number }[] {
-  const m = new Map<string, number>();
-  contribs.forEach((c) => m.set(c.label, (m.get(c.label) || 0) + c.value));
-  return [...m.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+function grouped(contribs: any[]): { label: string; type: string; value: number }[] {
+  const m = new Map<string, { label: string; type: string; value: number }>();
+  contribs.forEach((c) => {
+    const g = m.get(c.type) || { label: c.label, type: c.type, value: 0 };
+    g.value += c.value;
+    m.set(c.type, g);
+  });
+  return [...m.values()].sort((a, b) => b.value - a.value);
 }
 
 function AccountOverview({ d }: { d: any }) {
@@ -202,7 +423,7 @@ function AccountOverview({ d }: { d: any }) {
       <Section title="What moves the score">
         {d.contributions.length ? (
           <div className="bars">
-            {grouped(d.contributions).slice(0, 7).map((c: any) => <Bar key={c.label} label={c.label} value={c.value} of={max} shown={c.value.toFixed(1)} />)}
+            {grouped(d.contributions).slice(0, 7).map((c: any) => <Bar key={c.type} label={<SignalLabel type={c.type} label={c.label} />} value={c.value} of={max} shown={c.value.toFixed(1)} />)}
           </div>
         ) : <Empty title="No recent signals">The score is fit alone.</Empty>}
       </Section>
@@ -241,7 +462,7 @@ function AccountPeople({ d }: { d: any }) {
   const row = (p: any) => {
     const e = p.enrollment ? ENROLL[p.enrollment] : null;
     return (
-      <div key={p.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }}>
+      <button key={p.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }} onClick={() => openSheet("person", p.id)}>
         <Avatar name={p.full_name} photo={p.photo_url} />
         <div className="cell-main">
           <span className="t">{p.full_name}{p.is_champion ? <span className="mute small"> &middot; past champion</span> : null}</span>
@@ -249,7 +470,7 @@ function AccountPeople({ d }: { d: any }) {
         </div>
         {e ? <Status kind={GOOD_STOPS.has(p.stop_reason) ? "ok" : e[0]}>{p.enrollment === "stopped" || p.enrollment === "paused" ? stopWord(p.stop_reason || p.pause_reason) || e[1] : e[1]}</Status>
           : p.status !== "active" ? <Status kind="off">{cap(p.status)}</Status> : <span className="mute small">{p.email_status === "valid" ? "Verified email" : ""}</span>}
-      </div>
+      </button>
     );
   };
   return (
@@ -281,7 +502,7 @@ export function SignalTimeline({ signals }: { signals: any[] }) {
       {signals.map((s) => (
         <li key={s.id}>
           <span className="at">{day(s.observed_at)}</span>
-          <i className="glyph go dot" aria-hidden="true" />
+          <SignalIcon type={s.type_key} />
           <div className="cell-main" style={{ whiteSpace: "normal" }}>
             <span className="t" style={{ whiteSpace: "normal" }}>{s.label}</span>
             <span className="s" style={{ whiteSpace: "normal" }}>{s.evidence.summary}{s.evidence.url ? <> <a href={s.evidence.url} target="_blank" rel="noreferrer noopener" className="mute"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
@@ -533,6 +754,8 @@ export function ReplySheet({ id }: { id: number }) {
 
 export function PlaySheet({ id }: { id: number }) {
   const { data, error, reload } = useData<any>(`/api/plays`);
+  const signalNames: Record<string, string> = Object.fromEntries(((useData<any>("/api/settings").data?.signal_types) || [])
+    .map((t: any) => [t.key, t.label]));
   const me = useData<any>("/api/me").data;
   const [busy, run] = useBusy();
   if (error) return <Frame crumb="Play"><Failed error={error} retry={reload} /></Frame>;
@@ -541,11 +764,15 @@ export function PlaySheet({ id }: { id: number }) {
   const f = p.funnel, lift = p.lift, promo = p.promotion;
   const isManager = me?.user.role === "manager";
   const change = (body: any, msg: string) => run(() => api(`/api/plays/${id}`, { method: "POST", body }), msg);
+  const isAuthor = me?.user.id === p.created_by;
   const foot = me && me.user.role !== "sdr" ? (
     <>
+      {me.user.role === "gtm" ? <button className="btn line" onClick={() => openSheet("playedit", id)}>Edit</button> : null}
       {p.status === "live" ? <button className="btn line" disabled={busy} onClick={() => change({ status: "paused", reason: "Paused from the desk" }, "Paused. Nothing new is proposed.")}>Pause</button>
+        : p.status === "draft" ? (isManager && !isAuthor ? <button className="btn" disabled={busy} onClick={() => change({ status: "live", reason: "Launched after the cost card" }, "Launched.")}>Launch</button>
+          : <span className="mute small">{isAuthor ? "A manager launches it" : "Waiting for a manager"}</span>)
         : <button className="btn line" disabled={busy || !isManager} onClick={() => change({ status: "live", reason: "Resumed from the desk" }, "Live again.")}>Resume</button>}
-      {promo.next ? <button className="btn" disabled={busy || !promo.ready || !isManager} title={!isManager ? "A manager approves a promotion" : undefined}
+      {promo.next && p.status !== "draft" ? <button className="btn" disabled={busy || !promo.ready || !isManager} title={!isManager ? "A manager approves a promotion" : undefined}
         onClick={() => change({ autonomy: promo.next, reason: "Met every check" }, "Promoted.")}>Move to {STAGE[promo.next]}</button> : null}
     </>
   ) : undefined;
@@ -558,10 +785,11 @@ export function PlaySheet({ id }: { id: number }) {
       <div className="figs">
         <Fig value={<Status kind={p.status === "live" ? "go" : "off"}>{cap(p.status)}</Status>} label="Status" sm />
         <Fig value={STAGE[p.autonomy]} label="Who writes" sm />
-        <Fig value={p.median_hours_to_first_touch ? `${Math.round(p.median_hours_to_first_touch)} h` : "None yet"} label="Signal to first email" sm />
-        {p.pipeline_cents !== undefined ? <Fig value={money(p.pipeline_cents)} label="Pipeline sourced" sm /> : null}
+        {p.status === "draft" ? null : <>
+          <Fig value={p.median_hours_to_first_touch ? `${Math.round(p.median_hours_to_first_touch)} h` : "None yet"} label="Signal to first email" sm />
+          {p.pipeline_cents !== undefined ? <Fig value={money(p.pipeline_cents)} label="Pipeline sourced" sm /> : null}</>}
       </div>
-      <Section title="Accounts">
+      {p.status === "draft" ? null : <Section title="Accounts">
         <div className="funnel">
           <Bar label="Proposed" value={f.proposed} of={f.proposed} />
           <Bar label="Accepted" value={f.accepted} of={f.proposed} hint={pct(f.proposed ? f.accepted / f.proposed : 0)} />
@@ -570,17 +798,17 @@ export function PlaySheet({ id }: { id: number }) {
           <Bar label="Positive reply" value={f.positive} of={f.proposed} hint={pct(f.proposed ? f.positive / f.proposed : 0)} tone="accent" />
           <Bar label="Meeting" value={f.meetings} of={f.proposed} hint={pct(f.proposed ? f.meetings / f.proposed : 0)} tone="accent" />
         </div>
-      </Section>
-      <Section title="Meetings: contacted against held back"><LiftBlock lift={lift} /></Section>
-      <PlayAccounts id={id} />
+      </Section>}
+      {p.status === "draft" ? null : <><Section title="Meetings: contacted against held back"><LiftBlock lift={lift} /></Section>
+      <PlayAccounts id={id} /></>}
       <Section title="Trigger">
         <dl className="kv">
-          <dt>Signals</dt><dd>{p.trigger.any_of.map(cap).join(", ")}</dd>
+          <dt>Signals</dt><dd style={{ display: "grid", gap: 6 }}>{p.trigger.any_of.map((k: string) => <SignalLabel key={k} type={k} label={signalNames[k] || cap(k)} />)}</dd>
           <dt>Fit tiers</dt><dd>{p.trigger.fit_tiers.join(" and ")}</dd>
           <dt>Priority from</dt><dd>{p.trigger.min_priority}</dd>
           <dt>Signal age</dt><dd>Within {p.trigger.within_days} days</dd>
           <dt>Who</dt><dd>{p.personas.map((x: string) => PERSONA[x] || x).join(", ")}, up to {p.max_people}</dd>
-          <dt>Comparison group</dt><dd>{p.holdout_pct}% of matched accounts</dd>
+          <dt>Held back</dt><dd>{p.holdout_pct}% of matched accounts</dd>
         </dl>
       </Section>
       <Section title="Sequence">
@@ -594,7 +822,8 @@ export function PlaySheet({ id }: { id: number }) {
           ))}
         </div>
       </Section>
-      {promo.next ? (
+      {p.status === "draft" ? <DraftPreview p={p} /> : null}
+      {promo.next && p.status !== "draft" ? (
         <Section title={`Before: ${STAGE[promo.next]}`}>
           <div className="ledger">
             {promo.checks.map((c: any) => (
@@ -607,6 +836,17 @@ export function PlaySheet({ id }: { id: number }) {
       ) : null}
     </Frame>
   );
+}
+
+function DraftPreview({ p }: { p: any }) {
+  const [pv, setPv] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    const body = { name: p.name, hypothesis: p.hypothesis, angle: p.angle, personas: p.personas, max_people: p.max_people,
+      holdout_pct: p.holdout_pct, urgent: p.urgent, latency_hours: p.latency_hours, sequence: p.sequence, trigger: p.trigger };
+    api("/api/play-preview", { method: "POST", body }).then(setPv).catch((e) => setErr(e.message));
+  }, [p.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <PlayPreview pv={pv} error={err} />;
 }
 
 function PlayAccounts({ id }: { id: number }) {

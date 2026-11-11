@@ -177,14 +177,20 @@ def build_committee(cur, ap: dict, play: dict, account: dict) -> list[dict]:
             if reasons:
                 last_reason = reasons[0].message
                 continue
-            rule = _record_basis(cur, c, play)
-            if rule == "consent_required":
-                last_reason = f"Email in {c['country']} needs consent first; the SDR can call or connect instead"
-                continue
-            status = _ensure_email(cur, c, account)
-            if status != "valid":
-                last_reason = {"missing": "No email address found", "risky": "Email could not be confirmed",
-                               "invalid": "Email address does not work"}[status]
+            # Ask only for what the sequence uses: an email for emails, a profile for LinkedIn, a number for calls.
+            channels = {st["channel"] for st in play["sequence"]}
+            if "email" in channels:
+                rule = _record_basis(cur, c, play)
+                if rule == "consent_required":
+                    last_reason = f"Email in {c['country']} needs consent first; the SDR can call or connect instead"
+                    continue
+                status = _ensure_email(cur, c, account)
+                if status != "valid":
+                    last_reason = {"missing": "No email address found", "risky": "Email could not be confirmed",
+                                   "invalid": "Email address does not work"}[status]
+                    continue
+            elif channels & {"linkedin_connect", "linkedin_message"} and not c["linkedin_url"]:
+                last_reason = "No LinkedIn profile found"
                 continue
             picked = c
             break
@@ -211,7 +217,28 @@ def mailbox_capacity(cur, mailbox: dict) -> int:
                                                      d["spam_rate_at"])
     if unknown_long or (d["spam_rate"] is not None and float(d["spam_rate"]) >= 0.001):
         cap = min(cap, 10)  # cannot gain capacity while complaints are unknown or high
+    worst, stale = placement(cur, mailbox["id"])
+    if stale or (worst is not None and worst < float(setting(cur, "placement_hold_below", 0.8))):
+        cap = min(cap, 10)  # nor while we do not know where its mail lands, or know it lands in spam too often
     return cap
+
+
+def setting(cur, key: str, default):
+    v = db.val(cur, "select value from settings where key = %s", key)
+    return default if v is None else v
+
+
+def placement(cur, mailbox_id: int) -> tuple[float | None, bool]:
+    """The worst inbox rate across providers in the mailbox's latest seed test, and whether that test is too old
+    (or missing) to go on."""
+    rows = db.all(cur, """select distinct on (provider) provider, inbox::float / seeds as rate, at from placement_tests
+                          where mailbox_id = %s order by provider, at desc""", mailbox_id)
+    if not rows:
+        return None, True
+    max_age = int(setting(cur, "placement_max_age_days", 10))
+    stale = db.val(cur, "select min(x) < app_now() - (%s || ' days')::interval from unnest(%s::timestamptz[]) x",
+                   max_age, [r["at"] for r in rows])
+    return min(r["rate"] for r in rows), bool(stale)
 
 
 def mailbox_sendable(cur, mailbox: dict) -> str | None:
@@ -288,6 +315,14 @@ def desk_steps(play: dict) -> list[int]:
     return [i for i, s in enumerate(play["sequence"]) if s["by"] == "desk"]
 
 
+def linkedin_text(sentences: list[dict]) -> str:
+    """The greeting on its own line, as in email: lowering the next word could break a name it starts with."""
+    if not sentences:
+        return ""
+    head, rest = sentences[0]["text"], " ".join(x["text"] for x in sentences[1:])
+    return f"{head}\n{rest}" if rest else head
+
+
 def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
     e = db.one(cur, "select * from enrollments where id = %s", enrollment_id)
     ap = db.one(cur, "select * from account_plays where id = %s", e["account_play_id"])
@@ -304,6 +339,11 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
     others = [r["body"] for r in db.all(cur, """select m.body from messages m join enrollments en on en.id = m.enrollment_id
                                                where en.account_play_id = %s and en.id <> %s and m.status not in
                                                ('rejected', 'cancelled')""", ap["id"], enrollment_id)]
+    linkedin = step["channel"].startswith("linkedin")
+    max_chars = None
+    if step["channel"] == "linkedin_connect":
+        from .sdr_steps import note_limit
+        max_chars = note_limit(cur)
     attempts = []
     failures: list[dict] = []
     out = None
@@ -317,18 +357,35 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
                    "facts": [{"id": f["id"], "kind": f["kind"], "text": f["text"]} for f in facts],
                    "previous_subject": prev["subject"] if prev else None, "attempt": attempt,
                    "failures": [x["message"] for x in failures]}
-        out = llm.run(cur, "draft", payload, account_id=account["id"])
+        if linkedin:
+            payload["max_chars"] = max_chars
+        out = llm.run(cur, "draft_linkedin" if linkedin else "draft", payload, account_id=account["id"])
         private_ids = {r["id"] for r in db.all(cur, "select id from facts where account_id = %s and kind = any(%s)",
                                               account["id"], [f"signal:{k}" for k in PRIVATE_SIGNALS])}
         verdict = copy_gate.check(out, job=step["job"], person=person, account=account, facts=fact_map,
-                                  our_names=OUR_NAMES, other_bodies=others, private_ids=private_ids)
+                                  our_names=OUR_NAMES, other_bodies=others, private_ids=private_ids,
+                                  channel="linkedin" if linkedin else "email", max_chars=max_chars)
         attempts.append({"attempt": attempt, "passed": verdict.passed, "failures": verdict.failures})
         if verdict.passed:
             break
         failures = verdict.failures
-    body = copy_gate.assemble(out, sender_name=owner["name"], footer=footer_for(person, f"{enrollment_id}:{step_index}"))
     citations = sorted({i for s in out["sentences"] for i in (s.get("fact_ids") or [])})
     status = "awaiting_approval" if verdict.passed else "failed_gate"
+    if linkedin:
+        # Sent by the SDR from their own account: no subject, no sign-off, no footer. The SDR approves it by
+        # sending it (sdr_steps.complete), so it never waits in the approvals queue.
+        msg = db.one(cur, """
+            insert into messages (enrollment_id, step_index, channel, subject, body, citations, status, gate, attempts,
+                                  template_key, body_hash)
+            values (%s,%s,'linkedin',null,%s,%s,%s,%s,%s,%s,'')
+            on conflict (enrollment_id, step_index) do update set body = excluded.body, citations = excluded.citations,
+              status = excluded.status, gate = excluded.gate, attempts = excluded.attempts
+            returning *""",
+            enrollment_id, step_index, linkedin_text(out["sentences"]),
+            J({"ids": citations, "sentences": out["sentences"]}), status, J(verdict.as_dict()), J(attempts),
+            f"{play['key']}:{step_index}")
+        return msg
+    body = copy_gate.assemble(out, sender_name=owner["name"], footer=footer_for(person, f"{enrollment_id}:{step_index}"))
     msg = db.one(cur, """
         insert into messages (enrollment_id, step_index, channel, subject, body, citations, status, gate, attempts,
                               template_key, mailbox_id, body_hash)
@@ -368,6 +425,8 @@ def maybe_auto_approve(cur, message_id: int) -> bool:
 
 def approve(cur, message_id: int, *, user_id: int, subject: str | None = None, body: str | None = None) -> dict:
     m = db.one(cur, "select * from messages where id = %s for update", message_id)
+    if m["channel"] != "email":
+        raise ValueError("A LinkedIn note is approved by sending it from its task.")
     if m["status"] not in ("awaiting_approval", "failed_gate"):
         raise ValueError(f"Message is {m['status']}, not waiting for approval")
     if m["status"] == "failed_gate" and body is None:
@@ -464,7 +523,7 @@ def activate(cur, enrollment_id: int) -> None:
         plays.set_state(cur, ap["id"], "active")
     m = db.one(cur, "select id from messages where enrollment_id = %s and step_index = 0", enrollment_id)
     if m:
-        schedule_message(cur, m["id"])
+        schedule_message(cur, m["id"])  # when the first step is a task, the email waits for its own day
 
 
 def _window(cur):
@@ -474,8 +533,8 @@ def _window(cur):
 def schedule_message(cur, message_id: int) -> None:
     m = db.one(cur, "select * from messages where id = %s", message_id)
     e = db.one(cur, "select * from enrollments where id = %s", m["enrollment_id"])
-    if e["state"] != "active" or m["status"] != "approved":
-        return
+    if e["state"] != "active" or m["status"] != "approved" or m["step_index"] != e["step_index"]:
+        return  # an email approved ahead of its step waits until the sequence reaches it
     p = db.one(cur, "select timezone, country from people where id = %s", e["person_id"])
     planned = max(e["next_at"] or db.val(cur, "select app_now()"), db.val(cur, "select app_now()"))
     slot = timeutil.next_slot(planned, timezone=p["timezone"], country=p["country"], window=_window(cur),
@@ -484,11 +543,16 @@ def schedule_message(cur, message_id: int) -> None:
                 "where id = %s", slot, planned, message_id)
 
 
-def stop_enrollment(cur, enrollment_id: int, reason: str) -> None:
+def stop_enrollment(cur, enrollment_id: int, reason: str, *, close_play: bool = True) -> None:
+    """Stop one person's sequence. When they were the last one in the play, the play closes now (close_play),
+    except on the reply path, where the reply's outcome decides what the play becomes."""
     db.run(cur, """update enrollments set state = 'stopped', stop_reason = %s, next_at = null
                    where id = %s and state in ('pending', 'active', 'paused')""", reason, enrollment_id)
     db.run(cur, """update messages set status = 'cancelled' where enrollment_id = %s
                    and status in ('draft', 'failed_gate', 'awaiting_approval', 'approved', 'scheduled')""", enrollment_id)
+    if close_play:
+        from . import plays
+        plays.close_if_empty(cur, db.val(cur, "select account_play_id from enrollments where id = %s", enrollment_id))
 
 
 def advance(cur, enrollment_id: int, *, skipped: bool = False) -> None:
@@ -541,13 +605,9 @@ def due_steps(cur, payload: dict) -> None:
             continue
         step = e["sequence"][e["step_index"]]
         if step["by"] == "sdr":
-            kind = {"linkedin_connect": "linkedin_connect", "linkedin_message": "linkedin_message", "call": "call"}[step["channel"]]
-            title = {"linkedin_connect": f"Connect with {e['full_name']} on LinkedIn",
-                     "linkedin_message": f"Message {e['full_name']} on LinkedIn",
-                     "call": f"Call {e['full_name']}" + (f" ({e['phone']})" if e["phone"] else "")}[kind]
-            db.run(cur, """insert into tasks (account_play_id, person_id, kind, title, due_at, owner_id)
-                           values (%s,%s,%s,%s,%s,%s)""", e["account_play_id"], e["person_id"], kind, title, now, e["owner_id"])
-            advance(cur, e["id"])
+            from . import sdr_steps
+            made = sdr_steps.make_task(cur, e, step, now)
+            advance(cur, e["id"], skipped=made is None)
             continue
         m = db.one(cur, "select * from messages where enrollment_id = %s and step_index = %s", e["id"], e["step_index"])
         if m is None:
@@ -614,6 +674,14 @@ def research_job(cur, payload: dict) -> None:
         plays.set_state(cur, ap["id"], "approving")
         plays.set_state(cur, ap["id"], "active")
         return
+    first_email = next((i for i, st in enumerate(play["sequence"]) if st["channel"] == "email" and st["by"] == "desk"), None)
+    if first_email is None:
+        # No desk emails: nothing to approve. Everyone starts on the account calendar and each step is an SDR task.
+        plays.set_state(cur, ap["id"], "approving")
+        for eid in enrollments:
+            activate(cur, eid)
+        plays.set_state(cur, ap["id"], "active")
+        return
     plays.set_state(cur, ap["id"], "approving")
     for eid in enrollments:
-        draft_step(cur, eid, 0)
+        draft_step(cur, eid, first_email)

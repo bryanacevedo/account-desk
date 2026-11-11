@@ -56,6 +56,17 @@ MONITORS: dict[str, dict] = {
     "jobs_dead": {
         "title": "Jobs that stopped after their last retry",
         "sql": "select id from jobs where status = 'dead' and finished_at > app_now() - interval '7 days'"},
+    "emailed_after_engaging": {
+        "title": "Emails sent after the person engaged on LinkedIn or by phone in the same play",
+        "sql": """select m.id from messages m join enrollments e on e.id = m.enrollment_id
+                  join touches t on t.person_id = e.person_id and t.account_play_id = e.account_play_id
+                  where m.channel = 'email' and m.status = 'sent' and t.channel in ('linkedin', 'call')
+                  and (t.direction = 'in' or t.kind = 'call_connected') and t.kind <> 'linkedin_accepted'
+                  and m.sent_at > t.at"""},
+    "placement_unknown": {
+        "title": "Mailboxes with no seed test in 10 days",
+        "sql": """select mb.id from mailboxes mb where mb.status = 'active' and not exists (select 1 from placement_tests t
+                  where t.mailbox_id = mb.id and t.at > app_now() - interval '10 days')"""},
     "unknown_sends": {
         "title": "Sends whose outcome is unknown for more than a day",
         "sql": "select id from messages where status = 'send_unknown' and sent_at < app_now() - interval '1 day'"},

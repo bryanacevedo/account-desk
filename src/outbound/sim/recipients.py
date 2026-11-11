@@ -5,10 +5,12 @@ is, and whether the message cites real facts. Reply texts are written like real 
 signatures, other languages and the occasional trap (an "unsubscribe" inside a quoted footer)."""
 from __future__ import annotations
 
+import hashlib
 import random
 from datetime import datetime, timedelta
 
 from .. import db
+from ..adapters.sim import sim_inbox_rate
 from ..db import J
 
 POSITIVE = [
@@ -70,6 +72,10 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
     if sp["email_truth"] == "catch_all" and rng.random() < 0.3:
         _event(cur, at + timedelta(minutes=rng.randint(1, 30)), "bounce", message, person_id)
         return
+    # Mail that lands in spam is never read: no reply, no complaint. The buyer's provider follows their company domain.
+    provider = "outlook" if int(hashlib.md5(p["primary_domain"].encode()).hexdigest(), 16) % 5 < 2 else "gmail"
+    if mailbox and rng.random() >= sim_inbox_rate(cur, mailbox["id"], provider):
+        return
     if rng.random() < 0.0015:
         _event(cur, at + timedelta(hours=rng.randint(1, 30)), "complaint", message, person_id)
         return
@@ -120,8 +126,9 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
     elif kind == "not_interested":
         text = rng.choice(NOT_INTERESTED)
     elif kind == "referral":
-        colleague = db.one(cur, "select full_name, title, true_email from sim_hidden_people where account_id = %s "
-                                "and found_person_id is null order by random() limit 1", p["account_id"])
+        pool = db.all(cur, "select full_name, title, true_email from sim_hidden_people where account_id = %s "
+                           "and found_person_id is null order by id", p["account_id"])
+        colleague = rng.choice(pool) if pool else None  # the sim's own seeded choice, so a world can be replayed
         if colleague is None:
             kind, text = "wrong_person", rng.choice(WRONG)
         else:

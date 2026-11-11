@@ -176,6 +176,21 @@ def expire_proposals(cur, payload: dict) -> None:
             set_state(cur, r["id"], "expired", reason="expired", cooldown_key="expired")
 
 
+def close_if_empty(cur, account_play_id: int) -> None:
+    """The moment the last person in a play stops, the play closes, instead of waiting for the next sweep: nobody
+    approved (still approving), or the sequence ran out (active, no open SDR task)."""
+    ap = db.one(cur, """select id, state from account_plays where id = %s and not exists (select 1 from enrollments e
+                        where e.account_play_id = %s and e.state in ('pending', 'active', 'paused')) for update""",
+                account_play_id, account_play_id)
+    if ap is None:
+        return
+    if ap["state"] == "approving":
+        set_state(cur, ap["id"], "stopped", reason="nothing_approved")
+    elif ap["state"] == "active" and not db.val(cur, "select exists (select 1 from tasks where account_play_id = %s "
+                                                     "and status = 'open')", ap["id"]):
+        set_state(cur, ap["id"], "stopped", reason="sequence_finished")
+
+
 @jobs.handler("close_stale_plays")
 def close_stale(cur, payload: dict) -> None:
     """The time-based exits of 22.19."""

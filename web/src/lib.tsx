@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "./api";
+import { STATUS_ICONS } from "./statusIcons";
+import { CheckCircle, Clock, PauseCircle, WarningCircle, type Icon } from "@phosphor-icons/react";
 
 // ---------------------------------------------------------------- routing: the path is the state
 
@@ -94,18 +96,20 @@ export function ago(iso: string | null | undefined): string {
   if (!iso) return "";
   const s = (NOW - new Date(iso).getTime()) / 1000;
   if (s < -60) return ahead(iso);
-  if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  if (s < 86400 * 14) return `${Math.round(s / 86400)} d ago`;
+  const say = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  if (s < 3600) return say(Math.max(1, Math.round(s / 60)), "minute");
+  if (s < 86400) return say(Math.round(s / 3600), "hour");
+  if (s < 86400 * 14) return say(Math.round(s / 86400), "day");
   return day(iso);
 }
 export function ahead(iso: string | null | undefined): string {
   if (!iso) return "";
   const s = (new Date(iso).getTime() - NOW) / 1000;
   if (s < 0) return "due";
-  if (s < 3600) return `in ${Math.max(1, Math.round(s / 60))} min`;
-  if (s < 86400) return `in ${Math.round(s / 3600)} h`;
-  return `in ${Math.round(s / 86400)} d`;
+  const say = (n: number, unit: string) => `in ${n} ${unit}${n === 1 ? "" : "s"}`;
+  if (s < 3600) return say(Math.max(1, Math.round(s / 60)), "minute");
+  if (s < 86400) return say(Math.round(s / 3600), "hour");
+  return say(Math.round(s / 86400), "day");
 }
 export function day(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -139,10 +143,21 @@ export const cap = (s: string | null | undefined) => (s ? s.replace(/_/g, " ").r
 
 export type Glyph = "ok" | "go" | "wait" | "half" | "stop" | "off" | "hold" | "none";
 
-// A shape only where the state needs someone's attention (waiting, stopped, on hold). Everything else is a word.
-const ATTENTION = new Set<Glyph>(["wait", "stop", "hold"]);
+// A status is a small icon and a word. Colour only for the states that need someone's attention.
+const FALLBACK: Partial<Record<Glyph, Icon>> = { wait: Clock, stop: WarningCircle, hold: PauseCircle, ok: CheckCircle };
+// The accent is for what can be pressed (Instrument T1), so states never wear it. Ink by default; colour only where
+// someone must act (amber on hold, red stopped or failed); green for a healthy, working state.
+const TONE: Partial<Record<Glyph, string>> = { wait: "var(--ink-2)", stop: "var(--stop)", hold: "var(--wait)", ok: "var(--ok)" };
 export function Status({ kind, children }: { kind: Glyph; children: ReactNode }) {
-  return <span className="status">{ATTENTION.has(kind) ? <i className={`glyph ${kind}`} aria-hidden="true" /> : null}{children}</span>;
+  const word = typeof children === "string" ? children : "";
+  const Ic = STATUS_ICONS[word] || FALLBACK[kind];
+  return (
+    <span className="status">
+      {Ic ? <Ic size={15} weight={kind === "wait" || kind === "stop" ? "bold" : "regular"} aria-hidden="true"
+        style={{ color: TONE[kind] || "var(--mute)", flex: "none" }} /> : null}
+      {children}
+    </span>
+  );
 }
 
 export function Fig({ value, label, unit, onClick, sm }: { value: ReactNode; label: string; unit?: string; onClick?: () => void; sm?: boolean }) {
@@ -165,8 +180,13 @@ export function Bar({ label, value, of, shown, tone, hint }: { label: ReactNode;
   );
 }
 
-export function Empty({ title, children }: { title: string; children?: ReactNode }) {
-  return <div className="empty" role="status"><b>{title}</b>{children}</div>;
+export function Empty({ title, children, icon: Ic = CheckCircle }: { title: string; children?: ReactNode; icon?: Icon }) {
+  return (
+    <div className="empty" role="status">
+      <span className="empty-icon" aria-hidden="true"><Ic size={18} /></span>
+      <div><b>{title}</b>{children}</div>
+    </div>
+  );
 }
 
 export function Loading({ rows = 6 }: { rows?: number }) {
@@ -181,10 +201,10 @@ export function Failed({ error, retry }: { error: string; retry: () => void }) {
   return <div className="empty" role="alert"><b>Could not load this.</b>{error} <button className="btn quiet sm" onClick={retry}>Try again</button></div>;
 }
 
-export function Section({ title, count, right, children }: { title: string; count?: number; right?: ReactNode; children: ReactNode }) {
+export function Section({ title, count, right, icon: Ic, children }: { title: string; count?: number; right?: ReactNode; icon?: Icon; children: ReactNode }) {
   return (
     <section className="section">
-      <header><h2>{title}{count !== undefined ? <span className="count">{count}</span> : null}</h2>{right}</header>
+      <header><h2>{Ic ? <Ic size={17} className="h-icon" aria-hidden="true" /> : null}{title}{count !== undefined ? <span className="count">{count}</span> : null}</h2>{right}</header>
       {children}
     </section>
   );

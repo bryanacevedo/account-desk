@@ -20,6 +20,13 @@ SETTINGS = {
     "auto_create_accounts": True,
     "sla_business_hours": 4,
     "approval_lapse_business_days": 5,
+    # Inbox placement from seed tests, our defaults (tune per team): under 80% at any provider holds the mailbox at
+    # 10 a day, under 50% pauses it; a test older than 10 days counts as unknown.
+    "placement_hold_below": 0.8,
+    "placement_pause_below": 0.5,
+    "placement_max_age_days": 10,
+    # LinkedIn caps connection notes, lower on free accounts; set this to what the SDRs' accounts allow.
+    "linkedin_note_max_chars": 200,
 }
 
 USERS = [
