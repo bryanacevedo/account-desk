@@ -79,12 +79,16 @@ def person_reasons(cur, person_id: int, channel: str, *, account_play_id: int | 
                           order by until desc limit 1""", person_id)
     if hold:
         out.append(Reason("person_hold", False, f"On hold until {hold['until']:%d %b}: {hold['reason']}"))
+    if channel == "call" and p.get("phone_dnc"):
+        out.append(Reason("phone_dnc", True, "Their number is on a do-not-call register, so the desk will not call it"))
     if channel == "email":
         if not p["email"]:
             out.append(Reason("no_email", True, "No email address"))
         elif p["email_status"] == "invalid":
             out.append(Reason("email_invalid", True, "Email address does not work"))
-        elif p["email_status"] in ("unknown", "risky"):
+        elif p["email_status"] in ("catch_all", "risky"):
+            out.append(Reason("email_unconfirmed", True, "Their company accepts every address, so theirs could not be confirmed"))
+        elif p["email_status"] == "unknown":
             out.append(Reason("verify_due", False, "Email not verified yet"))
         else:
             max_age = int(_setting(cur, "verify_max_age_days", 45))

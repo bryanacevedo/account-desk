@@ -51,7 +51,7 @@ class Missing:
         raise VendorMissing(f"no {self.vendor} configured")
 
     # people search, finder, verifier, phone, email channel, CRM writes: refuse
-    search = find = verify = send = lookup = push = _stop
+    search = find = verify = send = lookup = push = enrich = resolve = _stop
 
     def saved(self, *_a, **_k) -> None:
         return None

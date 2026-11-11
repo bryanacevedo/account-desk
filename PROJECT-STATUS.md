@@ -1,14 +1,14 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 38. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 43. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
-v1 is built end to end on simulated vendors. **Public** at https://github.com/bryanacevedo/account-desk since 2026-11-11 (Bryan: keep the name, publish). CI green on the first push (lint, the suite on Postgres 18, the web build). **Live demo** at https://account-desk-x4ko.onrender.com since 2026-11-11 (Render free plan, service `account-desk`, Docker with Postgres inside; the 60-day simulation is built into the image, so a start or a wake takes seconds; checked on the live link: every page 200 in under 0.7 s). The first deploy failed because the simulation ran at start and took longer than Render's port wait; fixed by building it into the image.
+v1 is built end to end on simulated vendors. **Public** at https://github.com/bryanacevedo/account-desk since 2026-11-11 (Bryan: keep the name, publish). CI green on the first push (lint, the suite on Postgres 18, the web build). **Live demo** at https://account-desk-x4ko.onrender.com since 2026-11-11 (Render free plan, service `account-desk`, Docker with Postgres inside; the 60-day simulation is built into the image, so the app starts in seconds once Render has woken the container (up to a minute after idling); checked on the live link: every page 200 in under 0.7 s). The first deploy failed because the simulation ran at start and took longer than Render's port wait; fixed by building it into the image.
 
 Checked on 2026-11-11 by running them:
 
-- `pytest` on real Postgres 18: 175 passed on 2026-11-11, including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
+- `pytest` on real Postgres 18: 189 passed on 2026-11-11, including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
 - `ruff check src tests`: clean. `tsc --noEmit` and `vite build`: clean.
 - `make demo`: 700 invented accounts, 60 simulated days; opens on 2026-11-11 with work waiting for each SDR.
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Since then two fresh design reviews and checks at 375 wide (see below).
@@ -34,7 +34,7 @@ Checked on 2026-11-11 by running them:
 **Not proven:**
 
 - Reply labelling is measured on live Claude answers (2026-11-11, `evals/REPLIES.md`): 45 of 48 exact, 47 of 48 acceptable, rules alone 12, injection flagged, no invented referral emails, $0.25. The set is 48 author-written replies: a regression guard, not a benchmark. Brief, drafts and call-note extraction still run on the stand-in only. The key lives in `.env` (gitignored, 600).
-- No live vendor adapter (people search, finder, verifier, phone, research, mail provider, telemetry, CRM, Slack). Contracts only.
+- No live vendor adapter (people search, finders, verifier, catch-all resolver, company data, phone, research, mail provider, telemetry, CRM, Slack). Contracts only.
 - Call-note extraction has no eval set (drafts and briefs do: `evals/WRITING.md`).
 - The HeyReach webhook has not seen a real event.
 - No mail provider adapter: a live desk cannot send email yet.
@@ -48,6 +48,14 @@ Checked on 2026-11-11 by running them:
 2. Tests for the time-based play exits, auto-approve and demotion, CRM push retries and SLA escalation.
 
 ## Done since the first review (2026-11-11)
+
+- Enrichment made deep after a fresh review of that layer: company data with monthly snapshots and signals from what changed (team growth, open roles, tools added or dropped, funding, someone new in a finance seat); catch-all addresses resolved by a second vendor and never sent unconfirmed (and no longer re-checked every 4 hours); provenance per field; departments in persona matching; role start, city, headline and match confidence kept, low-confidence matches refused; phones typed, do-not-call never dialled; one identity per LinkedIn profile; paid answers kept outside the job so a retry never pays twice; a daily refresh (companies monthly, people quarterly, addresses after 45 days); moves clear stale details; imports record moves. 7 enrichment tests.
+- The database also refuses an email from a paused mailbox, an unauthenticated, blocklisted or new domain, a mailbox still warming up, or a domain at a 0.3% spam rate (0022). Autonomous auto-approval and automatic demotion are now tested.
+- Final design review fixes: the cost page reads as figures; meeting outcomes only once it has started; Replies shows everyone's to managers; one wording for late ("Overdue by 2 days"); In flight lists what waits on the team first, says "Waiting on you", and has a key to the step strip; Live is the paper plane breathing, not a coloured dot; panel tints in distinct families and the header adds context instead of repeating the name; Health lists failing checks first.
+
+- Side panels say what they are: each kind (account, person, email, reply, call, LinkedIn, task, meeting, play) has a mark in the header and a hairline in its own quiet tint, and the sections inside are separated by rules with consistent headings.
+- Email finding is a waterfall: finders are asked in order (the demo simulates Findymail, then Prospeo, then LeadMagic), a miss or an address that fails verification moves to the next, and each finder is charged only for an address it returns. The cost page shows each step's answer rate and recommends a vendor per role. Tested.
+- In flight shows full names.
 
 - Vendors and costs page (managers and GTM): every vendor and signal source, paid, metered or free, connected, simulated or not connected, spend this month with flat fees prorated, projection, last month, cost per outbound meeting, credits, spend by play. The demo charges every lookup, every simulated AI call at its typical size, and seeded flat fees (mailbox seats, seed tests, HeyReach senders, paid feeds), all labelled as assumptions: about $1,820 last month, $130 per outbound meeting. Results links to it.
 - Motion pass: running states (Live, Reaching out, In sequence, Sending mail) show an on-air pulse; figures count to their value; the segmented control's thumb slides; pages arrive with a short rise; nav counts pop when they change; step strips fill in left to right; the mark's fourth dot fills on hover; toasts rise. Everything is off under reduced motion.

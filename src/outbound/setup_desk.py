@@ -212,18 +212,25 @@ def import_people(cur, text: str) -> dict:
         if erased(cur, email=email, linkedin_url=r.get("linkedin_url") or None):
             refused.append({"row": i, "why": "this person was erased on request and is never added again"})
             continue
+        from .enrichment import linkedin_key
         existing = db.val(cur, "select id from people where email = %s", email) if email else None
         if existing is None and r.get("linkedin_url"):
-            existing = db.val(cur, "select id from people where linkedin_url = %s", r["linkedin_url"])
+            existing = db.val(cur, "select id from people where linkedin_key = %s", linkedin_key(r["linkedin_url"]))
         first, _, last = r["full_name"].partition(" ")
         if existing:
-            db.run(cur, """update people set title = coalesce(%s, title), phone = coalesce(%s, phone), account_id = %s
-                           where id = %s""", r.get("title") or None, r.get("phone") or None, aid, existing)
+            was = db.val(cur, "select account_id from people where id = %s", existing)
+            if was is not None and was != aid:
+                from .signals import move_person
+                move_person(cur, existing, aid, corroborated_by="import")
+            db.run(cur, """update people set title = coalesce(%s, title), phone = coalesce(%s, phone),
+                           email = coalesce(email, %s) where id = %s""",
+                   r.get("title") or None, r.get("phone") or None, email, existing)
         else:
-            db.run(cur, """insert into people (account_id, full_name, first_name, last_name, title, email, linkedin_url, phone,
-                                               country, timezone, source)
-                           values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'import')""",
+            db.run(cur, """insert into people (account_id, full_name, first_name, last_name, title, email, linkedin_url,
+                                               linkedin_key, phone, country, timezone, source)
+                           values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'import')""",
                    aid, r["full_name"], first, last or None, r.get("title") or None, email, r.get("linkedin_url") or None,
+                   linkedin_key(r.get("linkedin_url")),
                    r.get("phone") or None, (r.get("country") or "").upper() or None, r.get("timezone") or None)
         done += 1
     return {"imported": done, "refused": refused}

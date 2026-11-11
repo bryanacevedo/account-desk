@@ -8,7 +8,7 @@ Account Desk runs signal-based, account-based outbound for a B2B sales team. It 
 
 It is built for a small team that would rather write to 40 companies at the right moment than to 4,000 at random.
 
-**[Try the live demo](https://account-desk-x4ko.onrender.com).** Pick who you are acting as in the sidebar (an SDR, the sales manager, or GTM engineering). The company, its accounts, people and vendors are all invented, and every vendor is simulated. If it has been idle, the first load takes about a minute. Read "What is real and what is simulated" before trusting any number in it.
+**[Try the live demo](https://account-desk-x4ko.onrender.com).** Pick who you are acting as in the sidebar (an SDR, the sales manager, or GTM engineering). The company, its accounts, people and vendors are all invented, and every vendor is simulated. If it has been idle, Render takes up to a minute to wake it; after that pages answer in under a second. Read "What is real and what is simulated" before trusting any number in it.
 
 ## The rules it is built on
 
@@ -25,10 +25,12 @@ Three more rules came from running outbound in production:
 
 - **Act on tracking data, never cite it.** Website visits, research intent and product sign-ups can trigger a play, but the drafter never sees them and the copy check fails any email that cites one. Buyers read that as surveillance.
 - **Make the bad state impossible, and watch for what cannot be.** A send to a suppressed address, a holdout account or a message edited after approval is refused by a Postgres trigger, so no bug in the app can do it. Promises about time (sent inside the recipient's hours, hot replies answered on time, every source ran) are monitors that alert.
-- **Autonomy is earned per play.** Four stages: the SDR writes; the desk drafts and the SDR approves every message; the SDR approves every first email and a sample of the rest; and, last, the desk sends emails to fit tier B accounts that passed every check on its own, while tier A still goes to a person. Each step up needs 50 approvals with 90% unedited, no complaint, bounces under 2%, a positive reply rate at the play's floor, and known complaint data for every sending domain, and a manager approves it. A complaint, a bad bounce day or heavy editing moves a play back down on its own.
+- **Autonomy is earned per play.** Four stages: the SDR writes; the desk drafts and the SDR approves every message; the SDR approves every first email and a sample of the rest; and, last, the desk sends emails to fit tier B accounts that passed every check on its own, while tier A still goes to a person. Each step up needs 50 approvals with 90% unedited, no complaint, bounces under 2%, a positive reply rate at the play's floor, and known complaint data for every sending domain, and a manager approves it. A spam complaint, hard bounces over 3% of the play's last 200 sends, or SDRs editing more than 6 of the last 20 drafts moves a play back down a stage on its own.
 
 ## What it does
 
+- **Enrichment.** People search finds the buying group; work emails come from finders asked in order (Findymail, then Prospeo, then LeadMagic in the demo), each paid only for an address it returns; every address is verified, and addresses on catch-all servers, which accept anything, go to a second resolver and are never sent to unconfirmed. Company data (industry, size, tools, funding, open roles, headcount by team) is read monthly for working accounts, and a change between two reads is a signal: a finance team growing, a role opening, a tool arriving or leaving, a new round, someone new in a finance seat. Phones are typed and do-not-call numbers are never dialled. Every enriched field records which vendor said it, when and how sure it was; one person per LinkedIn profile however the link is written; a paid answer is kept, so a retried job never pays twice; people in open plays are re-read quarterly and addresses re-verified after 45 days.
+- **Costs.** The Vendors and costs page lists every vendor and source, paid or free, connected or not, with metered spend, flat monthly fees prorated by the day, the month's projection, last month, spend by play and cost per outbound meeting. The demo's prices are assumptions, marked as such.
 - **Signals.** Seventeen signal types, each with a written reason it matters, a weight and a half-life. Sources are adapters (job postings, funding, job changes, website visits, intent, reviews, technology changes, social engagement, product sign-ups, the CRM, a signed webhook). Every source run is recorded, so a silent source shows up.
 - **Scoring.** Fit from a versioned ideal customer profile, intent from decayed signals with a bonus when different kinds of signal agree, engagement from replies and meetings. Every stored score keeps its inputs and must reproduce from them.
 - **Plays.** Six shipped plays, each a hypothesis with a trigger, the people to reach, a sequence and an angle. A deterministic share of matched accounts goes to a comparison group that is never contacted.
@@ -63,7 +65,7 @@ flowchart LR
 
 Python 3.13, FastAPI and Postgres 18 with plain SQL in numbered migrations. A job queue in Postgres claimed with `FOR UPDATE SKIP LOCKED`. React and Vite for the web app, served by the API. Model calls go through one function with structured outputs, record and replay, and a deterministic stand-in for the demo.
 
-The full behaviour is in [docs/SPEC.md](docs/SPEC.md), written and reviewed by two fresh reviewers before any code (one against its sources, one against how strong teams run outbound today; 49 findings, all resolved in section 22). Decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).
+The full behaviour is in [docs/SPEC.md](docs/SPEC.md), reviewed in three passes before any code (against its sources, against how strong teams run outbound today, and again once the blockers were fixed; every finding resolved in section 22). Decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Run it
 
@@ -115,7 +117,7 @@ Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts 
 
 At that size the monitors also found the real limit: four SDRs cannot approve first emails fast enough for 5,000 accounts, so 38 accepted accounts passed their play's time limit before a first email. The fix is people or autonomy, not code.
 
-Or with Docker, the same image the hosted demo runs:
+Or with Docker, the same image the hosted demo runs (it uses the Postgres that Debian ships, not a pinned 18):
 
 ```bash
 make docker
@@ -164,12 +166,21 @@ The first live run passed 2 of 20 first time. The eval found why: the request ne
 
 - Reply labelling, drafts and briefs are measured on real Claude answers (`evals/`); the demo and tests use a deterministic stand-in, and call-note extraction has no eval yet.
 - Only DNS checks have a live adapter. There is no mail provider adapter yet, so a live desk cannot send email; the other contracts are in `src/outbound/adapters/__init__.py`.
-- The HeyReach webhook has not seen a real HeyReach event; the accepted event's field names come from third-party guides.
+- The company-data vendor and the catch-all resolver are simulated; no live adapter exists for either yet.
+- The HeyReach webhook has not seen a real HeyReach event (if an account sends an event for every reply, the desk takes those too); the accepted event's field names come from third-party guides.
 - Cloudflare Access login has not been run against a real Access app, and contention was measured with one server process.
 - Prices on the cost page are demo assumptions until a manager enters real ones.
-- There is no login. "Acting as" is chosen from a menu in demo mode; `AUTH_MODE=header` reads identity from a trusted proxy such as Cloudflare Access. Live sending refuses to start in demo mode.
+- There is no login. "Acting as" is chosen from a menu in demo mode; `AUTH_MODE=header` reads identity from a verified Cloudflare Access token (no other proxy is supported yet). Live sending refuses to start in demo mode.
 - Region rules (which countries need a recorded legitimate interest or consent before a cold email) are a starting point. Counsel to confirm.
 - Profile photos in the demo are stock portraits from randomuser.me. In live use the photo URL comes from the enrichment vendor and is erased with the person.
+
+## Words used here
+
+- **Fit tier**: A, B or C from how well an account matches the ideal customer profile; X means excluded.
+- **A play's floor**: the positive-reply rate a play must keep to earn more autonomy.
+- **Account gate, contact gate**: the checks before a play is proposed for an account, and before a person is contacted.
+- **Held back**: the comparison group, never contacted, that results are measured against.
+- **Catch-all**: a mail server that accepts every address, so a normal check cannot say whether one is real.
 
 ## License
 

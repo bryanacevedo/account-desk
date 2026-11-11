@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowSquareOut, CalendarCheck, EnvelopeSimple, LinkedinLogo, Phone, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowSquareOut, Buildings, CalendarCheck, ChatCircleText, CheckSquare, EnvelopeSimple, LinkedinLogo, ListChecks, Phone, UserCircle, X } from "@phosphor-icons/react";
 import { api } from "./api";
 import { Avatar, Logo } from "./marks";
 import { SignalIcon, SignalLabel } from "./signalIcons";
 import { PlayEditor, PlayPreview } from "./PlayEditor";
 import {
-  Bar, Empty, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTime, money, n0, navigate, pct,
-  toast, useBusy, useData, withParam, type Glyph,
+  Bar, Empty, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTime, late, money, n0, navigate, pct,
+  toast, useBusy, useData, useNowIso, withParam, type Glyph,
 } from "./lib";
 
 // ---------------------------------------------------------------- the sheet frame
@@ -26,7 +26,28 @@ export function closeSheet() {
   navigate(u.pathname + (u.searchParams.toString() ? "?" + u.searchParams.toString() : ""));
 }
 
-function Frame({ crumb, children, foot }: { crumb: ReactNode; children: ReactNode; foot?: ReactNode }) {
+/** Each kind of panel has its own mark: an icon and a quiet tint, so a glance tells an account from a reply. */
+const KIND: Record<string, { label: string; icon: typeof X; tone: string }> = {
+  account: { label: "Account", icon: Buildings, tone: "account" },
+  person: { label: "Person", icon: UserCircle, tone: "person" },
+  email: { label: "Email", icon: EnvelopeSimple, tone: "email" },
+  reply: { label: "Reply", icon: ChatCircleText, tone: "reply" },
+  call: { label: "Call", icon: Phone, tone: "call" },
+  linkedin: { label: "LinkedIn", icon: LinkedinLogo, tone: "linkedin" },
+  task: { label: "Task", icon: CheckSquare, tone: "task" },
+  meeting: { label: "Meeting", icon: CalendarCheck, tone: "meeting" },
+  play: { label: "Play", icon: ListChecks, tone: "play" },
+};
+const kindOf = (crumb: ReactNode): string => {
+  const w = typeof crumb === "string" ? crumb.toLowerCase() : "";
+  if (w.includes("play")) return "play";
+  return Object.keys(KIND).find((k) => w.startsWith(k)) || "task";
+};
+
+function Frame({ crumb, children, foot, kind }: { crumb: ReactNode; children: ReactNode; foot?: ReactNode; kind?: string }) {
+  const k = KIND[kind || kindOf(crumb)];
+  const KIcon = k.icon;
+  const detail = typeof crumb === "string" && crumb.toLowerCase() === k.label.toLowerCase() ? null : crumb;
   const from = new URLSearchParams(window.location.search).get("from");
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -46,10 +67,11 @@ function Frame({ crumb, children, foot }: { crumb: ReactNode; children: ReactNod
   return (
     <>
       <div className="scrim" onClick={closeSheet} aria-hidden="true" />
-      <aside className="sheet" role="dialog" aria-modal="true" tabIndex={-1} ref={ref}>
+      <aside className={`sheet kind-${k.tone}`} role="dialog" aria-modal="true" aria-label={k.label} tabIndex={-1} ref={ref}>
         <div className="sheet-top">
           {from ? <button className="iconbtn" onClick={back} aria-label="Back"><ArrowLeft size={18} /></button> : null}
-          <div className="crumb clip">{crumb}</div>
+          <div className="sheet-kind"><span className="kind-mark" aria-hidden="true"><KIcon size={15} weight="bold" /></span>{k.label}</div>
+          <div className="crumb clip">{detail}</div>
           <button className="iconbtn" onClick={closeSheet} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="sheet-body">{children}</div>
@@ -159,11 +181,17 @@ export function PersonSheet({ id }: { id: number }) {
       ) : null}
       <Section title="How to reach them">
         <div className="ledger">
-          <Reach label="Email" value={p.email} state={p.email ? (p.email_status === "valid" ? ["ok", "Verified"] : p.email_status === "invalid" ? ["stop", "Bounces"] : ["half", cap(p.email_status)]) : null} />
-          <Reach label="Phone" value={p.phone} state={p.phone ? (p.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(p.phone_status)]) : null} />
+          <Reach label="Email" value={p.email ? <span title={p.email_found_by ? `Found by ${cap(p.email_found_by)}${p.email_confidence ? `, ${Math.round(p.email_confidence * 100)}% sure` : ""}` : undefined}>{p.email}</span> : null}
+            state={p.email ? (p.email_status === "valid" ? ["ok", "Verified"] : p.email_status === "invalid" ? ["stop", "Bounces"]
+              : p.email_status === "catch_all" ? ["hold", "Cannot be confirmed"] : ["half", cap(p.email_status)]) : null} />
+          <Reach label="Phone" value={p.phone ? <>{p.phone}{p.phone_type && p.phone_type !== "unknown" ? <span className="mute">, {p.phone_type}</span> : null}</> : null}
+            state={p.phone ? (p.phone_dnc ? ["stop", "Do not call"] : p.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(p.phone_status)]) : null} />
           <Reach label="LinkedIn" value={p.linkedin_url ? <a href={p.linkedin_url} target="_blank" rel="noreferrer noopener">Profile <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
             state={data.touches.some((x: any) => x.kind === "linkedin_accepted") ? ["ok", "Connected"] : data.touches.some((x: any) => x.kind === "linkedin_connect") ? ["wait", "Request sent"] : null} />
           {p.status !== "active" ? <Reach label="Status" value={cap(p.status)} /> : null}
+          {p.role_started_at ? <Reach label="In role" value={`Since ${day(p.role_started_at)}`} /> : null}
+          {p.departments?.length ? <Reach label="Team" value={p.departments.map((x: string) => cap(x)).join(", ")} /> : null}
+          {p.city ? <Reach label="Based in" value={`${p.city}${p.timezone ? `, ${p.timezone.split("/").pop()?.replace(/_/g, " ")} time` : ""}`} /> : null}
           {p.linkedin_url ? <LinkedInLog personId={p.id} canAccept={!tool && data.touches.some((x: any) => x.kind === "linkedin_connect") && !data.touches.some((x: any) => x.kind === "linkedin_accepted")} onDone={reload} /> : null}
         </div>
       </Section>
@@ -188,7 +216,7 @@ export function PersonSheet({ id }: { id: number }) {
               const theirs = e.meeting && e.meeting.person_id === p.id;
               const colleague = e.stop_reason === "meeting_booked" && e.meeting && !theirs;
               const sub = e.state === "active" && e.next_at
-                ? `Step ${e.step_index + 1} of ${e.sequence.length}, ${ahead(e.next_at) === "overdue" ? "due now" : `next ${ahead(e.next_at)}`}`
+                ? `Step ${e.step_index + 1} of ${e.sequence.length}, ${ahead(e.next_at) === "overdue" ? late(e.next_at).toLowerCase() : `next ${ahead(e.next_at)}`}`
                 : colleague ? `${e.meeting.name || "A colleague"} booked a meeting, so the play stopped for everyone`
                 : `Since ${day(e.created_at)}`;
               return (
@@ -218,7 +246,7 @@ export function PersonSheet({ id }: { id: number }) {
                   h.t.message_id ? (
                     <button className="cell-main link-row" onClick={() => openSheet("message", h.t.message_id)}>
                       <span className="t">{TOUCH[h.t.kind] || cap(h.t.kind.replace(/_/g, " "))}</span>
-                      <span className="s">{h.t.subject ? `${h.t.subject}, email ${h.t.step_index + 1}` : ""}</span>
+                      <span className="s">{h.t.subject ? `${h.t.subject}, Email ${h.t.step_index + 1}` : ""}</span>
                     </button>
                   ) : <div className="cell-main"><span className="t">{TOUCH[h.t.kind] || cap(h.t.kind.replace(/_/g, " "))}</span><span className="s">{h.t.source === "person" ? "Logged by the SDR" : ""}</span></div>
                 ) : h.kind === "reply" ? (
@@ -360,7 +388,7 @@ function Calendar({ rows }: { rows: any[] }) {
         {[...byPerson.entries()].map(([name, steps]) => {
           const e = steps[0];
           const sent = steps.filter((x) => x.status === "sent").length;
-          const next = e.state === "active" && e.next_at ? (ahead(e.next_at) === "overdue" ? "due now" : ahead(e.next_at)) : null;
+          const next = e.state === "active" && e.next_at ? (ahead(e.next_at) === "overdue" ? late(e.next_at).toLowerCase() : ahead(e.next_at)) : null;
           return (
             <div key={name} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }}>
               <Avatar name={name} photo={e.photo_url} />
@@ -501,7 +529,7 @@ export function MeetingSheet({ id }: { id: number }) {
     await api(`/api/meetings/${id}/status`, { method: "POST", body: { status, notes: notes.trim() || null, learn } });
     setNotes("");
   }, status === "held" ? "Saved." : status === "no_show" ? "Saved. A task to rebook is on Today." : "Cancelled.");
-  const open = m.status === "booked";
+  const open = m.status === "booked" && new Date(m.starts_at).getTime() <= useNowIso();
   return (
     <Frame crumb="Meeting" foot={open ? (
       <div className="actions" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
@@ -641,7 +669,7 @@ export function AccountSheet({ id }: { id: number }) {
   const tabs: [string, string, number?][] = [["overview", "Overview"], ["people", "People", data.people.length],
     ["signals", "Signals", data.signals.length], ["outreach", "Outreach", data.messages.length + data.replies.length]];
   return (
-    <Frame crumb={<>Account</>}>
+    <Frame kind="account" crumb="Account">
       <div className="who">
         <Logo domain={a.primary_domain} name={a.name} size={44} />
         <div style={{ minWidth: 0 }}>
@@ -693,12 +721,30 @@ function grouped(contribs: any[]): { label: string; type: string; value: number 
   return [...m.values()].sort((a, b) => b.value - a.value);
 }
 
+function CompanyData({ a }: { a: any }) {
+  if (!a.enriched_at && !a.keywords?.length && !a.founded_year) return null;
+  const millions = a.total_funding_cents ? Math.round(a.total_funding_cents / 100_000_000) : 0;
+  const funding = millions ? `$${millions}M raised${a.latest_funding_round ? `, last a ${a.latest_funding_round}` : ""}${a.latest_funding_at ? ` in ${day(a.latest_funding_at)}` : ""}` : null;
+  return (
+    <Section title="Company data" right={a.enriched_at ? <span className="mute small" title={`Read from ${cap(a.enriched_by || "a data vendor")}`}>Read {ago(a.enriched_at)}</span> : null}>
+      <div className="ledger">
+        {a.founded_year ? <Reach label="Founded" value={String(a.founded_year)} /> : null}
+        {funding ? <Reach label="Funding" value={funding} /> : null}
+        {a.tech?.length ? <Reach label="Tools" value={a.tech.join(", ")} /> : null}
+        {a.keywords?.length ? <Reach label="Known for" value={a.keywords.join(", ")} /> : null}
+        {a.parent_name ? <Reach label="Part of" value={a.parent_name} /> : null}
+      </div>
+    </Section>
+  );
+}
+
 function AccountOverview({ d }: { d: any }) {
   const cur = d.current;
   const max = Math.max(1, ...grouped(d.contributions).map((c) => c.value));
   const fit = (d.account.fit_breakdown?.factors || []) as any[];
   return (
     <>
+      <CompanyData a={d.account} />
       {cur ? (
         <Section title="In play" right={<Status kind={PLAY_STATE[cur.state][0]}>{PLAY_STATE[cur.state][1]}</Status>}>
           <div className="small mute">{cur.play}, proposed {day(cur.proposed_at)}</div>
@@ -819,7 +865,7 @@ function AccountOutreach({ d }: { d: any }) {
           <div className="ledger">
             {d.messages.map((m: any) => (
               <button key={m.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto auto" }} onClick={() => openSheet("message", m.id)}>
-                <div className="cell-main"><span className="t">{m.subject || "(no subject)"}</span><span className="s">{m.full_name}, email {m.step_index + 1}</span></div>
+                <div className="cell-main"><span className="t">{m.subject || "(no subject)"}</span><span className="s">{m.full_name}, Email {m.step_index + 1}</span></div>
                 <Status kind={MSG[m.status][0]}>{MSG[m.status][1]}</Status>
                 <span className="mute small num" style={{ minWidth: 56 }}>{day(m.sent_at || m.scheduled_for)}</span>
               </button>
@@ -926,7 +972,7 @@ export function MessageSheet({ id }: { id: number }) {
     </>
   ) : undefined;
   return (
-    <Frame crumb={<>Email {m.step_index + 1} to {m.full_name}</>} foot={foot}>
+    <Frame kind="email" crumb={<>Email {m.step_index + 1}{m.play ? <>, {m.play}</> : null}</>} foot={foot}>
       <div className="who">
         <Avatar name={m.full_name} photo={m.photo_url} size={44} />
         <div style={{ minWidth: 0 }}>
@@ -1022,7 +1068,7 @@ export function ReplySheet({ id }: { id: number }) {
     )
   ) : undefined;
   return (
-    <Frame crumb={<>Reply from {r.full_name || r.from_addr}</>} foot={foot}>
+    <Frame kind="reply" crumb={<>{r.company || r.from_addr}</>} foot={foot}>
       <div className="who">
         <Avatar name={r.full_name || r.from_addr} photo={r.photo_url} size={44} />
         <div style={{ minWidth: 0 }}>

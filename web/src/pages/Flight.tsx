@@ -1,7 +1,7 @@
 import { CalendarCheck, ChatCircleText, EnvelopeSimple, LinkedinLogo, PencilSimpleLine, Phone } from "@phosphor-icons/react";
 import { useState } from "react";
 import { Avatar, Logo } from "../marks";
-import { Empty, Failed, Loading, Section, Seg, Status, ahead, cap, dayTime, navigate, usePath, useData, withParam } from "../lib";
+import { Empty, Failed, Loading, Section, Seg, Status, ahead, cap, dayTime, late, navigate, usePath, useData, withParam } from "../lib";
 import { GOOD_STOPS, STEP_NAME, openSheet, stopWord } from "../sheets";
 
 const STAGES: [string, string, string[]][] = [
@@ -45,7 +45,9 @@ export function Flight() {
       : when === "due" ? p.next && (ahead(p.next.at) === "overdue" || new Date(p.next.at) <= endOfDay)
       : when === "calls" ? p.next && p.next.step.channel !== "email" : true));
   const filtered = data.plays.filter(matches);
-  const shown = stage === "all" ? filtered : filtered.filter((p: any) => (STAGES.find((x) => x[0] === stage)?.[2] || []).includes(p.state));
+  const waiting = (p: any) => (p.state === "engaged" && p.reply_id) || (p.draft_id && (p.state === "approving" || !p.next));
+  const ordered = [...filtered].sort((a: any, b: any) => Number(!!waiting(b)) - Number(!!waiting(a)));
+  const shown = stage === "all" ? ordered : ordered.filter((p: any) => (STAGES.find((x) => x[0] === stage)?.[2] || []).includes(p.state));
   const set = (k: string, v: string) => navigate(withParam(k, v || null), true);
   const narrowed = play || sdr || when || needle;
   const cols = team ? F_COLS_TEAM : F_COLS;
@@ -83,7 +85,10 @@ export function Flight() {
           navigate(u.pathname + (u.search || ""), true); }}>Clear</button> : null}
       </div>
       {shown.length ? (
-        <Section title={stage === "all" ? "By next step" : STAGES.find((x) => x[0] === stage)?.[1] || ""} count={shown.length}>
+        <Section title={stage === "all" ? "Waiting on the team first, then by next step" : STAGES.find((x) => x[0] === stage)?.[1] || ""} count={shown.length}
+          right={<span className="step-key" aria-label="How to read the steps">
+            <span><i className="step sent" />Sent</span><span><i className="step next" />Next</span>
+            <span><i className="step to-come" />To come</span><span><i className="step skipped" />Skipped or not happening</span></span>}>
           <div className="ledger flight">
             <div className="row head" style={{ gridTemplateColumns: cols }}>
               <span /><span>Account</span><span>People and their steps</span>{team ? <span className="hide-sm">SDR</span> : null}<span>Next</span>
@@ -127,7 +132,7 @@ function Next({ p, mine }: { p: any; mine: boolean }) {
   if (p.state === "engaged" && p.reply_id) {
     return <button className="link-row cell-main" onClick={() => openSheet("reply", p.reply_id)}>
       <span className="t"><ChatCircleText size={14} style={{ verticalAlign: -2 }} aria-hidden="true" /> Answer the reply</span>
-      <span className="s">Waiting on the SDR</span></button>;
+      <span className="s">{mine ? "Waiting on you" : "Waiting on the SDR"}</span></button>;
   }
   if (p.draft_id && (p.state === "approving" || !p.next)) {
     return <button className="link-row cell-main" onClick={() => openSheet("message", p.draft_id)}>
@@ -137,8 +142,8 @@ function Next({ p, mine }: { p: any; mine: boolean }) {
   if (p.next) {
     const you = mine && p.next.step.by === "sdr";
     return <div className="cell-main">
-      <span className="t">{stepLabel(p.next.step, p.next.index)}, {p.next.person}{you ? <span className="tag">You</span> : null}</span>
-      <span className="s">{ahead(p.next.at) === "overdue" ? "Due now" : dayTime(p.next.at)}</span></div>;
+      <span className="t">{stepLabel(p.next.step, p.next.index)} · {p.next.person}{you ? <span className="tag">You</span> : null}</span>
+      <span className="s">{ahead(p.next.at) === "overdue" ? late(p.next.at) : dayTime(p.next.at)}</span></div>;
   }
   if (p.state === "engaged") return <div className="cell-main"><span className="t">In conversation</span><span className="s">The SDR has it from here</span></div>;
   return <span className="s mute">{p.state === "meeting" ? "Meeting held" : "Nothing scheduled"}</span>;
@@ -158,13 +163,13 @@ function PersonSteps({ e, sequence }: { e: any; sequence: any[] }) {
     <button className="person-steps" onClick={(ev) => { ev.stopPropagation(); openSheet("person", e.person_id); }}
       aria-label={`${e.full_name}: ${where}${why ? `, ${why.toLowerCase()}` : ""}. Open their page.`}>
       <Avatar name={e.full_name} photo={e.photo_url} size={22} />
-      <span className="ps-name clip">{e.first_name}</span>
+      <span className="ps-name clip"><span className="hide-sm">{e.full_name}</span><span className="only-sm">{e.first_name}</span></span>
       <span className="steps" aria-hidden="true">
         {sequence.map((s: any, i: number) => {
           const st = stateOf(i);
           const Ic = s.channel === "email" ? EnvelopeSimple : s.channel === "call" ? Phone : LinkedinLogo;
           return (
-            <span key={i} className={`step ${st.replace(" ", "-")}`} style={{ animationDelay: `${i * 40}ms` }} title={`${stepLabel(s, i)}, day ${s.day}: ${st}`}>
+            <span key={i} className={`step ${st.replace(" ", "-")}`} title={`${stepLabel(s, i)}, day ${s.day}: ${st}`}>
               <Ic size={12} weight={st === "sent" ? "fill" : "regular"} />
             </span>
           );

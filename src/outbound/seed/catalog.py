@@ -203,4 +203,4 @@ SUBSCRIPTIONS = [
 ]
 
 BUDGETS = [("people_search", 400000), ("email_finder", 300000), ("email_verifier", 300000),
-           ("phone_finder", 200000), ("anthropic", 30000)]  # vendor units: credits; anthropic in cents
+           ("phone_finder", 200000), ("email_resolver", 100000), ("company_data", 100000), ("anthropic", 30000)]  # vendor units: credits; anthropic in cents

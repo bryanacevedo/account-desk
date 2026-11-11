@@ -45,12 +45,13 @@ const A_COLS = "28px minmax(0,1.2fr) minmax(0,1.6fr) minmax(0,1fr) 76px";
 
 export function Replies() {
   const [, params] = usePath();
-  const view = (params.get("view") || "mine") as "mine" | "all" | "hot" | "needs_person";
+  const meRole = useData<any>("/api/me").data?.user.role;
+  const view = (params.get("view") || (meRole && meRole !== "sdr" ? "all" : "mine")) as "mine" | "all" | "hot" | "needs_person";
   const { data, error, reload } = useData<any>(`/api/replies?view=${view}`);
   return (
     <div className="page">
       <div className="head"><div><h1>Replies</h1></div></div>
-      <Seg label="Which replies" value={view} onChange={(v) => navigate(withParam("view", v === "mine" ? null : v), true)}
+      <Seg label="Which replies" value={view} onChange={(v) => navigate(withParam("view", v), true)}
         options={[["mine", "Mine"], ["all", "Everyone"], ["hot", "Positive"], ["needs_person", "Needs a person"]]} />
       {error ? <Failed error={error} retry={reload} /> : !data ? <Loading rows={10} /> : !data.replies.length ? <Empty title="No replies here" /> : (
         <div className="ledger">

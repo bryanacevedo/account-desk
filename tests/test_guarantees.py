@@ -375,3 +375,20 @@ def test_an_out_of_office_does_not_count_as_a_reply(cur, scene):
     db.run(cur, """insert into replies (person_id, account_id, received_at, from_addr, raw, cleaned, label)
                    values (%s, %s, now(), 'ana@x.example', 'Away', 'Away', 'out_of_office')""", scene["person"], scene["account"])
     send(cur, scene["message"])
+
+
+def test_a_paused_mailbox_cannot_send_whatever_path_tries(cur, scene):
+    db.run(cur, "update mailboxes set status = 'paused', pause_reason = 'Test' where id = %s", scene["mailbox"])
+    refused(cur, scene["message"], "mailbox")
+
+
+def test_a_blocklisted_domain_cannot_send(cur, scene):
+    db.run(cur, "update sending_domains set blocklisted = true where domain = (select domain from mailboxes where id = %s)",
+           scene["mailbox"])
+    refused(cur, scene["message"], "blocklist")
+
+
+def test_a_domain_at_a_high_spam_rate_cannot_send(cur, scene):
+    db.run(cur, "update sending_domains set spam_rate = 0.004 where domain = (select domain from mailboxes where id = %s)",
+           scene["mailbox"])
+    refused(cur, scene["message"], "spam rate")

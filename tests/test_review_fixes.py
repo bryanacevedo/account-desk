@@ -186,3 +186,80 @@ def test_a_finished_call_counts_as_a_done_step_in_flight(cur, scene):  # noqa: F
     out = views.in_flight(cur, {"id": scene["user"]}, mine=True)
     person = next(p for p in out["plays"] if p["id"] == scene["ap"])["people"][0]
     assert person["sent"] == [0, 1]
+
+
+def test_the_email_waterfall_asks_the_next_finder_and_pays_only_for_answers(cur, scene, monkeypatch):  # noqa: F811
+    from outbound import adapters
+
+    class Step:
+        def __init__(self, provider, answer):
+            self.provider, self.answer, self.name, self.asked = provider, answer, provider, 0
+
+        def find(self, cur, person, domain):
+            self.asked += 1
+            return self.answer
+
+    class Valid:
+        name = "test_verifier"
+
+        def verify(self, cur, email):
+            return "valid"
+
+    from contextlib import contextmanager
+    charged = []
+
+    @contextmanager
+    def record(cur, adapter, operation, **kw):
+        info = {}
+        yield info
+        charged.append((adapter, info.get("charged_qty", kw["qty"])))
+
+    monkeypatch.setattr(outreach.spend, "paid_call", record)
+    first, second, third = Step("first", None), Step("second", "ana.found@x.example"), Step("third", "never@x.example")
+    ad = adapters.get()
+    monkeypatch.setattr(ad, "finders", [first, second, third])
+    monkeypatch.setattr(ad, "verifier", Valid())
+    db.run(cur, "update people set email = null, email_status = 'unknown', email_verified_at = null where id = %s", scene["person"])
+    person = db.one(cur, "select * from people where id = %s", scene["person"])
+    account = db.one(cur, "select * from accounts where id = %s", scene["account"])
+    assert outreach._ensure_email(cur, person, account) == "valid"
+    assert (first.asked, second.asked, third.asked) == (1, 1, 0)
+    assert db.val(cur, "select email from people where id = %s", scene["person"]) == "ana.found@x.example"
+    assert charged == [("email_finder:first", 0), ("email_finder:second", 1), ("email_verifier", 1)]
+
+
+def _fresh_draft(cur, scene, step: int) -> int:  # noqa: F811
+    return db.val(cur, """insert into messages (enrollment_id, step_index, channel, subject, body, status, body_hash)
+                          values (%s, %s, 'email', 's', 'b', 'awaiting_approval', '') returning id""", scene["enrollment"], step)
+
+
+def test_an_autonomous_play_sends_tier_b_on_its_own_and_tier_a_still_waits(cur, scene):  # noqa: F811
+    db.run(cur, "update plays set autonomy = 'autonomous' where id = %s", scene["play"])
+    db.run(cur, "update accounts set fit_tier = 'B' where id = %s", scene["account"])
+    b = _fresh_draft(cur, scene, 3)
+    assert outreach.maybe_auto_approve(cur, b)
+    assert db.val(cur, "select approval_mode from messages where id = %s", b) == "auto_autonomous"
+    db.run(cur, "update accounts set fit_tier = 'A' where id = %s", scene["account"])
+    a = _fresh_draft(cur, scene, 4)
+    assert not outreach.maybe_auto_approve(cur, a)
+    assert db.val(cur, "select status from messages where id = %s", a) == "awaiting_approval"
+
+
+def test_a_complaint_moves_an_autonomous_play_back_a_stage(cur, scene):  # noqa: F811
+    from outbound import plays
+    db.run(cur, "update plays set autonomy = 'autonomous', status = 'live', launched_by = %s, launched_at = now() where id = %s", scene["user"], scene["play"])
+    db.run(cur, "insert into deliveries (message_id, event, at) values (%s, 'complaint', app_now())", scene["message"])
+    plays.autonomy_watch(cur, {})
+    assert db.val(cur, "select autonomy from plays where id = %s", scene["play"]) == "supervised"
+    assert db.val(cur, "select reason from play_stage_changes where play_id = %s", scene["play"]) == "A spam complaint"
+
+
+def test_heavy_editing_moves_a_supervised_play_back_to_drafts(cur, scene):  # noqa: F811
+    from outbound import plays
+    db.run(cur, "update plays set autonomy = 'supervised', status = 'live', launched_by = %s, launched_at = now() where id = %s", scene["user"], scene["play"])
+    for i in range(20):
+        m = _fresh_draft(cur, scene, 20 + i)
+        db.run(cur, """update messages set status = 'approved', approved_hash = body_hash, approval_mode = 'person',
+                       approved_at = app_now() - (%s || ' minutes')::interval, edited = %s where id = %s""", str(i), i < 7, m)
+    plays.autonomy_watch(cur, {})
+    assert db.val(cur, "select autonomy from plays where id = %s", scene["play"]) == "draft"

@@ -112,12 +112,24 @@ export function ago(iso: string | null | undefined): string {
 export function ahead(iso: string | null | undefined): string {
   if (!iso) return "";
   const s = (new Date(iso).getTime() - NOW) / 1000;
-  if (s < 0) return "overdue";
+  if (s < 0) return "overdue";  // callers that show it use late(), which says by how much
   const say = (n: number, unit: string) => `in ${n} ${unit}${n === 1 ? "" : "s"}`;
   if (s < 3600) return say(Math.max(1, Math.round(s / 60)), "minute");
   if (s < 86400) return say(Math.round(s / 3600), "hour");
   return say(Math.round(s / 86400), "day");
 }
+/** "Overdue by 2 days" for something past due; otherwise when it is due. One wording on every screen. */
+export function late(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const s = (NOW - new Date(iso).getTime()) / 1000;
+  if (s <= 0) return ahead(iso);
+  const say = (n: number, unit: string) => `Overdue by ${n} ${unit}${n === 1 ? "" : "s"}`;
+  if (s < 3600) return say(Math.max(1, Math.round(s / 60)), "minute");
+  if (s < 86400) return say(Math.round(s / 3600), "hour");
+  return say(Math.round(s / 86400), "day");
+}
+export function useNowIso(): number { return NOW; }
+
 export function day(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -161,7 +173,8 @@ export function Status({ kind, children, title }: { kind: Glyph; children: React
   const word = typeof children === "string" ? children : "";
   const meaning = title ?? STATUS_MEANING[word];
   if (LIVE.has(word)) {
-    return <span className="status live" title={meaning}><i className="pulse" aria-hidden="true" />{children}</span>;
+    const Plane = STATUS_ICONS["Live"];
+    return <span className="status live" title={meaning}><Plane size={15} weight="regular" aria-hidden="true" className="breathe" />{children}</span>;
   }
   const Ic = STATUS_ICONS[word] || FALLBACK[kind];
   return (
@@ -182,7 +195,7 @@ export function Count({ value }: { value: ReactNode }) {
   const [shown, setShown] = useState(() => (reduced() ? target : 0));
   const from = useRef(0);
   useEffect(() => {
-    if (!m || Number.isNaN(target) || reduced()) { setShown(target); return; }
+    if (!m || Number.isNaN(target) || reduced() || /\b(ago|in|day|days|hour|hours|minute|minutes)\b/.test(m[3])) { setShown(target); return; }
     const start = performance.now(), a = from.current, dur = 520;
     let raf = 0;
     const step = (t: number) => {
@@ -193,7 +206,7 @@ export function Count({ value }: { value: ReactNode }) {
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [target]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!m || Number.isNaN(target)) return <>{value}</>;
+  if (!m || Number.isNaN(target) || /\b(ago|in|day|days|hour|hours|minute|minutes)\b/.test(m[3])) return <>{value}</>;
   const body = shown.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   return <span className="count-up" aria-label={text!}>{m[1]}{body}{m[3]}</span>;
 }

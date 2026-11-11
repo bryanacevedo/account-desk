@@ -38,6 +38,9 @@ export const STATUS_MEANING: Record<string, string> = {
   "Email rejected": "Their mail server refused the email. The desk stopped emailing them.",
   "Blocked by a contact rule": "A rule refused the send: a block list, their country's rules, or a missing address check.",
   "Play ended": "The play ended at their account, so their steps ended with it.",
+  "Cannot be confirmed": "Their company's mail server accepts every address, and a second check could not confirm this one. The desk does not email it.",
+  "Do not call": "This number is on a do-not-call register. The desk will not schedule calls to it.",
+  "Verified": "Checked within the last 45 days.",
   // Messages
   "Draft": "Written, not yet ready for approval.",
   "To approve": "Waiting for the SDR. Nothing sends until they approve it.",

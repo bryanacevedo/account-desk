@@ -52,6 +52,9 @@ async def lifespan(_app):
     # The code and the schema ship together: a desk that starts on an older database brings it up to date first,
     # instead of serving pages that call functions the database does not have yet.
     applied = db.migrate()
+    if CONFIG.mode == "demo":
+        from .. import llm
+        llm.SIM_CHARGE = True
     if applied:
         log.info("applied migrations at start: %s", ", ".join(applied))
     start_worker()
@@ -171,7 +174,7 @@ def health() -> dict:
         failing = db.val(cur, """select count(*) from (select distinct on (monitor) ok from monitor_runs
                                  order by monitor, at desc) m where not ok""")
         now = db.val(cur, "select app_now()")
-    ok = backlog < 50 and dead == 0 and undelivered == 0
+    ok = backlog < 50 and dead == 0 and undelivered == 0 and failing == 0
     return {"ok": ok, "now": now, "job_backlog": backlog, "dead_jobs_today": dead, "undelivered_alerts": undelivered,
             "monitors_failing": failing, "mode": CONFIG.mode, "public_demo": CONFIG.public_demo}
 

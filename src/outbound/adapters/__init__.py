@@ -29,6 +29,12 @@ class Candidate:
     timezone: str | None = None
     vendor_ref: str | None = None
     photo_url: str | None = None
+    # What a people-data vendor returns beyond the name (Apollo-style person enrichment).
+    departments: list[str] = field(default_factory=list)
+    role_started_at: object = None        # date the current role started
+    city: str | None = None
+    headline: str | None = None
+    match_confidence: str | None = None   # high | medium | low: how sure the vendor is this is the right person
 
 
 @dataclass
@@ -65,6 +71,38 @@ class PlacementResult:
 class PeopleSearch(Protocol):
     def search(self, cur, account: dict, title_patterns: list[str], limit: int) -> list[Candidate]: ...
     def saved(self, cur, candidate: Candidate, person_id: int) -> None: ...
+    # Refresh one known person (a people match by name, company and profile). None when the vendor has no match.
+    def enrich(self, cur, person: dict) -> Candidate | None: ...
+
+
+@dataclass
+class CompanyData:
+    """What a company-data vendor returns that matters for account-based outbound."""
+    industry: str | None = None
+    employees: int | None = None
+    revenue_band: str | None = None
+    technologies: list[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
+    founded_year: int | None = None
+    total_funding_cents: int | None = None
+    latest_funding_round: str | None = None
+    latest_funding_at: object = None
+    parent_domain: str | None = None
+    headcount: dict = field(default_factory=dict)        # department -> people
+    open_roles: list[dict] = field(default_factory=list)  # {title, department, seen_at}
+    confidence: float | None = None
+
+
+class CompanyEnricher(Protocol):
+    name: str
+    def enrich(self, cur, account: dict) -> CompanyData | None: ...
+
+
+@dataclass
+class PhoneHit:
+    number: str
+    type: str = "unknown"   # mobile | direct | office | unknown
+    dnc: bool = False       # on a do-not-call register
 
 
 class EmailFinder(Protocol):
@@ -74,11 +112,17 @@ class EmailFinder(Protocol):
 
 class EmailVerifier(Protocol):
     name: str
-    def verify(self, cur, email: str) -> str: ...  # valid | invalid | risky
+    def verify(self, cur, email: str) -> str: ...  # valid | invalid | risky | catch_all
+
+
+class EmailResolver(Protocol):
+    """A second opinion for catch-all servers, which accept every address so a normal check proves nothing."""
+    name: str
+    def resolve(self, cur, email: str) -> tuple[str, float]: ...  # (valid | invalid | catch_all, confidence)
 
 
 class PhoneFinder(Protocol):
-    def find(self, cur, person: dict) -> str | None: ...
+    def find(self, cur, person: dict) -> "PhoneHit | str | None": ...
 
 
 class Research(Protocol):
@@ -160,6 +204,11 @@ class Adapters:
     chat: Chat
     crm: Crm
     notes: list[str] = field(default_factory=list)
+    # The email waterfall: finders tried in order until one returns an address that verifies. Empty means the
+    # single `finder` above. Each finder has a `provider` key and charges only for an address it returns.
+    finders: list = field(default_factory=list)
+    company: "CompanyEnricher | None" = None     # company data; None means imports and the CRM are all there is
+    resolver: "EmailResolver | None" = None      # catch-all resolution; None means catch-all addresses are not sent
 
 
 _cached: Adapters | None = None

@@ -20,7 +20,7 @@ Each entry: what was decided, why, and what it costs. Newest last.
 
 9. **A comparison group per play, intention to treat.** A deterministic 20% of matched accounts are never contacted and held for 90 days. Treated counts every account offered to an SDR, including skipped and expired ones. The page shows the sample still needed instead of a lift it cannot support. Cost: 20% of good accounts wait.
 
-10. **Autonomy is earned and demoted automatically.** Promotion needs 50 person approvals with 90% unedited, no complaint, under 2% bounces and known complaint data, and a manager. Cost: plays start slow on purpose.
+10. **Autonomy is earned and demoted automatically.** Promotion needs 50 person approvals with 90% unedited, no complaint, under 2% bounces, a positive reply rate at the play's floor and known complaint data, and a manager. Cost: plays start slow on purpose.
 
 11. **LinkedIn and calls are SDR tasks by default.** LinkedIn's terms prohibit automation and senders are real people's accounts. Cost: more manual steps.
 
@@ -50,7 +50,7 @@ Each entry: what was decided, why, and what it costs. Newest last.
 
 24. **The MCP server is read-only by construction.** Five tools, each in a read-only transaction, none returning money; built on the official MCP Python SDK, version 2.
 
-25. **The footer is two short lines, and says "unsubscribe" (Bryan, 2026-11-11).** Company and postal address, then "To stop hearing from us, reply "unsubscribe" or use" a short link (`/u/<id>-<12 characters>`); links in emails already sent keep working. The first footer offered "reply 'no thanks'" as the way out, and I briefly made a "no thanks" reply an opt-out to match it. Bryan: "If someone says no thanks that's literally not interested." The copy was wrong, not the reading: "no thanks" is not interested (the play ends, the account rests), and only an unsubscribe request blocks all future email. The mailto unsubscribe is offered only when a real mailbox receives it (`UNSUBSCRIBE_MAILTO`). Risk: legal; counsel to confirm.
+25. **The footer is two short lines (three for EU and UK recipients, who also get the privacy link), and says "unsubscribe" (Bryan, 2026-11-11).** Company and postal address, then "To stop hearing from us, reply "unsubscribe" or use" a short link (`/u/<id>-<12 characters>`); links in emails already sent keep working. The first footer offered "reply 'no thanks'" as the way out, and I briefly made a "no thanks" reply an opt-out to match it. Bryan: "If someone says no thanks that's literally not interested." The copy was wrong, not the reading: "no thanks" is not interested (the play ends, the account rests), and only an unsubscribe request blocks all future email. The mailto unsubscribe is offered only when a real mailbox receives it (`UNSUBSCRIBE_MAILTO`). Risk: legal; counsel to confirm.
 
 26. **Owners come from the CRM.** A reassignment moves the account, its open play, open tasks and booked meetings to the new SDR; sequences already under way finish from the original sender, so a thread never changes voice; an owner who is not an SDR on the desk moves nothing and the manager is told.
 
@@ -74,6 +74,17 @@ Each entry: what was decided, why, and what it costs. Newest last.
 
 36. **Account Desk, and LinkedIn events from the LinkedIn tool.** Renamed from Outbound Desk: the desk does account-based outbound only. HeyReach's webhooks (connection accepted, first reply) call `/api/webhooks/linkedin/{token}`, since HeyReach cannot sign them; the person is found by their LinkedIn profile, every event is safe to receive twice, and with the tool connected the manual "accepted" button goes away. Later replies in the same conversation are still pasted, because HeyReach only reports the first.
 
-37. **Costs are shown whole.** The cost page lists every vendor and source, paid, metered or free, connected or not, and adds flat monthly fees (seats, seed tests, senders, paid feeds) to what the desk meters, prorated by the day. Prices the desk cannot know are kept as assumptions, flagged, until a manager enters the figure from a bill; the demo's prices are assumptions in the range public price lists show. A real vendor is named only where the desk really connects to it (Claude, HeyReach).
+37. **Costs are shown whole.** The cost page lists every vendor and source, paid, metered or free, connected or not, and adds flat monthly fees (seats, seed tests, senders, paid feeds) to what the desk meters, prorated by the day. Prices the desk cannot know are kept as assumptions, flagged, until a manager enters the figure from a bill; the demo's prices are assumptions in the range public price lists show. Vendors are named in two ways: as what the desk connects to (Claude, HeyReach), and, since decision 39, as what we would buy for each role, which is a recommendation and never that vendor's price.
 
 38. **The database refuses a send however it is written.** The send guard runs on an insert of a message already marked sending or sent, not only on a status change. And the server applies any pending migrations when it starts, so code never runs against an older schema.
+
+39. **Email finding is a waterfall.** One finder misses people another has; strong teams chain them. The desk asks finders in order, moves on when one has nothing or its address fails verification, and pays only for addresses returned. The cost page names the vendor we would use per role as a recommendation, never as that vendor's price.
+
+40. **A panel says what it is.** Each kind of side panel carries an icon and a low-chroma tint in its header, so an account, a reply and a call are told apart at a glance; the accent stays for what can be pressed.
+
+41. **Enrichment is deep, sourced and kept.** A people or company read is worth what it can be trusted for: every enriched field records the vendor, the time and the confidence; low-confidence matches are refused; vendor data fills blanks and never overwrites what a person or the CRM entered, except fields only a vendor provides. Company data is read monthly so two reads show change, and change is a signal. A catch-all address is resolved by a second vendor or not sent. A paid answer is kept outside the job that bought it, so a retry never pays twice.
+
+42. **The mailbox rules live in the database too.** A paused mailbox, an unauthenticated, blocklisted or young domain, a mailbox still warming up and a 0.3% spam rate refuse a send in the database, not only in the sending code.
+
+43. **Live is shown by the plane, not a dot.** A running state is the paper plane breathing slowly, in keeping with the rule against coloured status dots.
+

@@ -10,7 +10,8 @@ const rate = (cents: number) => (cents < 100 ? `${Number(cents).toLocaleString("
 const STATE: Record<string, ["ok" | "off" | "stop", string, string]> = {
   connected: ["ok", "Connected", "A real account is connected and the desk uses it."],
   simulated: ["off", "Simulated", "This demo stands in for the vendor. Nothing real is called and the prices are assumed."],
-  not_connected: ["stop", "Not connected", "No key is set. Work that needs it waits, and the team is told."],
+  not_connected: ["off", "Not connected", "Not set up. Work that needs it waits, or is skipped for optional vendors, and the team is told."],
+  webhook: ["ok", "Webhook", "Sends events to the desk as they happen."],
 };
 const PAID: Record<string, [string, string]> = {
   metered: ["Pay per use", "Charged per lookup or per token. The desk meters every call and holds it to the monthly cap."],
@@ -34,13 +35,15 @@ export function Vendors() {
       <div className="figs">
         <Fig value={usd(data.total_cents)} label={`This month so far, day ${data.day} of ${data.days}`} />
         <Fig value={usd(data.projected_cents)} label="At this pace, by month end" />
-        <Fig value={usd(data.last_month.cents)} label="Last month" />
+        <Fig value={usd(data.last_month.cents)} label="Last month, with this month's flat fees" />
       </div>
-      <p className="mute small" style={{ margin: "-6px 0 18px" }}>
-        So far: {usd(data.metered_cents)} metered (data lookups and AI) and {usd(data.flat_so_far_cents)} of {usd(data.flat_cents)} in flat monthly fees. {n0(data.credits)} data credits used ({n0(data.last_month.credits)} last month).
-        {data.cost_per_meeting_cents != null ? ` ${usd(data.cost_per_meeting_cents)} per outbound meeting this month (${n0(data.meetings)}).` : " No outbound meetings yet this month."}
-        {data.last_month.per_meeting_cents != null ? ` Last month: ${usd(data.last_month.per_meeting_cents)} per meeting (${n0(data.last_month.meetings)}).` : ""}
-      </p>
+      <div className="figs">
+        <Fig sm value={usd(data.metered_cents)} label="Data and AI, metered" />
+        <Fig sm value={usd(data.flat_so_far_cents)} label={`Flat fees so far, of ${usd(data.flat_cents)}`} />
+        <Fig sm value={n0(data.credits)} label={`Data credits, ${n0(data.last_month.credits)} last month`} />
+        <Fig sm value={data.last_month.per_meeting_cents == null ? "None yet" : usd(data.last_month.per_meeting_cents)}
+          label={`Per outbound meeting, last month (${n0(data.last_month.meetings)})`} />
+      </div>
 
       <Section title="Vendors" count={data.vendors.length}>
         <div className="ledger vendors">
@@ -56,7 +59,7 @@ export function Vendors() {
         </div>
       </Section>
 
-      <Section title="Spend by play" count={data.by_play.length}>
+      <Section title="Data and AI spend by play" count={data.by_play.length}>
         {data.by_play.length ? (
           <div className="ledger">
             <div className="row head" style={{ gridTemplateColumns: P_COLS }}><span>Play</span><span className="num">Accounts</span><span className="num">Spent</span><span className="num">Share</span></div>
@@ -112,6 +115,16 @@ function VendorRow({ v, demo }: { v: any; demo: boolean }) {
   return (
     <div className="row" style={{ gridTemplateColumns: V_COLS }}>
       <span className="cell-main"><span className="t">{v.name}</span><span className="s wrap">{v.purpose}</span>
+        {v.suggest ? <span className="s wrap suggest" title="What we would use for this. Prices on this page are our own assumptions, not this vendor's.">We'd use: {v.suggest}</span> : null}
+        {v.waterfall?.length ? (
+          <span className="s wrap order" aria-label="Email finders, asked in order">
+            Asked in order: {v.waterfall.map((w: any, i: number) => (
+              <span key={w.provider} title={`${w.name}: asked ${w.asked} times, found ${n0(w.found)}, ${usd(w.cents)} this month`}>
+                {i ? " → " : ""}<b>{w.name}</b> {w.asked ? `found ${Math.round((w.found / w.asked) * 100)}% of ${n0(w.asked)}` : "not asked yet"}
+              </span>
+            ))}
+          </span>
+        ) : null}
         <span className="s only-sm">{[price, st[1], v.paid === "metered" ? usd(v.cents) + " this month" : sub ? usd(sub.monthly_cents) + " a month" : null,
           capUsed != null ? `${capUsed > 0 && capUsed < 0.01 ? "<1" : Math.round(capUsed * 100)}% of cap` : null].filter(Boolean).join(" · ")}</span></span>
       <span className="hide-sm" title={paid[1]}>{price}</span>

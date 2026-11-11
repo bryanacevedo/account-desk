@@ -6,21 +6,55 @@ import hashlib
 import logging
 import random
 import re
+from datetime import date, timedelta
 
 from .. import db
 from . import (
     Adapters,
     Candidate,
+    CompanyData,
     CrmDeal,
     CrmOwner,
     DnsResult,
     DomainTelemetry,
     Page,
+    PhoneHit,
     PlacementResult,
     SendResult,
 )
 
 log = logging.getLogger("outbound.sim")
+
+
+DEPARTMENTS = [  # title words -> the department a people-data vendor files them under
+    (("revenue operations", "revops", "sales operations", "billing operations"), ["sales_operations", "revenue_operations"]),
+    (("controller", "accounting"), ["finance", "accounting"]),
+    (("data", "systems", "it ", "information"), ["data", "information_technology"]),
+    (("finance", "cfo", "chief financial", "fp&a", "treasur"), ["finance"]),
+]
+
+
+def departments_for(title: str) -> list[str]:
+    t = (title or "").lower() + " "
+    for words, depts in DEPARTMENTS:
+        if any(w in t for w in words):
+            return depts
+    return ["other"]
+
+
+def _today(cur) -> date:
+    return db.val(cur, "select app_now()::date")
+
+
+def _person_extras(cur, key: str, title: str, country: str | None) -> dict:
+    """What a people-data vendor adds: departments, when the role started, city, headline, how sure the match is."""
+    rng = random.Random(f"person-extras:{key}")
+    started = _today(cur) - timedelta(days=int(rng.choice([rng.randint(20, 85), rng.randint(120, 1400), rng.randint(200, 2400)])))
+    city = {"US": ["New York", "Chicago", "Austin", "Denver"], "GB": ["London", "Manchester"], "DE": ["Berlin", "Munich"],
+            "CA": ["Toronto"], "FR": ["Paris"]}.get(country or "", ["Remote"])
+    return {"departments": departments_for(title), "role_started_at": started, "city": rng.choice(city),
+            "headline": f"{title}. " + rng.choice(["Scaling finance ops", "Building the revenue stack", "Clean books, faster closes"]),
+            "match_confidence": rng.choices(["high", "medium", "low"], [0.8, 0.15, 0.05])[0]}
 
 
 class SimPeopleSearch:
@@ -30,7 +64,19 @@ class SimPeopleSearch:
         hits = [r for r in rows if pat is None or pat.search(r["title"])]
         return [Candidate(full_name=r["full_name"], first_name=r["first_name"], last_name=r["last_name"], title=r["title"],
                           seniority=r["seniority"], linkedin_url=r["linkedin_url"], country=r["country"],
-                          timezone=r["timezone"], vendor_ref=str(r["id"]), photo_url=r["photo_url"]) for r in hits[:limit]]
+                          timezone=r["timezone"], vendor_ref=str(r["id"]), photo_url=r["photo_url"],
+                          **_person_extras(cur, f"h{r['id']}", r["title"], r["country"])) for r in hits[:limit]]
+
+    def enrich(self, cur, person: dict) -> Candidate | None:
+        """A people match on someone the desk already has: same person, fresher details."""
+        if not person.get("full_name"):
+            return None
+        first, _, last = person["full_name"].partition(" ")
+        return Candidate(full_name=person["full_name"], first_name=person.get("first_name") or first, last_name=last,
+                         title=person.get("title") or "", seniority=person.get("seniority"),
+                         linkedin_url=person.get("linkedin_url"), country=person.get("country"),
+                         timezone=person.get("timezone"), photo_url=person.get("photo_url"),
+                         **_person_extras(cur, f"p{person['id']}", person.get("title") or "", person.get("country")))
 
     def saved(self, cur, candidate: Candidate, person_id: int) -> None:
         h = db.one(cur, "select * from sim_hidden_people where id = %s", int(candidate.vendor_ref))
@@ -67,6 +113,34 @@ class SimFinder:
         return truth["true_email"]
 
 
+class SimWaterfallStep:
+    """One finder in the waterfall. Each step sees the same hidden truth but covers a different share of people,
+    as real finders do; a later step only matters for the people the earlier ones missed."""
+
+    def __init__(self, provider: str, miss: float, wrong: float):
+        self.provider, self.miss, self.wrong = provider, miss, wrong
+        self.name = f"sim_{provider}"
+        self._base = SimFinder()
+
+    def find(self, cur, person: dict, domain: str) -> str | None:
+        rng = random.Random(f"find:{self.provider}:{person['id']}")
+        if rng.random() < self.miss:
+            return None
+        truth = db.one(cur, "select true_email from sim_people where person_id = %s", person["id"])
+        if truth is None:
+            got = self._base.find(cur, person, domain)  # learns the person the way SimFinder does
+            truth = db.one(cur, "select true_email from sim_people where person_id = %s", person["id"])
+            if truth is None:
+                return got
+        if rng.random() < self.wrong:
+            return f"{person['first_name'].lower()}@{domain}"
+        return truth["true_email"]
+
+
+# The order we would run: the most accurate finder first, broader ones after it for the people it misses.
+WATERFALL = [("findymail", 0.22, 0.02), ("prospeo", 0.35, 0.04), ("leadmagic", 0.45, 0.05)]
+
+
 class SimVerifier:
     name = "sim_verifier"
 
@@ -74,12 +148,72 @@ class SimVerifier:
         truth = db.one(cur, "select email_truth from sim_people where lower(true_email) = %s", email.lower())
         if truth is None:
             return "invalid"
-        return {"valid": "valid", "invalid": "invalid", "catch_all": "risky"}[truth["email_truth"]]
+        return {"valid": "valid", "invalid": "invalid", "catch_all": "catch_all"}[truth["email_truth"]]
+
+
+class SimResolver:
+    """A catch-all resolver: a second vendor that can often tell whether an address on a catch-all server is real."""
+    name = "sim_resolver"
+
+    def resolve(self, cur, email: str) -> tuple[str, float]:
+        truth = db.val(cur, "select email_truth from sim_people where lower(true_email) = %s", email.lower())
+        rng = random.Random(f"resolve:{email.lower()}")
+        if truth is None:
+            return "invalid", 0.9
+        x = rng.random()
+        if x < 0.55:
+            return "valid", round(rng.uniform(0.72, 0.93), 2)
+        if x < 0.70:
+            return "invalid", round(rng.uniform(0.7, 0.9), 2)
+        return "catch_all", round(rng.uniform(0.3, 0.6), 2)
 
 
 class SimPhone:
-    def find(self, cur, person: dict) -> str | None:
-        return db.val(cur, "select phone_truth from sim_people where person_id = %s", person["id"])
+    def find(self, cur, person: dict) -> PhoneHit | None:
+        number = db.val(cur, "select phone_truth from sim_people where person_id = %s", person["id"])
+        if not number:
+            return None
+        rng = random.Random(f"phone:{person['id']}")
+        return PhoneHit(number=number, type=rng.choices(["mobile", "direct", "office"], [0.55, 0.3, 0.15])[0],
+                        dnc=rng.random() < 0.06)
+
+
+class SimCompany:
+    """Company data. Headcount, open roles and tools drift with the account's hidden need, so two reads apart show
+    a team growing, a role opening or a tool arriving where the need is real, and little where it is not."""
+    name = "sim_company"
+    TOOLS = ["Snowflake", "NetSuite", "Stripe", "Salesforce", "HubSpot", "BigQuery", "Chargebee", "Zuora"]
+
+    def enrich(self, cur, account: dict) -> CompanyData | None:
+        need = db.val(cur, "select need from sim_accounts where account_id = %s", account["id"])
+        if need is None:
+            return None
+        need = float(need)
+        rng = random.Random(f"company:{account['id']}")
+        day = (_today(cur) - date(2026, 1, 1)).days
+        employees = account.get("employees") or rng.randint(80, 2000)
+        growth = 1 + need * 0.0025 * day                      # finance grows faster where the need is real
+        finance = max(2, int(employees * 0.03 * growth))
+        headcount = {"finance": finance, "accounting": max(1, int(finance * 0.5)),
+                     "sales_operations": max(1, int(employees * 0.015)), "engineering": int(employees * 0.35),
+                     "sales": int(employees * 0.18)}
+        tools = list(account.get("tech") or [])
+        for i, t in enumerate(self.TOOLS):
+            if t not in tools and random.Random(f"tool:{account['id']}:{t}").random() < need * 0.25 * min(1.0, day / 300 + i * 0.02):
+                tools.append(t)
+        roles = [{"title": rng.choice(["Revenue Accountant", "Billing Specialist", "Senior Billing Analyst", "FP&A Manager"]),
+                  "department": "finance", "seen_at": str(_today(cur) - timedelta(days=rng.randint(1, 30)))}
+                 for _ in range(int(need * 4 * (1 + day / 365)) if random.Random(f"roles:{account['id']}:{day // 14}").random() < need else 0)]
+        funded = rng.random() < 0.45
+        return CompanyData(
+            industry=account.get("industry"), employees=employees, revenue_band=account.get("revenue_band"),
+            technologies=tools, keywords=rng.sample(["usage-based pricing", "subscriptions", "b2b saas", "payments",
+                                                      "fintech", "data platform", "marketplace"], 3),
+            founded_year=rng.randint(2008, 2021),
+            total_funding_cents=rng.choice([5, 12, 30, 60, 110]) * 100_000_000 if funded else None,
+            latest_funding_round=rng.choice(["Series A", "Series B", "Series C"]) if funded else None,
+            latest_funding_at=_today(cur) - timedelta(days=rng.randint(40, 900)) if funded else None,
+            headcount=headcount, open_roles=roles, confidence=0.9)
 
 
 class SimResearch:
@@ -208,4 +342,5 @@ class SimCrm:
 def adapters() -> Adapters:
     return Adapters(people=SimPeopleSearch(), finder=SimFinder(), verifier=SimVerifier(), phone=SimPhone(),
                     research=SimResearch(), email=SimEmail(), telemetry=SimTelemetry(), dns=SimDns(), chat=SimChat(), crm=SimCrm(),
-                    notes=["All vendors simulated"])
+                    notes=["All vendors simulated"], finders=[SimWaterfallStep(*w) for w in WATERFALL],
+                    company=SimCompany(), resolver=SimResolver())

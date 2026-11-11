@@ -91,7 +91,9 @@ def ingest(cur, source_key: str, raws: Iterable[dict]) -> dict:
         if t is None:
             counts["unmatched"] += 1
             continue
-        account_id, reason = resolve_account(cur, raw.get("domain"), raw.get("company"))
+        # A source that already knows the account (enrichment) names it; feeds are matched by domain or name.
+        account_id, reason = ((raw["account_id"], None) if raw.get("account_id")
+                              else resolve_account(cur, raw.get("domain"), raw.get("company")))
         person_id = resolve_person(cur, raw.get("person")) if t["level"] == "person" else None
         status = "matched" if account_id else "unmatched"
         ev = raw["evidence"]
@@ -147,7 +149,10 @@ def move_person(cur, person_id: int, new_account_id: int, *, corroborated_by: st
                 "values (%s,%s,%s,app_now(),%s)", person_id, p["account_id"], new_account_id, corroborated_by)
     # One row per human: the row moves. The old work address no longer reaches them.
     db.run(cur, """update people set account_id = %s, email = null, email_status = 'unknown', email_verified_at = null,
-                   email_verified_by = null, status = 'active', persona_key = null where id = %s""",
+                   email_verified_by = null, email_found_by = null, email_confidence = null, status = 'active',
+                   persona_key = null, title = null, seniority = null, departments = '{}', role_started_at = null,
+                   phone = null, phone_status = 'unknown', phone_verified_at = null, phone_type = null, phone_dnc = false,
+                   enriched_at = null where id = %s""",
            new_account_id, person_id)
     from . import outreach
     for e in db.all(cur, "select id from enrollments where person_id = %s and state in ('pending','active','paused')",

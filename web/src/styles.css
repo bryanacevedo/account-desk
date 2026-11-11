@@ -201,7 +201,7 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 /* ------------------------------------------------------------------ the buyer's own words */
 
 .quote { position: relative; padding: 14px 16px 14px 40px; border-radius: var(--r-l); background: var(--well); white-space: pre-wrap; line-height: 21px; }
-.quote::before { content: "\201C"; position: absolute; left: 14px; top: 6px; font-size: 32px; line-height: 1; color: var(--accent); font-weight: 600; }
+.quote::before { content: "\201C"; position: absolute; left: 14px; top: 6px; font-size: 32px; line-height: 1; color: var(--ok); font-weight: 600; }
 .quote.ours { background: var(--ground); box-shadow: inset 0 0 0 1px var(--line); }
 .quote.ours::before { content: none; }
 .quote.ours { padding-left: 16px; }
@@ -344,7 +344,7 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .said-n { color: var(--mute); font-size: 12.5px; flex: none; }
 .said-quote { color: var(--ink-2); font-size: 13px; line-height: 19px; }
 .said-meta { color: var(--mute); font-size: 12.5px; }
-.qmark { color: var(--accent); font-weight: 700; margin-right: 2px; }
+.qmark { color: var(--ok); font-weight: 700; margin-right: 2px; }
 
 /* ------------------------------------------------------------------ phone */
 
@@ -469,7 +469,7 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .person-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; background: none; border: 0; padding: 0; font: inherit;
   color: inherit; cursor: pointer; text-align: left; }
 .person-steps:hover .ps-name { color: var(--accent); }
-.ps-name { width: 72px; flex: none; color: var(--ink-2); }
+.ps-name { width: 128px; flex: none; color: var(--ink-2); }
 .steps { display: inline-flex; gap: 3px; flex-wrap: nowrap; flex: none; }
 .step { width: 20px; height: 20px; border-radius: 5px; display: inline-grid; place-items: center; color: var(--faint);
   box-shadow: inset 0 0 0 1px var(--line); }
@@ -513,3 +513,70 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
   .ledger.vendors .row > .hide-sm { display: none; }
   .ledger.vendors .cell-main .only-sm { white-space: normal; margin-top: 4px; color: var(--ink-2); }
 }
+
+/* ------------------------------------------------------------------ panel identity
+   Each kind of panel has a mark in the header and a hairline in its own quiet tint. The tints are low in chroma so
+   they label, never compete with the content or with the accent, which stays for what can be pressed. */
+.sheet { --kind: var(--mute); --kind-soft: var(--well); }
+.sheet.kind-account { --kind: #5A5F69; --kind-soft: #EFEFF1; }
+.sheet.kind-person { --kind: #2F7A6E; --kind-soft: #E7F2EF; }
+.sheet.kind-email { --kind: #5D5A8F; --kind-soft: #EFEFF6; }
+.sheet.kind-reply { --kind: #A0553A; --kind-soft: #F7ECE7; }
+.sheet.kind-call { --kind: #8A6A32; --kind-soft: #F5F0E6; }
+.sheet.kind-linkedin { --kind: #2F6B9E; --kind-soft: #E7EFF7; }
+.sheet.kind-task { --kind: #5B6472; --kind-soft: #EFF0F2; }
+.sheet.kind-meeting { --kind: #3F7A4F; --kind-soft: #EAF3EC; }
+.sheet.kind-play { --kind: #7A4D66; --kind-soft: #F4EDF1; }
+.sheet::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--kind); opacity: 0.55; }
+.sheet-top { gap: 10px; }
+.sheet-kind { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--kind);
+  letter-spacing: 0.01em; flex: none; }
+.kind-mark { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: var(--kind-soft); color: var(--kind);
+  animation: settle 360ms cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+.sheet-top .crumb { padding-left: 10px; border-left: 1px solid var(--line); line-height: 18px; }
+.sheet-top .crumb:empty { display: none; }
+
+/* Sections inside a panel: a hairline and air between them, and a quieter, consistent heading, so each block reads
+   as its own answer. */
+.sheet-body { gap: 0; }
+.sheet-body > * + * { margin-top: 22px; }
+.sheet-body > .section { padding-top: 22px; border-top: 1px solid var(--line); margin-top: 26px; }
+.sheet-body > .tabs + .section, .sheet-body > .section:first-child { border-top: 0; padding-top: 0; }
+.sheet-body > .section > header h2 { font-size: 13px; line-height: 18px; font-weight: 620; color: var(--ink-2); letter-spacing: 0.01em; }
+.sheet-body > .section > header h2 .h-icon { color: var(--kind); opacity: 0.8; }
+.sheet .who { padding-bottom: 4px; }
+.sheet-top > .iconbtn:last-child { margin-left: auto; }
+
+/* The email waterfall: finders in the order they are asked, each with how often it answered. */
+.ledger.vendors .suggest { color: var(--ink-2); margin-top: 3px; }
+.waterfall { display: flex; flex-wrap: wrap; gap: 6px 4px; margin-top: 8px; }
+.wf-step { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); padding: 3px 8px 3px 4px;
+  border-radius: 999px; background: var(--well); }
+.wf-step b { width: 16px; height: 16px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 10.5px; background: var(--ground); color: var(--ink); }
+.wf-step { position: relative; }
+.wf-step + .wf-step { margin-left: 14px; }
+.wf-step + .wf-step::before { content: "→"; position: absolute; left: -15px; color: var(--faint); }
+
+/* Full names on a computer; first names on a phone, where the strip needs the width. */
+.ps-name .only-sm { display: none; }
+@media (max-width: 900px) { .ps-name .hide-sm { display: none; } .ps-name .only-sm { display: inline !important; } }
+
+/* Live: the plane breathes once every few seconds. No dot, no ring. */
+.status.live .breathe { color: var(--ok); animation: breathe 3.2s ease-in-out infinite; flex: none; }
+@keyframes breathe { 0%, 100% { opacity: 1; transform: none; } 50% { opacity: 0.45; transform: translate(1px, -1px); } }
+
+/* The step key: the four marks, said once, above the list. */
+.step-key { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--mute); font-weight: 400; }
+.step-key > span { display: inline-flex; align-items: center; gap: 6px; }
+.step-key .step { width: 12px; height: 12px; border-radius: 3px; animation: none; }
+.step.to-come { color: var(--faint); }
+.step { animation: none; }
+.step.next { animation: none; }
+.person-steps:hover .step.next { animation: nextring 1.6s ease-in-out 1; }
+
+/* The finder order, said in words. */
+.ledger.vendors .order { margin-top: 6px; color: var(--ink-2); }
+.ledger.vendors .order b { font-weight: 560; color: var(--ink); }
+
+/* Replies' control sits at its own width. */
+.page > .seg { justify-self: start; }

@@ -180,7 +180,7 @@ export function Results() {
         <Fig value={data.opportunities.sourced} label="Opportunities sourced" />
         {me?.money ? <Fig value={money(data.opportunities.sourced_cents)} label="Pipeline sourced" /> : null}
         <Fig value={data.sla.median_hours ? `${data.sla.median_hours.toFixed(1)} h` : "None yet"} label="Median time to answer a hot reply" />
-        {me?.money && data.cost_per_meeting_cents ? <Fig value={money(data.cost_per_meeting_cents)} label="Data and AI spend per meeting, this month" /> : null}
+
       </div>
       <div>
         <Section title="From signal to meeting">
@@ -309,7 +309,7 @@ export function Ops() {
       </div>
       <Section title="Checks">
         <div className="ledger">
-          {data.monitors.map((m: any) => (
+          {[...data.monitors].sort((a: any, b: any) => Number(a.ok) - Number(b.ok)).map((m: any) => (
             <div key={m.monitor} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 120px 100px" }}>
               <Status kind={m.error ? "wait" : m.ok ? "ok" : "stop"}>{m.title}</Status>
               <span className="num">{m.error ? "Did not run" : m.monitor === "monitors_ran" ? (m.ok ? "All ran" : `${m.found} failed`) : m.ok ? "None found" : `${m.found} found`}</span>

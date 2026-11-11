@@ -94,6 +94,15 @@ def _persona_for(cur, title: str | None) -> str | None:
     return None
 
 
+def _fits(person: dict, persona: dict) -> bool:
+    """A person fits a persona by title; a vendor's department alone is not enough (a finance analyst is not the CFO),
+    but it rules out a title that matched by accident (a "data" title in sales)."""
+    if not _title_matches(person.get("title"), persona["title_patterns"]):
+        return False
+    depts, want = set(person.get("departments") or []), set(persona.get("departments") or [])
+    return not depts or not want or bool(depts & want) or depts == {"other"}
+
+
 def _enrollable(cur, person_id: int, ap_id: int, channel: str = "email") -> list[gate.Reason]:
     """Person-level reasons that matter at selection, for the play's first channel. Email problems are fixed by
     finding and verifying; a play with no email never refuses someone over their email."""
@@ -205,30 +214,81 @@ def enroll_referral(cur, payload: dict) -> None:
 
 
 def _ensure_email(cur, person: dict, account: dict) -> str:
-    """Find and verify. Returns valid | risky | invalid | missing."""
+    """Find and verify. Returns valid | catch_all | invalid | missing.
+
+    An address on file is verified; if it fails, the finders are asked for a better one. With no address, the finders
+    run as a waterfall: the first is asked; if it has nothing, an address someone else holds, an address erased on
+    request, or one that fails verification, the next is asked. Each finder charges only for an address it returns, and
+    every answer is kept, so a job that runs again never pays twice."""
+    from .enrichment import bought
+    from .privacy import erased
     ad = adapters.get()
-    email = person["email"]
-    if not email:
-        with spend.paid_call(cur, "email_finder", "find", vendor="email_finder", qty=1, purpose="find email",
-                             account_id=account["id"]) as info:
-            email = ad.finder.find(cur, person, account["primary_domain"])
-            info["found"] = bool(email)
+    if person["email"]:
+        status = _verify(cur, ad, person, account, person["email"])
+        if status != "invalid":
+            return status
+        db.run(cur, "update people set email = null, email_status = 'unknown' where id = %s", person["id"])
+    status = "missing"
+    for step in ad.finders or [ad.finder]:
+        provider = getattr(step, "provider", "email_finder")
+
+        def buy(step=step, provider=provider):
+            with spend.paid_call(cur, f"email_finder:{provider}", "find", vendor="email_finder", qty=1,
+                                 purpose=f"find email ({provider})", account_id=account["id"]) as info:
+                email = step.find(cur, person, account["primary_domain"])
+                info["found"] = bool(email)
+                info["charged_qty"] = 1 if email else 0
+            return email
+
+        email = bought(cur, f"email_finder:{provider}", str(person["id"]), buy)
         if not email:
-            return "missing"
-        clash = db.val(cur, "select id from people where email = %s and id <> %s", email.lower(), person["id"])
-        if clash:
-            return "missing"
-        db.run(cur, "update people set email = %s where id = %s", email.lower(), person["id"])
-    fresh = db.val(cur, """select email_status = 'valid' and email_verified_at > app_now() - interval '45 days'
-                           from people where id = %s""", person["id"])
+            continue
+        email = email.lower()
+        if db.val(cur, "select id from people where email = %s and id <> %s", email, person["id"]) or erased(cur, email=email, linkedin_url=None):
+            continue
+        db.run(cur, "update people set email = %s, email_found_by = %s, email_found_at = app_now() where id = %s",
+               email, provider, person["id"])
+        status = _verify(cur, ad, person, account, email)
+        if status != "invalid":
+            return status
+        db.run(cur, "update people set email = null, email_status = 'unknown' where id = %s", person["id"])
+    return status
+
+
+def _verify(cur, ad, person: dict, account: dict, email: str) -> str:
+    """Verify, then for a catch-all server ask the resolver. A verdict is kept for the verify window, whatever it
+    was, so an unconfirmed address is not paid for again every few hours."""
+    from .enrichment import bought, source
+    max_age = int(setting(cur, "verify_max_age_days", 45))
+    fresh = db.one(cur, """select email_status from people where id = %s and email = %s
+                           and email_status in ('valid', 'catch_all') and email_verified_at > app_now() - (%s || ' days')::interval""",
+                   person["id"], email, str(max_age))
     if fresh:
-        return "valid"
-    with spend.paid_call(cur, "email_verifier", "verify", vendor="email_verifier", qty=1, purpose="verify email",
-                         account_id=account["id"]) as info:
-        status = ad.verifier.verify(cur, email)
-        info["status"] = status
-    db.run(cur, "update people set email_status = %s, email_verified_at = app_now(), email_verified_by = %s where id = %s",
-           status, ad.verifier.name, person["id"])
+        return fresh["email_status"]
+
+    def check():
+        with spend.paid_call(cur, "email_verifier", "verify", vendor="email_verifier", qty=1, purpose="verify email",
+                             account_id=account["id"]) as info:
+            v = ad.verifier.verify(cur, email)
+            info["status"] = v
+        return v
+
+    status = bought(cur, "email_verifier", email, check, keep_days=max_age)
+    status = "catch_all" if status == "risky" else status
+    by, confidence = ad.verifier.name, None
+    if status == "catch_all" and ad.resolver is not None:
+        def resolve():
+            with spend.paid_call(cur, "email_resolver", "resolve", vendor="email_resolver", qty=1,
+                                 purpose="resolve a catch-all address", account_id=account["id"]) as info:
+                v = ad.resolver.resolve(cur, email)
+                info["status"] = v[0]
+            return list(v)
+
+        status, confidence = bought(cur, "email_resolver", email, resolve, keep_days=max_age)
+        by = ad.resolver.name
+    db.run(cur, """update people set email_status = %s, email_verified_at = app_now(), email_verified_by = %s,
+                   email_confidence = coalesce(%s, email_confidence) where id = %s""", status, by, confidence, person["id"])
+    source(cur, "person", person["id"], "email_status", status, by, confidence)
     return status
 
 
@@ -258,29 +318,40 @@ def build_committee(cur, ap: dict, play: dict, account: dict, *, exclude: frozen
         candidates = db.all(cur, """select * from people where account_id = %s and status = 'active'
                                     order by (id = %s) desc, id""", account["id"], trigger_person or 0)
         candidates = [c for c in candidates if c["id"] not in used and (
-            _title_matches(c["title"], persona["title_patterns"]) or (c["id"] == trigger_person and key in ("controller", "cfo")))]
+            _fits(c, persona) or (c["id"] == trigger_person and key in ("controller", "cfo")))]
         if not candidates:
-            with spend.paid_call(cur, "people_search", "search", vendor="people_search", qty=1, purpose="find people",
-                                 account_id=account["id"]) as info:
-                found = ad.people.search(cur, account, persona["title_patterns"], 3)
-                info["found"] = len(found)
+            from .adapters import Candidate
+            from .enrichment import apply_person, bought, linkedin_key
+
+            def search(persona=persona):
+                with spend.paid_call(cur, "people_search", "search", vendor="people_search", qty=1, purpose="find people",
+                                     account_id=account["id"]) as info:
+                    hits = ad.people.search(cur, account, persona["title_patterns"], 3)
+                    info["found"] = len(hits)
+                return hits
+
+            found = [Candidate(**c) for c in bought(cur, "people_search", f"{account['id']}:{key}", search)]
             from .privacy import linkedin_hash
             for c in found:
-                existing = db.val(cur, "select id from people where linkedin_url = %s", c.linkedin_url)
+                existing = db.val(cur, "select id from people where linkedin_key = %s", linkedin_key(c.linkedin_url))
                 if existing:
                     continue
                 if c.linkedin_url and db.val(cur, "select exists (select 1 from suppressions where kind = 'linkedin_hash' "
                                                   "and value = %s)", linkedin_hash(c.linkedin_url)):
                     continue  # erased on request: never added again
+                if c.match_confidence == "low":
+                    continue  # the vendor is not sure this is the right person
                 pid = db.val(cur, """insert into people (account_id, full_name, first_name, last_name, title, seniority,
-                                                         linkedin_url, country, timezone, source, photo_url)
-                                     values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'people_search',%s) returning id""",
+                                                         linkedin_url, linkedin_key, country, timezone, source, photo_url)
+                                     values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'people_search',%s) returning id""",
                              account["id"], c.full_name, c.first_name, c.last_name, c.title, c.seniority, c.linkedin_url,
-                             c.country, c.timezone, c.photo_url)
+                             linkedin_key(c.linkedin_url), c.country, c.timezone, c.photo_url)
                 ad.people.saved(cur, c, pid)
+                apply_person(cur, pid, {k: getattr(c, k) for k in ("departments", "role_started_at", "city", "headline",
+                                                                    "match_confidence", "timezone", "title")}, "people_search")
             candidates = [c for c in db.all(cur, "select * from people where account_id = %s and status = 'active' "
                                                  "and source = 'people_search' order by id", account["id"])
-                          if c["id"] not in used and _title_matches(c["title"], persona["title_patterns"])]
+                          if c["id"] not in used and _fits(c, persona)]
         candidates.sort(key=lambda c: (c["id"] != trigger_person, -SENIORITY_RANK.get(c["seniority"] or "", 0)))
         picked = None
         last_reason = "Nobody with this role found"
@@ -298,7 +369,8 @@ def build_committee(cur, ap: dict, play: dict, account: dict, *, exclude: frozen
                     continue
                 status = _ensure_email(cur, c, account)
                 if status != "valid":
-                    last_reason = {"missing": "No email address found", "risky": "Email could not be confirmed",
+                    last_reason = {"missing": "No email address found by any finder",
+                                   "catch_all": "Their company accepts every address, so theirs could not be confirmed",
                                    "invalid": "Email address does not work"}[status]
                     continue
             elif channels & {"linkedin_connect", "linkedin_message"} and not c["linkedin_url"]:
@@ -760,6 +832,9 @@ def research_job(cur, payload: dict) -> None:
     plays.set_state(cur, ap["id"], "researching")
     play = db.one(cur, "select * from plays where id = %s", ap["play_id"])
     account = db.one(cur, "select * from accounts where id = %s", ap["account_id"])
+    from .enrichment import ensure_company
+    ensure_company(cur, account["id"])  # company data first, if not read this month
+    account = db.one(cur, "select * from accounts where id = %s", ap["account_id"])
     _research_facts(cur, account)  # out of budget raises, and the job waits a day (jobs.run_ready)
     write_brief(cur, ap, account)
     people = build_committee(cur, ap, play, account)
@@ -769,16 +844,26 @@ def research_job(cur, payload: dict) -> None:
     if any(s["channel"] == "call" for s in play["sequence"]):
         for p in people:
             if not p["phone"]:
-                try:
+                from .adapters import PhoneHit
+                from .enrichment import bought, source
+
+                def find_phone(p=p):
                     with spend.paid_call(cur, "phone_finder", "find", vendor="phone_finder", qty=1, purpose="find phone",
                                          account_id=account["id"]) as info:
-                        phone = adapters.get().phone.find(cur, p)
-                        info["found"] = bool(phone)
-                except spend.OverBudget:
-                    phone = None
-                if phone:
-                    db.run(cur, "update people set phone = %s, phone_status = 'valid', phone_verified_at = app_now() "
-                                "where id = %s", phone, p["id"])
+                        hit = adapters.get().phone.find(cur, p)
+                        info["found"] = bool(hit)
+                        info["charged_qty"] = 1 if hit else 0
+                    return PhoneHit(number=hit) if isinstance(hit, str) else hit
+
+                try:
+                    hit = bought(cur, "phone_finder", str(p["id"]), find_phone)
+                except (spend.OverBudget, adapters.VendorMissing):
+                    hit = None
+                if hit:
+                    db.run(cur, """update people set phone = %s, phone_status = 'valid', phone_verified_at = app_now(),
+                                   phone_type = %s, phone_dnc = %s where id = %s""",
+                           hit["number"], hit.get("type") or "unknown", bool(hit.get("dnc")), p["id"])
+                    source(cur, "person", p["id"], "phone", hit.get("type"), "phone_finder")
     enrollments = []
     for p in people:
         mailbox = pick_mailbox(cur, ap["owner_id"], ap["id"])
