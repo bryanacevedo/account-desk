@@ -3,6 +3,7 @@ contacts, drafts that pass the copy checks, approval by autonomy stage, and the 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 import re
 
@@ -256,15 +257,31 @@ def pick_mailbox(cur, owner_id: int, account_play_id: int) -> int | None:
 # ---------------------------------------------------------------- drafting
 
 def footer_for(person: dict, message_id_hint: str) -> str:
-    token = hashlib.sha256(f"unsub:{person['id']}:{CONFIG.webhook_secret}".encode()).hexdigest()[:20]
+    token = unsubscribe_token(person["id"])
     url = f"{CONFIG.public_url}/u/{person['id']}/{token}"
     privacy = CONFIG.privacy_url if (person.get("country") or "") in EU_UK else None
     return copy_gate.footer(company=CONFIG.sender_company, address=CONFIG.sender_address, unsubscribe_url=url,
                             privacy_url=privacy)
 
 
+_unsub_secret: str | None = None
+
+
+def _unsubscribe_secret() -> str:
+    """Opt-out links must keep working for as long as an email can sit in an inbox, across every process and
+    restart. The signing secret is made once and kept in the database, never derived from a per-process value."""
+    global _unsub_secret
+    if _unsub_secret is None:
+        import secrets
+        with db.tx() as cur:
+            db.run(cur, "insert into settings (key, value) values ('unsubscribe_secret', %s) on conflict (key) do nothing",
+                   J(secrets.token_hex(32)))
+            _unsub_secret = db.val(cur, "select value from settings where key = 'unsubscribe_secret'")
+    return _unsub_secret
+
+
 def unsubscribe_token(person_id: int) -> str:
-    return hashlib.sha256(f"unsub:{person_id}:{CONFIG.webhook_secret}".encode()).hexdigest()[:20]
+    return hmac.new(_unsubscribe_secret().encode(), f"unsub:{person_id}".encode(), hashlib.sha256).hexdigest()[:24]
 
 
 def desk_steps(play: dict) -> list[int]:

@@ -123,3 +123,16 @@ def test_erasure_removes_the_person_and_keeps_them_out(client):
         assert db.val(cur, "select exists (select 1 from suppressions where kind = 'email_hash' and "
                            "value = encode(sha256(convert_to(%s, 'UTF8')), 'hex'))", p["email"])
     assert client.post(f"/api/people/{p['id']}/erase", headers={"X-Acting-As": str(user("sdr"))}).status_code == 403
+
+
+def test_opt_out_links_in_sent_emails_still_open(client):
+    """The link is signed with a secret kept in the database, so it works from any process, not only the one
+    that drafted the email."""
+    import re
+
+    from outbound import outreach as o
+    with db.tx() as cur:
+        body = db.val(cur, "select body from messages where body like '%%/u/%%' order by id limit 1")
+    path = re.search(r"/u/\d+/[0-9a-f]+", body).group(0)
+    o._unsub_secret = None  # a fresh process
+    assert client.get(path).status_code == 200

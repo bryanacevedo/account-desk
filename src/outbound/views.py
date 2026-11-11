@@ -401,7 +401,8 @@ def health(cur) -> dict:
 
 
 def settings(cur) -> dict:
-    return {"settings": {r["key"]: r["value"] for r in db.all(cur, "select key, value from settings where key not like 'sched:%%'")},
+    return {"settings": {r["key"]: r["value"] for r in db.all(cur, "select key, value from settings where key not like 'sched:%%' "
+                                                       "and key <> 'unsubscribe_secret'")},
             "signal_types": db.all(cur, "select * from signal_types order by weight desc"),
             "icp": db.one(cur, "select * from icp_versions order by published_at desc limit 1"),
             "personas": db.all(cur, "select * from personas"),
