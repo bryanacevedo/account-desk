@@ -186,6 +186,8 @@ def import_accounts(cur, text: str) -> dict:
             parents.append((aid, normalize_domain(r["parent_domain"])))
         jobs.enqueue(cur, "rescore", {"account_id": aid, "reason": "import"}, dedupe_key=f"rescore:{aid}")
         done += 1
+    if done:
+        jobs.enqueue(cur, "crm_retry_held", {}, dedupe_key="crm_retry_held")  # deals waiting for these accounts
     for aid, parent in parents:  # after every row, so a parent later in the file still links
         db.run(cur, "update accounts set parent_id = (select account_id from account_domains where domain = %s) where id = %s",
                parent, aid)

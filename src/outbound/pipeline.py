@@ -226,10 +226,37 @@ def apply_owner(cur, account_id: int, owner_email: str) -> str:
     return "moved"
 
 
+def hold_deal(cur, d) -> None:
+    """Keep a deal whose account the desk does not know, newest version wins, to be read again later."""
+    from dataclasses import asdict
+    raw = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in asdict(d).items()}
+    db.run(cur, """insert into crm_held_deals (crm_id, account_domain, deal) values (%s, %s, %s)
+                   on conflict (crm_id) do update set deal = excluded.deal, account_domain = excluded.account_domain""",
+           d.crm_id, (d.account_domain or "").lower(), J(raw))
+
+
+@jobs.handler("crm_retry_held")
+def retry_held_deals(cur, payload: dict | None = None) -> int:
+    """Read held deals again; those whose account now exists become opportunities and are attributed."""
+    from .adapters import CrmDeal
+    done = 0
+    for h in db.all(cur, "select * from crm_held_deals order by first_seen limit 500"):
+        raw = dict(h["deal"])
+        for k in ("created_at", "updated_at", "closed_at"):
+            if raw.get(k):
+                raw[k] = datetime.fromisoformat(raw[k])
+        if upsert_deal(cur, CrmDeal(**raw)) is not None:
+            db.run(cur, "delete from crm_held_deals where crm_id = %s", h["crm_id"])
+            done += 1
+        else:
+            db.run(cur, "update crm_held_deals set last_tried = app_now() where crm_id = %s", h["crm_id"])
+    return done
+
+
 @jobs.handler("crm_sync")
 def crm_sync(cur, payload: dict) -> None:
-    """Read every deal the CRM changed since the last read, oldest first, and keep a cursor so a failed read
-    resumes where it stopped. Deals on accounts we do not know are counted, not dropped silently."""
+    """Read every deal the CRM changed since the last read, oldest first, keeping a cursor. A deal on an account the
+    desk does not know is held and read again later, never passed over."""
     from . import signals
     since = db.val(cur, "select value #>> '{}' from settings where key = 'crm_cursor'")
     crm = adapters.get().crm
@@ -238,7 +265,10 @@ def crm_sync(cur, payload: dict) -> None:
         batch = crm.deals_changed(cur, since, 200)
         for d in batch:
             if upsert_deal(cur, d) is None:
+                hold_deal(cur, d)
                 unknown += 1
+            else:
+                db.run(cur, "delete from crm_held_deals where crm_id = %s", d.crm_id)
             # The cursor is (time, id): deals that share a timestamp across a batch edge are still all read.
             since = (d.updated_at.isoformat() if hasattr(d.updated_at, "isoformat") else str(d.updated_at)) + "|" + d.crm_id
         if len(batch) < 200:
@@ -246,8 +276,10 @@ def crm_sync(cur, payload: dict) -> None:
     if since:
         db.run(cur, """insert into settings (key, value) values ('crm_cursor', %s)
                        on conflict (key) do update set value = excluded.value""", J(since))
+    retry_held_deals(cur)
     db.run(cur, """insert into settings (key, value) values ('crm_unknown_accounts', %s)
-                   on conflict (key) do update set value = excluded.value""", J(unknown))
+                   on conflict (key) do update set value = excluded.value""",
+           J(db.val(cur, "select count(*) from crm_held_deals")))
     # Owners, with their own cursor.
     from . import signals as _s
     owner_since = db.val(cur, "select value #>> '{}' from settings where key = 'crm_owner_cursor'")

@@ -119,3 +119,17 @@ def test_an_email_to_someone_erased_by_profile_is_refused_by_the_database(cur, s
     db.run(cur, "insert into suppressions (kind, value, reason, source) values ('linkedin_hash', %s, 'Erased', 'erasure')",
            privacy.linkedin_hash("https://www.linkedin.com/in/ana-test-x"))
     refused(cur, scene["message"], "suppressed")
+
+
+def test_a_deal_on_an_unknown_account_is_held_and_read_once_the_account_exists(cur, scene):  # noqa: F811
+    from outbound.adapters import CrmDeal
+    now = db.val(cur, "select app_now()")
+    d = CrmDeal("held-1", "notyet.example", "New deal", 5000, "Discovery", now, now)
+    assert pipeline.upsert_deal(cur, d) is None
+    pipeline.hold_deal(cur, d)
+    assert pipeline.retry_held_deals(cur) == 0  # still unknown: stays held
+    aid = db.val(cur, "insert into accounts (name, primary_domain) values ('Not Yet', 'notyet.example') returning id")
+    db.run(cur, "insert into account_domains (domain, account_id) values ('notyet.example', %s)", aid)
+    assert pipeline.retry_held_deals(cur) == 1
+    assert db.val(cur, "select account_id from opportunities where crm_id = 'held-1'") == aid
+    assert db.val(cur, "select count(*) from crm_held_deals where crm_id = 'held-1'") == 0

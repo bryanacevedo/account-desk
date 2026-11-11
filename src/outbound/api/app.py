@@ -694,6 +694,7 @@ def resolve_signal(signal_id: int, body: Resolve, u: dict = Depends(writer)) -> 
             aid = db.val(cur, """insert into accounts (name, name_key, primary_domain, source) values (%s,%s,%s,'signal')
                                  returning id""", name, signals.normalize_name(name), dom)
             db.run(cur, "insert into account_domains (domain, account_id) values (%s,%s)", dom, aid)
+            jobs.enqueue(cur, "crm_retry_held", {}, dedupe_key="crm_retry_held")
         else:
             aid = body.account_id
             if not aid or not db.val(cur, "select exists (select 1 from accounts where id = %s)", aid):
