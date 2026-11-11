@@ -142,7 +142,8 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
     calendar = []
     if current:
         calendar = db.all(cur, """
-            select pe.id as person_id, pe.full_name, pe.photo_url, e.persona_key, e.state, e.step_index, e.next_at, e.stop_reason, e.pause_reason, m.step_index as msg_step,
+            select pe.id as person_id, pe.full_name, pe.photo_url, e.persona_key,
+                   (select pl.sequence from account_plays ap join plays pl on pl.id = ap.play_id where ap.id = e.account_play_id) as sequence, e.state, e.step_index, e.next_at, e.stop_reason, e.pause_reason, m.step_index as msg_step,
                    coalesce(m.sent_at, m.scheduled_for) as at, m.status
             from enrollments e join people pe on pe.id = e.person_id
             left join messages m on m.enrollment_id = e.id
@@ -208,7 +209,7 @@ def in_flight(cur, user: dict, *, mine: bool) -> dict:
 # ---------------------------------------------------------------- tasks
 
 def task(cur, task_id: int) -> dict | None:
-    t = db.one(cur, """select t.*, pe.full_name, pe.photo_url, pe.title as person_title, pe.phone, pe.phone_status,
+    t = db.one(cur, """select t.*, pe.full_name, pe.photo_url, pe.title as person_title, pe.phone, pe.phone_status, pe.phone_type, pe.phone_dnc,
                               pe.linkedin_url, a.name as company, a.id as account_id, pl.name as play,
                               m.body as draft, m.status as draft_status, m.gate, m.citations, u.name as owner
                        from tasks t left join people pe on pe.id = t.person_id
@@ -222,6 +223,14 @@ def task(cur, task_id: int) -> dict | None:
     ids = (t["citations"] or {}).get("ids", []) if t["citations"] else []
     t["sources"] = db.all(cur, "select id, kind, text, source_url as url from facts where id = any(%s)", ids) if ids else []
     t["outcomes"] = LINKEDIN_OUTCOMES.get(t["kind"]) or (CALL_OUTCOMES if t["kind"] == "call" else {"done": "Done"})
+    # Why the call, and what this person has already had, so the SDR does not dial cold.
+    t["why"] = db.one(cur, """select st.label, s.evidence->>'summary' as summary, s.observed_at from account_plays ap
+                              join signals s on s.id = ap.trigger_signal_id join signal_types st on st.key = s.type_key
+                              where ap.id = %s""", t["account_play_id"]) if t["account_play_id"] else None
+    t["so_far"] = db.all(cur, """select m.step_index, m.channel, m.subject, m.sent_at from messages m
+                                 join enrollments e on e.id = m.enrollment_id
+                                 where e.account_play_id = %s and e.person_id = %s and m.status = 'sent'
+                                 order by m.sent_at""", t["account_play_id"], t["person_id"]) if t["account_play_id"] else []
     t["max_chars"] = note_limit(cur) if t["kind"] == "linkedin_connect" else None
     return t
 

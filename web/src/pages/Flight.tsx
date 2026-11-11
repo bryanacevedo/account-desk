@@ -1,8 +1,8 @@
 import { CalendarCheck, ChatCircleText, EnvelopeSimple, LinkedinLogo, PencilSimpleLine, Phone } from "@phosphor-icons/react";
 import { useState } from "react";
 import { Avatar, Logo } from "../marks";
-import { Empty, Failed, Loading, Section, Seg, Status, ahead, cap, dayTime, late, navigate, usePath, useData, withParam } from "../lib";
-import { GOOD_STOPS, STEP_NAME, openSheet, stopWord } from "../sheets";
+import { Empty, Failed, Loading, Section, Seg, Status, ahead, dayTime, late, navigate, usePath, useData, withParam } from "../lib";
+import { GOOD_STOPS, openSheet, stepLabel, stopWord } from "../sheets";
 
 const STAGES: [string, string, string[]][] = [
   ["researching", "Researching", ["accepted", "researching"]],
@@ -12,10 +12,6 @@ const STAGES: [string, string, string[]][] = [
   ["meeting", "Meeting", ["meeting"]],
 ];
 
-/** A step's name, the same everywhere: an email by its number (as Approvals names it), anything else by what it is. */
-export function stepLabel(step: any, index: number): string {
-  return step.channel === "email" ? `Email ${index + 1}` : STEP_NAME[`${step.channel}:${step.job}`] || cap(step.channel);
-}
 
 /** Everything in motion: every open play past the decision, and each person's sequence in it. */
 export function Flight() {

@@ -161,7 +161,7 @@ export function Accounts() {
         </form>
       </div>
       {error ? <Failed error={error} retry={reload} /> : !data ? <Loading rows={12} /> : data.accounts.length === 0 ? <Empty title="No accounts match" /> : (
-        <div className="ledger">
+        <div className="ledger wrap-names">
           <div className="row head" style={{ gridTemplateColumns: COLS }}>
             <span /><span>Company</span><span>Latest signal</span><span className="num">Priority</span><span className="num">This week</span><span>Stage</span><span>Owner</span>
           </div>
@@ -176,7 +176,7 @@ export function Accounts() {
                 <span className="num hide-sm" style={{ color: a.week_change > 0 ? "var(--ink)" : "var(--faint)" }}>{a.week_change > 0 ? `+${a.week_change}` : a.week_change < 0 ? a.week_change : ""}</span>
                 <span className="hide-sm">{st ? <Status kind={st[0]}>{st[1]}</Status>
                   : a.last_state === "held_out" && a.hold_until ? <span className="mute">Held back</span>
-                  : a.hold_until ? <span className="mute">Rests until {day(a.hold_until)}</span>
+                  : a.hold_until ? <span className="mute" title="Not offered again until then: someone asked us to come back later, or a play just ended here.">Not offered until {day(a.hold_until)}</span>
                   : <span className="faint">Not in a play</span>}</span>
                 <span className="clip mute hide-sm">{a.owner || "Unassigned"}</span>
               </button>

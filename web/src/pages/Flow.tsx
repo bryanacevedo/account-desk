@@ -221,7 +221,7 @@ export function Plays() {
     <div className="page">
       <div className="head"><div><h1>Plays</h1></div>
         {me?.user.role === "gtm" ? <button className="btn" onClick={() => openSheet("playedit", "new")}>New play</button> : null}</div>
-      <div className="ledger">
+      <div className="ledger wrap-names">
         <div className="row head" style={{ gridTemplateColumns: P_COLS }}><span>Play</span><span>Who writes</span><span className="num">Accounts</span><span className="num">Positive</span><span className="num">Meetings</span><span className="num">Signal to first email</span></div>
         {data.plays.map((p: any) => {
           const f = p.funnel;

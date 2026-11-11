@@ -123,7 +123,7 @@ const ENROLL: Record<string, [Glyph, string]> = {
 };
 const STOP: Record<string, string> = {
   replied_positive: "Replied", meeting_booked: "Meeting booked", bounced: "Bounced", unsubscribed: "Unsubscribed",
-  not_interested: "Not interested", not_now: "Not now", wrong_person: "Wrong person", left_company: "Left",
+  not_interested: "Not interested", not_now: "Not now", wrong_person: "Wrong person", left_company: "Left the company",
   approval_lapsed: "Approval came too late", rep_in_conversation: "SDR talking to them", colleague_engaged: "Colleague talking to us", person_moved: "Changed jobs", referral: "Referred someone",
   reply_received: "Replied, reading it", account_reply: "Colleague replied", out_of_office: "Out of office",
 };
@@ -326,11 +326,33 @@ export function TaskSheet({ id }: { id: number }) {
         </Section>
       ) : null}
       {t.kind === "call" ? (
-        <Section title={t.title.replace(/ \(.*\)$/, "")}>
-          <div className="ledger"><Reach label="Phone" value={t.phone ? <a className="tap" href={`tel:${t.phone.replace(/[^+\d]/g, "")}`}>{t.phone}</a> : null}
-            state={t.phone ? (t.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(t.phone_status)]) : null} /></div>
-          {t.note ? <div className="small mute">{t.note}</div> : null}
-        </Section>
+        <>
+          <Section title="Phone">
+            <div className="ledger"><Reach label={t.phone_type && t.phone_type !== "unknown" ? cap(t.phone_type) : "Number"}
+              value={t.phone && !t.phone_dnc ? <a className="tap" href={`tel:${t.phone.replace(/[^+\d]/g, "")}`}>{t.phone}</a> : t.phone}
+              state={t.phone ? (t.phone_dnc ? ["stop", "Do not call"] : t.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(t.phone_status)]) : null} /></div>
+            {t.note ? <div className="small mute">{t.note}</div> : null}
+          </Section>
+          {t.why ? (
+            <Section title="Why now">
+              <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{t.why.summary}</span>
+                <span className="s">{t.why.label}, {day(t.why.observed_at)}</span></div>
+            </Section>
+          ) : null}
+          <Section title="So far">
+            {t.so_far.length ? (
+              <div className="ledger">
+                {t.so_far.map((m: any) => (
+                  <div key={m.step_index} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
+                    <span className="cell-main"><span className="t">{m.channel === "email" ? `Email ${m.step_index + 1}` : cap(m.channel)}</span>
+                      {m.subject ? <span className="s clip">{m.subject}</span> : null}</span>
+                    <span className="mute small num">{day(m.sent_at)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : <span className="small mute">Nothing sent to them yet. This call is the first touch.</span>}
+          </Section>
+        </>
       ) : null}
       {t.sources?.length ? (
         <Section title="What it rests on">
@@ -392,7 +414,7 @@ function Calendar({ rows }: { rows: any[] }) {
           return (
             <button key={name} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }} onClick={() => openSheet("person", e.person_id)}>
               <Avatar name={name} photo={e.photo_url} />
-              <div className="cell-main"><span className="t">{name}</span><span className="s">{sent ? `${sent} sent` : "Nothing sent yet"}{next ? `, step ${e.step_index + 1} ${next}` : ""}</span></div>
+              <div className="cell-main"><span className="t">{name}</span><span className="s">{sent ? `${sent} sent` : "Nothing sent yet"}{next ? `, ${e.sequence?.[e.step_index] ? stepLabel(e.sequence[e.step_index], e.step_index) : `Email ${e.step_index + 1}`} ${next}` : ""}</span></div>
               <Status kind={GOOD_STOPS.has(e.stop_reason) ? "ok" : (ENROLL[e.state] || ["off"])[0]}>{(e.state === "stopped" || e.state === "paused") ? stopWord(e.stop_reason || e.pause_reason) || ENROLL[e.state][1] : (ENROLL[e.state] || ["off", cap(e.state)])[1]}</Status>
             </button>
           );
@@ -575,7 +597,7 @@ export function MeetingSheet({ id }: { id: number }) {
           <div className="ledger">
             {m.learnings.map((l: any, i: number) => (
               <div key={i} className="row" style={{ gridTemplateColumns: "minmax(0,1fr)" }}>
-                <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{l.text}</span>{l.quote && l.quote.trim().replace(/[.]$/, "") !== l.text.trim().replace(/[.]$/, "") ? <span className="s" style={{ whiteSpace: "normal" }}>&ldquo;{l.quote}&rdquo;</span> : null}</div>
+                <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{l.text}</span></div>
               </div>
             ))}
           </div>
@@ -597,9 +619,14 @@ export function MeetingSheet({ id }: { id: number }) {
   );
 }
 
-const MEETING: Record<string, string> = { booked: "Meeting booked", held: "Meeting happened", no_show: "Meeting, they did not show", cancelled: "Meeting cancelled" };
+const MEETING: Record<string, string> = { booked: "Meeting booked", held: "Meeting held", no_show: "Meeting, they did not show", cancelled: "Meeting cancelled" };
 
 /** The same step names as the play editor. */
+/** A step's name, the same everywhere: an email by its number (as Approvals names it), anything else by what it is. */
+export function stepLabel(step: any, index: number): string {
+  return step.channel === "email" ? `Email ${index + 1}` : STEP_NAME[`${step.channel}:${step.job}`] || cap(step.channel);
+}
+
 export const STEP_NAME: Record<string, string> = {
   "email:open": "Email, first", "email:follow_up": "Email, follow-up", "email:bump": "Email, short nudge",
   "email:break_up": "Email, last", "linkedin_connect:connect": "LinkedIn, connect", "linkedin_message:message": "LinkedIn, message",
@@ -972,7 +999,7 @@ export function MessageSheet({ id }: { id: number }) {
     </>
   ) : undefined;
   return (
-    <Frame kind="email" crumb={<>Email {m.step_index + 1}{m.play ? <>, {m.play}</> : null}</>} foot={foot}>
+    <Frame kind="email" crumb={<>Email {m.step_index + 1}</>} foot={foot}>
       <div className="who">
         <Avatar name={m.full_name} photo={m.photo_url} size={44} />
         <div style={{ minWidth: 0 }}>
@@ -1285,7 +1312,7 @@ function PlayAccounts({ id }: { id: number }) {
   );
 }
 
-export const STAGE: Record<string, string> = { research: "SDR writes", draft: "Desk drafts, SDR approves", supervised: "SDR approves first emails", autonomous: "Desk sends tier B" };
+export const STAGE: Record<string, string> = { research: "SDR writes everything", draft: "SDR approves every email", supervised: "SDR approves first emails only", autonomous: "Desk sends to tier B on its own" };
 
 export function LiftBlock({ lift }: { lift: any }) {
   const t = lift.treated, h = lift.holdout;
