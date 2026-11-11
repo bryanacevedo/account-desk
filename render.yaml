@@ -1,5 +1,6 @@
-# The public demo: an invented company, simulated vendors, no keys. Postgres lives inside the container, so every
-# restart is a fresh 60-day simulation (about 30 seconds). Sleeps after 15 idle minutes on the free plan.
+# The public demo: an invented company, simulated vendors, no keys. Postgres lives inside the container with the
+# 60-day simulation built into the image, so every restart is the same fresh desk in seconds. Sleeps after 15 idle
+# minutes on the free plan.
 services:
   - type: web
     name: outbound-desk

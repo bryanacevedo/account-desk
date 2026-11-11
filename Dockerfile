@@ -1,4 +1,4 @@
-# The hosted demo: one container with Postgres inside it. Every start is a fresh, freshly simulated desk.
+# The hosted demo: one container with Postgres inside it, holding a 60-day simulated desk built when the image is.
 FROM node:26-slim AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
@@ -15,10 +15,11 @@ COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 COPY migrations ./migrations
-COPY scripts/docker-start.sh ./scripts/docker-start.sh
+COPY scripts/docker-start.sh scripts/docker-build-demo.sh ./scripts/
 COPY --from=web /web/dist ./web/dist
-RUN chmod +x scripts/docker-start.sh && mkdir -p /data && chown postgres /data
 ENV DATABASE_URL=postgres://postgres@127.0.0.1:5432/outbound PUBLIC_DEMO=1 HOST=0.0.0.0 PORT=8800
+# The demo database is built here, once, so starting the container takes seconds instead of minutes.
+RUN chmod +x scripts/*.sh && mkdir -p /data && chown postgres /data && NO_WORKER=1 ./scripts/docker-build-demo.sh
 EXPOSE 8800
 HEALTHCHECK CMD curl -sf localhost:8800/api/health || exit 1
 CMD ["./scripts/docker-start.sh"]
