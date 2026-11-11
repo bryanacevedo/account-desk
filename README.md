@@ -83,6 +83,12 @@ make test
 
 The tests run on real Postgres, including a 21-day simulation of the whole desk followed by every promise checked against what actually happened: nobody in the comparison group was contacted, nothing was sent after a reply, every sent email matches what was approved and carries its legal footer, no email cites tracking data.
 
+### At production size
+
+Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts simulated for 30 days in 71 seconds with no failed job, then 2 million signals loaded on top. Every page answered in under 50 ms except Signals (under 0.2 s); rescoring took 10 ms an account and 0.8 s per nightly batch of 500; every monitor ran in 50 ms or less. Two pages took 2.4 to 2.7 seconds before an index covering signal type and time, and a feed query that walks the status index instead of sorting every signal.
+
+At that size the monitors also found the real limit: four SDRs cannot approve first emails fast enough for 5,000 accounts, so 38 accepted accounts passed their play's time limit before a first email. The fix is people or autonomy, not code.
+
 Or with Docker, the same image the hosted demo runs:
 
 ```bash

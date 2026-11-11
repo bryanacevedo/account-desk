@@ -13,3 +13,6 @@ create index if not exists meetings_account_booked on meetings (account_id, book
 create index if not exists suppressions_value on suppressions (value, kind);
 create index if not exists jobs_running on jobs (locked_at) where status = 'running';
 alter table plays alter column holdout_pct set default 20;
+-- "Signals seen per type in 90 days" on Signals and Results: a range on this index instead of 250,000 heap reads
+-- at 2 million signals. Write cost: one more index entry per incoming signal.
+create index if not exists signals_type_recent on signals (type_key, ingested_at) where status = 'matched';

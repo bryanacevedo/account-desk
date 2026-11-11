@@ -152,10 +152,14 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
 # ---------------------------------------------------------------- signals
 
 def signals_page(cur) -> dict:
-    feed = db.all(cur, """select s.id, s.type_key, t.label, s.observed_at, s.ingested_at, s.evidence, s.source, s.status,
-                                 s.status_reason, a.id as account_id, a.name, a.fit_tier
-                          from signals s join signal_types t on t.key = s.type_key left join accounts a on a.id = s.account_id
-                          order by s.ingested_at desc limit 120""")
+    # One query per status, so each walks the (status, ingested_at) index instead of sorting every signal.
+    feed = []
+    for status in ("matched", "unmatched"):
+        feed += db.all(cur, """select s.id, s.type_key, t.label, s.observed_at, s.ingested_at, s.evidence, s.source, s.status,
+                                      s.status_reason, s.raw_company, a.id as account_id, a.name, a.primary_domain, a.fit_tier
+                               from signals s join signal_types t on t.key = s.type_key
+                               left join accounts a on a.id = s.account_id
+                               where s.status = %s order by s.ingested_at desc limit 120""", status)
     sources = db.all(cur, """select s.key, s.label, s.cadence_minutes, s.paid, s.enabled,
                                     r.started_at as last_run, r.fetched, r.matched, r.unmatched, r.error,
                                     (select count(*) from signals x where x.source = s.key
