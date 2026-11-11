@@ -186,7 +186,8 @@ def me(u: dict = Depends(current_user)) -> dict:
             if CONFIG.auth_mode == "demo" else []
         counts = {
             "today": db.val(cur, """select (select count(*) from account_plays where state = 'proposed' and (owner_id = %s or %s))
-                                         + (select count(*) from tasks where status = 'open' and owner_id = %s and kind in ('reply','review_reply'))""",
+                                         + (select count(*) from tasks where status = 'open' and owner_id = %s and kind in ('reply','review_reply','call','linkedin_connect','linkedin_message')
+                                            and due_at <= app_now())""",
                             u["id"], u["role"] != "sdr", u["id"]),
             "approvals": db.val(cur, """select count(*) from messages m join enrollments e on e.id = m.enrollment_id
                                         join account_plays ap on ap.id = e.account_play_id

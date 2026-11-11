@@ -999,7 +999,7 @@ export function MessageSheet({ id }: { id: number }) {
     </>
   ) : undefined;
   return (
-    <Frame kind="email" crumb={<>Email {m.step_index + 1}</>} foot={foot}>
+    <Frame kind={m.channel === "email" ? "email" : "linkedin"} crumb={m.channel === "email" ? <>Email {m.step_index + 1}</> : <>LinkedIn note</>} foot={foot}>
       <div className="who">
         <Avatar name={m.full_name} photo={m.photo_url} size={44} />
         <div style={{ minWidth: 0 }}>

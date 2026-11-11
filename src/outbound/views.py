@@ -171,9 +171,9 @@ def in_flight(cur, user: dict, *, mine: bool) -> dict:
                  from meetings m where m.account_play_id = ap.id
                  order by (m.status = 'booked') desc, m.starts_at desc limit 1) as meeting,
                (select m.id from messages m join enrollments e on e.id = m.enrollment_id where e.account_play_id = ap.id
-                 and m.status in ('awaiting_approval', 'failed_gate') order by m.id limit 1) as draft_id,
+                 and m.channel = 'email' and m.status in ('awaiting_approval', 'failed_gate') order by m.id limit 1) as draft_id,
                (select m.step_index from messages m join enrollments e on e.id = m.enrollment_id where e.account_play_id = ap.id
-                 and m.status in ('awaiting_approval', 'failed_gate') order by m.id limit 1) as draft_step
+                 and m.channel = 'email' and m.status in ('awaiting_approval', 'failed_gate') order by m.id limit 1) as draft_step
         from account_plays ap join accounts a on a.id = ap.account_id join plays pl on pl.id = ap.play_id
         left join users u on u.id = ap.owner_id left join account_scores sc on sc.account_id = a.id
         where ap.state = any(%s) and ap.arm = 'treated' and (%s::bigint is null or ap.owner_id = %s)

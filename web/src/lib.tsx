@@ -195,7 +195,7 @@ export function Count({ value }: { value: ReactNode }) {
   const [shown, setShown] = useState(() => (reduced() ? target : 0));
   const from = useRef(0);
   useEffect(() => {
-    if (!m || Number.isNaN(target) || reduced() || /\b(ago|in|day|days|hour|hours|minute|minutes)\b/.test(m[3])) { setShown(target); return; }
+    if (!m || Number.isNaN(target) || reduced() || /\b(ago|in|day|days|hour|hours|minute|minutes|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b|:\d\d/.test(m[3])) { setShown(target); return; }
     const start = performance.now(), a = from.current, dur = 520;
     let raf = 0;
     const step = (t: number) => {
@@ -206,7 +206,7 @@ export function Count({ value }: { value: ReactNode }) {
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [target]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!m || Number.isNaN(target) || /\b(ago|in|day|days|hour|hours|minute|minutes)\b/.test(m[3])) return <>{value}</>;
+  if (!m || Number.isNaN(target) || /\b(ago|in|day|days|hour|hours|minute|minutes|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b|:\d\d/.test(m[3])) return <>{value}</>;
   const body = shown.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   return <span className="count-up" aria-label={text!}>{m[1]}{body}{m[3]}</span>;
 }
