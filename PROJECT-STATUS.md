@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 45. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 46. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -47,6 +47,8 @@ Checked on 2026-11-11 by running them:
 2. Tests for the time-based play exits, CRM push retries and SLA escalation.
 
 ## Done since the first review (2026-11-11)
+
+- Hard gates on invention, in code: suggested replies are checked for numbers, product facts and placeholders the prospect did not bring up (rewritten once, then withheld); every draft's sentences about the buyer are read against the facts by a second call (rewritten once, then held as Needs a rewrite). Re-measured live: drafts 94% pass, briefs 100% faithful, suggested replies with no invented number or placeholder. Accounts list pages through all accounts. The held-back comparison is said in plain words.
 
 - The AI layer, made measurable: 268 eval cases over all six tasks (194 written independently), graded by code and a Claude Sonnet 5.5 judge with written checklists, with recordings so CI replays them free and floors in `evals/thresholds.json`. The first live run found real faults and the prompts were fixed against it: suggested replies invented product facts and left placeholders (half the cases, now 1 in 30); drafts stated guesses about the buyer as fact (40% faithful, now 78%); briefs stated inferences as findings (10%, now 90%); return dates were missed for want of today's date; a departure notice was read as out of office. A weekly live workflow is in place but dormant without an API key secret; an in-app check alerts when SDRs start editing many more drafts.
 

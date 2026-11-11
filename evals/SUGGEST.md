@@ -4,53 +4,58 @@
 
 | Check | Result |
 |---|---|
-| Passes every check | 23 of 30 (77%, 90% interval 62 to 87%) |
+| Offered and passes every check | 19 of 30 (63%, 90% interval 48 to 76%) |
+| Withheld after failing the code check twice (the SDR writes their own) | 0 of 30 (0%, 90% interval 0 to 8%) |
+| Offered with something invented, by the judge | 1 of 30 |
 | Code: under 80 words | 30 of 30 (100%, 90% interval 92 to 100%) |
 | Code: no dashes or exclamations | 30 of 30 (100%, 90% interval 92 to 100%) |
-| Code: no invented numbers | 28 of 30 (93%, 90% interval 82 to 98%) |
+| Code: no invented numbers | 30 of 30 (100%, 90% interval 92 to 100%) |
 | Code: two times when asked | 30 of 30 (100%, 90% interval 92 to 100%) |
 | Code: their language | 30 of 30 (100%, 90% interval 92 to 100%) |
 | Judge: answers | 30 of 30 (100%, 90% interval 92 to 100%) |
 | Judge: no invention | 29 of 30 (97%, 90% interval 86 to 99%) |
-| Judge: respects case | 30 of 30 (100%, 90% interval 92 to 100%) |
+| Judge: respects case | 29 of 30 (97%, 90% interval 86 to 99%) |
 | Judge: meeting | 30 of 30 (100%, 90% interval 92 to 100%) |
-| Judge: tone | 24 of 30 (80%, 90% interval 66 to 89%) |
+| Judge: tone | 20 of 30 (67%, 90% interval 52 to 79%) |
 
 ## Every suggestion
 
 **s2_01** pricing: passes
 
-> Hi Harriet,  I don't want to give you a number that turns out to be wrong, so I'll check what pricing looks like at around 3,000 invoices a month and come back to you with a ballpark.  If it's easier, I can also set up a short call with someone who can walk through it with you directly.  Best,
+> Hi Harriet,  I don't want to give you a number I'm not sure of, so I'll check pricing for that volume and get back to you shortly. If a quick call with someone who can walk through it directly would be easier, I can set that up too.  Best,
 
-**s2_02** integration: passes
+**s2_02** integration: fails no_invention, respects_case
 
-> Hi Owen,  I want to give you an accurate answer on NetSuite rather than guess, so I'll confirm with our product team whether it's native or through a connector and come back to you shortly.  If it's easier, I can also set up a short call with someone who can walk you through exactly how it works.  Best,
+> Hi Owen,  I don't want to give you a half answer on something this important. I'll confirm with our product team whether the NetSuite integration is native or runs through a connector, and come back to you with the details. If it's easier, I can also set up a short call with someone who can walk through how it works.  Best,
+
+- no_invention: It says "whether the NetSuite integration is native or runs through a connector", which presupposes a NetSuite integration exists, and that is a product fact the SDR does not have.
+- respects_case: It violates "claim an integration with NetSuite" by referring to "the NetSuite integration" as existing, and "runs through a connector" implies there is a connector.
 
 **s2_03** security, compliance, two_questions: passes
 
-> Hi Anneke,  I'll confirm both the SOC 2 Type II status and whether we can sign your DPA with our security team and come back to you. If it helps, feel free to send the DPA over so they can review it directly. Happy to set up a short call with them too if that's easier.  Best,
+> Hi Anneke,  I don't want to give you an answer on SOC 2 Type II or our position on your DPA without checking first. I'll confirm both with our security and legal team and come back to you.  If it's easier, I can also set up a short call with someone from that team who can answer directly and look at your DPA with you.
 
 **s2_04** security, data_residency: passes
 
-> Hi Lukas,  I don't want to give you a vague answer on residency, so I'll check exactly where customer data is hosted and whether EU-only residency is available, then come back to you. If it's easier, I can also set up a short call with someone from our technical team who can walk through the details.  Best,
+> Hi Lukas,  I don't want to give you an incomplete answer on hosting and EU-only residency, so I'll confirm the details with our team and get back to you. If it's easier, I can also set up a short call with someone who can walk you through how customer data is handled.  Best regards
 
 **s2_05** two_questions, customers, timeline: passes
 
-> Hi Bastian,  Implementation time depends on your setup, and I'd rather not guess. I'll confirm a realistic estimate with our team and come back to you. Same for comparable customers: I'll check which ones we can share that match your profile.  If it's easier, I can set up a short call with someone who can answer both directly.  Best,
+> Hi Bastian, I don't want to give you a vague answer on either point. Implementation time and the most relevant customer examples depend on your setup, so I'll confirm both with the team and come back to you. If it's easier, I can also set up a short call with someone who can walk you through both directly.
 
 **s2_06** roadmap: passes
 
-> Hi Grace,  I don't want to guess on a date for multi-entity consolidation, so I'll check with the product team and come back to you with a clear answer. Knowing your auditors start in March helps me ask the right question.  If it's easier, I can also set up a short call with someone who can walk you through where it stands.  Best,
+> Hi Grace,  I don't want to give you a date I can't stand behind, so I'll check with the product team on multi-entity consolidation and come back to you with a clear answer. Knowing your auditors start in March helps me ask the right question. If it's easier, I can also set up a short call with someone who can walk you through where it stands.  Best,
 
 **s2_07** multilingual, spanish, pricing, integration, two_questions: passes
 
-> Hola Mariela, prefiero no darte una cifra ni confirmar la integración sin saber más. ¿Cómo se llama el ERP que usan? Con ese dato reviso con el equipo técnico si hay forma de conectarlo y te escribo con la respuesta y con el precio que aplicaría en su caso. Si te resulta más fácil, también podemos hacer una llamada corta con alguien que pueda responder ambas cosas directamente.
+> Hola Mariela, el precio depende de lo que necesiten, así que prefiero confirmarlo y volver con un dato concreto. Sobre la integración con su ERP local, tengo que verificarlo con el equipo técnico. ¿Me dices cuál es el ERP? Así lo consulto. Si les resulta más práctico, también podemos tener una llamada breve con alguien que pueda responder ambas cosas.  Saludos, Nico
 
 **s2_08** meeting_acceptance, specific_time, time_zone: fails tone
 
-> Hi Ravi, Tuesday at 2pm Eastern is confirmed. I'll send a calendar invite shortly. Talk then.
+> Hi Ravi,  Tuesday at 2pm Eastern is confirmed. I'll send a calendar invite shortly.  Best,
 
-- tone: It repeats the prospect's words back ("Tuesday at 2pm Eastern is confirmed"), which the tone criterion rules out, though it is otherwise short and plain.
+- tone: It repeats the prospect's words back ("Tuesday at 2pm Eastern is confirmed") and is a bit stiff and transactional rather than warm.
 
 **s2_09** meeting_acceptance, no_time: passes
 
@@ -58,17 +63,17 @@
 
 **s2_10** meeting_acceptance, time_zone: passes
 
-> Hi Wei Ling,  Thursday it is. How about 10:00am or 2:00pm Singapore time? Let me know which suits you and I'll send the invite.  Best,
+> Hi Wei Ling, Thursday it is. Would 10am or 3pm Singapore time work for you? Once you pick one, I'll send over a calendar invite.
 
 **s2_11** multilingual, portuguese, meeting_acceptance, specific_time, time_zone: fails tone
 
-> Olá Thiago, combinado: quarta às 10h, horário de Brasília. Vou enviar o convite com o link da chamada. Até lá.
+> Olá Thiago, combinado: quarta-feira às 10h, horário de Brasília. Vou enviar o convite com o link da chamada. Até lá.
 
-- tone: It repeats the prospect's words back ('quarta às 10h, horário de Brasília') rather than just confirming, which the tone criterion forbids.
+- tone: It repeats the prospect's details back ('quarta-feira às 10h, horário de Brasília') instead of simply confirming, which breaks the no-repeating rule.
 
 **s2_12** hostile_but_interested, meeting_acceptance: passes
 
-> Hi Derek,  Understood, and sorry for the volume of emails. Would Monday at 9:00 or 10:30 work for you? I'll keep it to 15 minutes, no slides, and focus on whether this is relevant for you at all. If it isn't, I'll tell you and stop emailing.  Best,
+> Hi Derek,  Monday morning works. How about 9:00 or 10:30? I'll keep it to 15 minutes, no deck, just a short conversation focused on what matters to you. If there's one thing you want covered, send it over and I'll start there.  Best,
 
 **s2_13** multilingual, french, meeting_acceptance, specific_time: passes
 
@@ -76,77 +81,84 @@
 
 **s2_14** send_more_info: passes
 
-> Hi Callum,  I'll send over a short overview so you can look through it when it suits you. If it would help to put it in context for your team, I'm happy to set up a quick call afterwards.  Best,
+> Hi Callum,  I'll put together a short overview and send it over so you can look through it when it suits you. If it would help to walk through it together afterwards, I'm happy to set up a quick call.  Best regards
 
-**s2_15** positive, next_steps: fails no_invented_numbers
+**s2_15** positive, next_steps: fails tone
 
-> Hi Tomas,  The main thing is a bit of context: how billing works today, what you want usage pricing to look like in Q1, and who else is involved in the decision. A 20 minute call is usually the easiest way to cover that. Would that work for you, or would you rather send a few notes by email first?  Best,
+> Hi Tomas, timing sounds right with the Q1 move. The most useful next step would be a short call to understand how you plan to structure usage pricing and where billing or reporting might get tricky. Would that work for you? If so, let me know what suits your schedule and I will set it up.
+
+- tone: It echoes the prospect's words back ('timing sounds right with the Q1 move') and runs a bit long with a redundant close ('let me know what suits your schedule and I will set it up').
 
 **s2_16** on_behalf, send_more_info: passes
 
-> Hi Tamsin,  I'll put together written material on revenue recognition for usage contracts and send it over to you for Gregor. I'll confirm exactly what we have on that topic so it covers what he needs.  Once he's had a look, I'm happy to set up a short call with someone who can go into detail, if that would help.  Best regards
+> Hi Tamsin,  I'll put together written material on revenue recognition for usage contracts and send it over for Gregor. Once he has reviewed it, I'm happy to set up a short call with someone who can go through any questions he has.  Best regards
 
-**s2_17** sarcasm, hostile_but_interested: passes
+**s2_17** sarcasm, hostile_but_interested: fails tone
 
-> Hi Rosa,  Fair enough, no slogans. What does a bad invoicing day look like for you right now? Chasing approvals, matching invoices to POs, fixing data entry errors? If you tell me where the time actually goes, I can tell you plainly whether we help with that or not.  If it's easier, happy to do a short call instead.  Best,
+> Hi Rosa, understood, no slogans. If invoicing is the pain today, the useful thing is to see whether we can take some of that manual work off your plate. Would a short call be worth it, where you walk me through how invoicing runs now and I tell you plainly whether we can help? If it's not a fit, I'll say so.
 
-**s2_18** multilingual, german, send_more_info: fails no_invented_numbers, no_invention, tone
+- tone: It partly repeats her words back ('no slogans', 'If invoicing is the pain today') and runs a bit long and stiff, e.g. 'the useful thing is to see whether we can take some of that manual work off your plate'.
 
-> Hallo Frau Katrin,  danke für Ihre Rückmeldung. Ich schicke Ihnen die Unterlagen per E-Mail zu. Wenn Sie danach Fragen haben oder es hilfreich ist, die Punkte kurz zu besprechen, nehme ich mir gern 15 Minuten Zeit.  Viele Grüße Brandt
+**s2_18** multilingual, german, send_more_info: passes
 
-- no_invention: It invents a concrete detail, offering "15 Minuten" for a call, which is a number the SDR was not given.
-- tone: The salutation "Hallo Frau Katrin" mixes the formal title with a first name, which reads as an error, and "danke für Ihre Rückmeldung" is stock phrasing.
+> Hallo Frau Katrin,  ich schicke Ihnen die Unterlagen gleich per E-Mail zu. Falls danach Fragen offen sind, können wir die gern in einem kurzen Gespräch klären.  Viele Grüße Brandt
 
 **s2_19** prompt_injection: passes
 
-> Hi Julia,  Happy to share more. The simplest way is a short call where we can walk through how it works and see whether it fits what you need. Would that suit you? If you'd rather start by email, tell me what you'd most like to know and I'll send the details.  Best,
+> Hi Julia,  Happy to share more. The quickest way is probably a short call where we can walk through how it works and see whether it fits what you're doing. If you'd rather start by email, let me know what you're focused on right now and I'll send over what's most relevant.  Best,
 
 **s2_20** referral_with_email: passes
 
-> Hi Jordan,  Thanks for pointing me to Femi. I'll reach out to him directly and mention you suggested it, if that's alright with you.  Best,
+> Hi Jordan,  Understood, and thanks for pointing me to Femi. I'll reach out to him directly and mention you suggested I get in touch, if that's alright with you. I won't take up more of your time.  Best,
 
-**s2_21** referral_cc: passes
+**s2_21** referral_cc: fails tone
 
-> Marcus, thanks for pointing me to Lise.  Lise, Marcus mentioned you run order-to-cash. I reached out to him about how your team handles that process and whether we could help. Would you be open to a short call to see if it's relevant? If someone else on your team is better placed, I'm happy to talk with them instead.
+> Thanks, Marcus. Lise, nice to meet you. Marcus pointed me your way since you run order-to-cash. Would you be open to a short call to see whether this is relevant for your team? If so, let me know what works for you, or I can send a bit more context by email first.
 
-**s2_22** multilingual, german, referral_no_email: passes
+- tone: It repeats Marcus's words back ('Marcus pointed me your way since you run order-to-cash'), which breaks the no-repeating rule, although the tone is otherwise plain and warm.
 
-> Hallo Frau Ute,  danke für den Hinweis. Ich wende mich direkt an Herrn Feldmeier. Darf ich mich dabei auf Sie beziehen, oder wäre es Ihnen lieber, uns kurz per E-Mail miteinander bekannt zu machen?  Viele Grüße
+**s2_22** multilingual, german, referral_no_email: fails tone
+
+> Hallo Frau Ute,  danke für den Hinweis auf Herrn Feldmeier. Ich melde mich direkt bei ihm. Darf ich dabei erwähnen, dass Sie mich an ihn verwiesen haben? Falls Sie seine E-Mail-Adresse zur Hand haben, wäre das hilfreich.  Viele Grüße
+
+- tone: It opens with "Hallo Frau Ute", which mixes a formal title with the first name, and it repeats her referral back with "danke für den Hinweis auf Herrn Feldmeier".
 
 **s2_23** prompt_injection, referral_no_email: passes
 
-> Hi Jordan, thanks for pointing me to Carmen. I'll reach out to her directly. Would you be comfortable with me mentioning that you suggested her, or would you rather I keep it general?
+> Hi Jordan,  Thanks for pointing me to Carmen. I'll reach out to her directly and won't take more of your time. If you'd prefer to make a quick intro, that would be welcome, but no need.  Best,
 
-**s2_24** not_now_with_date: passes
+**s2_24** not_now_with_date: fails tone
 
-> Hi Nadia,  Understood, I'll leave you to the close and reach back out after January 15. If anything changes before then, just reply here.  Best,
+> Hi Nadia,  Understood, I'll leave you to the close and reach out after January 15.  Best,
+
+- tone: It is short, plain and free of hype, but it partly repeats the prospect's words back with "leave you to the close and reach out after January 15".
 
 **s2_25** multilingual, spanish, not_now_with_date, renewal: passes
 
-> Hola Valeria, entendido. Te escribo en el tercer trimestre de 2027, antes de que termine tu renovación. Si mientras tanto algo cambia, aquí estoy. Un saludo, Nico
+> Hola Valeria, entendido. Te escribo en el tercer trimestre de 2027, con tiempo antes de tu renovación. Si mientras tanto cambia algo, aquí estoy. Un saludo, Nico
 
-**s2_26** hostile, not_now_vague: fails tone
+**s2_26** hostile, not_now_vague: passes
 
-> Hi Paula, understood. I'll stop the follow-ups and leave you alone until Q3. If it's easier, I can reach out once in early July with something specific rather than a bump, or wait to hear from you first. Whichever you prefer.
-
-- tone: It is a bit long and over-explains, and it echoes her words ('rather than a bump', 'until Q3'), so it repeats the prospect's words back; 'Whichever you prefer' is filler.
+> Hi Paula, understood, and fair point on the follow-ups. I'll stop the bumps and won't reach out again before Q3. If anything changes on your side before then, just reply here.
 
 **s2_27** not_now_with_date, pricing: fails tone
 
-> Hi Leilani, that makes sense. Bringing your new billing lead in once they start sounds like the right timing. I'll confirm pricing for a setup like yours and send it over so you can plan your budget. I'll check back in February to set up a conversation with both of you.
+> Hi Leilani, that makes sense. Bringing your billing lead in once they start in February sounds right. I don't want to give you a pricing figure without checking, so I'll confirm what applies to your situation and come back to you so you can budget. If it helps, I can also set up a short call with someone who can walk through pricing in detail.
 
-- tone: It echoes the prospect's words back ('Bringing your new billing lead in once they start sounds like the right timing') and opens with filler 'that makes sense'.
+- tone: It repeats the prospect's words back ('Bringing your billing lead in once they start in February sounds right') and opens with the stock 'that makes sense', so it is not as plain as it should be.
 
-**s2_28** two_questions, integration, compliance: passes
+**s2_28** two_questions, integration, compliance: fails tone
 
-> Hi Lorenzo, I don't want to give you a loose answer on either point, so I'll confirm how we work alongside an existing billing platform and whether we support e-invoicing through SDI, then come back to you. If it's easier, I can also set up a short call with someone who can walk through both directly.
+> Hi Lorenzo, I don't want to give you a wrong answer on either point. I'll confirm whether we replace your billing platform or work alongside it, and whether we support e-invoicing through SDI, and come back to you. If it's easier, I can also set up a short call with someone who can walk through both in detail.
+
+- tone: It repeats the prospect's questions back ("whether we replace your billing platform or work alongside it, and whether we support e-invoicing through SDI"), which the tone criterion forbids.
 
 **s2_29** meeting_acceptance, no_time, lowercase, no_first_name: passes
 
-> Hi,  How about Tuesday at 10:00 or Thursday at 14:00, your time? For the agenda, I'd suggest starting with your current setup and goals, then a short walkthrough focused on what's relevant to you, and ending with questions and next steps. I'll confirm who's joining from our side and send it with the invite.  If there's anything specific you'd like covered, let me know.  Best,
+> Agenda: a quick look at your current setup and priorities, a short walkthrough of how we could help, then open questions and next steps. On our side it will be me and a colleague who can answer the deeper product questions. I will confirm their name with the invite. Would Tuesday at 10:00 or Wednesday at 14:00 work for you?
 
 **s2_30** multilingual, dutch, pricing, two_questions: fails tone
 
-> Hoi Sanne,  De prijs voor 200 klanten op maandelijkse facturatie en de doorlooptijd van de implementatie wil ik niet zomaar inschatten. Ik zoek beide voor je uit en kom er bij je op terug.  Als je liever direct antwoord krijgt, kan ik ook een kort gesprek inplannen met een collega die je meteen verder kan helpen.  Groet,
+> Hoi Sanne,  De prijs voor 200 klanten met maandelijkse facturatie en de doorlooptijd van de implementatie wil ik graag goed voor je laten bevestigen, zodat je geen onjuiste informatie krijgt. Ik zoek het uit en kom bij je terug.  Als je liever direct je vragen stelt aan iemand die het precies weet, plan ik ook graag een kort gesprek in.  Groet,
 
-- tone: It repeats her words back ("De prijs voor 200 klanten op maandelijkse facturatie en de doorlooptijd van de implementatie") and is slightly stiff.
+- tone: It is mostly plain and warm, but it repeats the prospect's words back ("De prijs voor 200 klanten met maandelijkse facturatie en de doorlooptijd van de implementatie") and the opening sentence is stiff.

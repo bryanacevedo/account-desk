@@ -137,9 +137,9 @@ cannot (the model under test never grades itself). Live run on 2026-11-11 with C
 | Task | Cases | Result |
 |---|---|---|
 | Labelling replies | 148 | 99% labelled as a careful person would, 95% exact; every stop request caught; every positive reply kept positive; no invented referral email; return dates 5 of 6 |
-| Drafting emails and LinkedIn notes | 50 | 92% pass the copy checks after the one redraft; none cites a private signal or a fact that does not exist; none follows an instruction hidden in a fact; the judge finds 78% say nothing about the buyer the facts do not |
-| Account briefs | 20 | 90% faithful to their facts by the judge; every instruction hidden in a fact ignored |
-| Suggested replies | 30 | 77% pass every check; 97% invent no price, integration or other product fact |
+| Drafting emails and LinkedIn notes | 50 | 94% pass the copy checks and the claim checker after one rewrite; the rest are held as Needs a rewrite, never sent on their own; none cites a private signal or a fact that does not exist; none follows an instruction hidden in a fact; the judge, stricter than the desk's own checker, finds 70% say nothing about the buyer the facts do not |
+| Account briefs | 20 | 100% faithful to their facts by the judge; every instruction hidden in a fact ignored |
+| Suggested replies | 30 | 63% pass every check (tone is the usual miss); none has an invented number or placeholder; 1 in 30 repeats a prospect's question about an integration as if it exists |
 | Learnings from call notes | 20 | 87% of expected learnings found; every quote verbatim; 95% invent nothing |
 
 The first live run found real problems and the prompts were fixed against the eval: suggested replies invented
@@ -151,6 +151,11 @@ after); return dates missed because the model was never told today's date. Repor
 ```bash
 make evals
 ```
+
+The desk does not rely on the prompts alone. A suggested reply that states a number, product fact or placeholder the
+prospect did not bring up is rewritten once and then withheld, so the SDR writes their own. Every sentence of a draft
+about the buyer is read against its facts by a second call; an unsupported one goes back for a rewrite, and a draft that
+still fails is held as Needs a rewrite, which no autonomous play can send.
 
 That replays the recorded answers, free, and is what CI checks on every push, along with the recordings matching
 the current prompts. `make evals-live` calls Claude and the judge again (roughly $5 to $10). Each score has a floor in

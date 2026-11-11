@@ -92,3 +92,5 @@ Each entry: what was decided, why, and what it costs. Newest last.
 
 45. **The AI is measured against cases it did not shape.** Eval cases are written by an agent that never sees the code, graded by code where possible and by a different model (Claude Sonnet 5.5) with concrete pass or fail criteria where not. A prompt changes only with a re-recorded eval, and scores have floors; the safety ones (stop requests, private signals, hidden instructions, invented emails) have no slack. Prompts were changed against the eval's findings: what we offer is never written as the buyer's situation, a guess is marked as a guess, and a suggested reply states no product fact the SDR does not have.
 
+46. **Invention is stopped in code, not only asked against in a prompt.** A suggested reply is checked for numbers, product facts and placeholders the prospect did not bring up; a draft's sentences about the buyer are read against the facts by a second call. Each gets one rewrite; after that the suggestion is withheld and the draft is held for a person, never sent by an autonomous play.
+

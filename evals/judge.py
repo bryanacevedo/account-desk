@@ -70,17 +70,20 @@ def judge(case: dict, output: dict, criteria: list[tuple[str, str]]) -> dict | N
     import anthropic  # pragma: no cover - needs a key
     client = anthropic.Anthropic()
     listing = "\n".join(f"- {cid}: {text}" for cid, text in criteria)
-    resp = client.messages.parse(
+    for _ in range(2):  # a verdict missing for any criterion is asked again once, never counted as a fail
+        resp = client.messages.parse(
         model=JUDGE_MODEL, max_tokens=4000, system=SYSTEM, output_format=Judgement,
         output_config={"effort": "medium"},
         messages=[{"role": "user", "content": (
             f"Case:\n{json.dumps(case, ensure_ascii=False, default=str)}\n\n"
             f"Output to grade:\n{json.dumps(output, ensure_ascii=False, default=str)}\n\n"
             f"Criteria (return one verdict per id, in this order):\n{listing}")}],
-    )
-    if resp.stop_reason == "refusal":
-        return None
-    got = {v.id: {"passed": v.passed, "why": v.why} for v in resp.parsed_output.verdicts}
+        )
+        if resp.stop_reason == "refusal":
+            return None
+        got = {v.id: {"passed": v.passed, "why": v.why} for v in resp.parsed_output.verdicts}
+        if all(cid in got for cid, _ in criteria):
+            break
     verdicts = {cid: got.get(cid, {"passed": False, "why": "The judge returned no verdict for this criterion."})
                 for cid, _ in criteria}
     usage = {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens, "model": resp.model}
