@@ -32,8 +32,8 @@ export function Deliverability() {
             const auth = d.spf && d.dkim && d.dmarc && d.dmarc_aligned;
             return (
               <div key={d.domain} className="row" style={{ gridTemplateColumns: D_COLS }}>
-                <div className="cell-main"><span className="t">{d.domain}</span><span className="s">DMARC {d.dmarc_policy}{d.blocklisted ? ", on a blocklist" : ""}</span></div>
-                <Status kind={auth ? "ok" : "stop"}>{auth ? "SPF, DKIM, DMARC aligned" : "Incomplete"}</Status>
+                <div className="cell-main"><span className="t">{d.domain}</span><span className="s">{d.dmarc_policy ? `DMARC ${d.dmarc_policy}` : "No DMARC policy"}{d.blocklisted ? ", on a blocklist" : ""}{d.checked_at ? `, DNS read ${ago(d.checked_at)}` : ", DNS not read yet"}</span></div>
+                <Status kind={auth ? "ok" : "stop"}>{auth ? "SPF, DKIM, DMARC aligned" : `${[!d.spf && "SPF", !d.dkim && "DKIM", !d.dmarc && "DMARC", d.dmarc && !d.dmarc_aligned && "alignment"].filter(Boolean).join(", ")} failing`}</Status>
                 <span className="num">{d.age_days} days</span>
                 <span className="num">{d.spam_rate === null ? <span className="mute">Not reported yet</span> : pct(d.spam_rate, 2)}</span>
                 <span className="num">{d.mailboxes}</span>
@@ -76,7 +76,7 @@ export function Deliverability() {
                 <span className="clip">{w.play}, email {w.step}</span>
                 <span className="num">{Math.min(w.sends, 20)} <span className="faint">of 20</span></span>
                 <span className="num">{w.hard_bounces} bounced</span>
-                <Status kind={w.paused ? "stop" : w.sends >= 20 ? "ok" : "half"}>{w.paused ? "Paused" : w.sends >= 20 ? "Past the first batch" : "Watching"}</Status>
+                {w.paused ? <ResumeStep w={w} /> : <Status kind={w.sends >= 20 ? "ok" : "half"}>{w.sends >= 20 ? "Past the first batch" : "Watching"}</Status>}
               </div>
             ))}
           </div>
@@ -249,6 +249,7 @@ export function Ops() {
         <Fig value={<Status kind={data.kill_switch ? "stop" : "ok"}>{data.kill_switch ? "Stopped" : "On"}</Status>} label="Sending" sm />
         <Fig value={failing.length} unit={`of ${data.monitors.length}`} label="Checks finding problems" />
         <Fig value={data.alerts.filter((a: any) => !a.delivered_at).length} label="Alerts not delivered" />
+        <Fig value={<Status kind={data.checks_stale ? "stop" : "ok"}>{data.checks_ran_at ? ago(data.checks_ran_at) : "Never"}</Status>} label={data.checks_stale ? "Checks stopped running" : "Checks last ran"} sm />
       </div>
       <Section title="Checks">
         <div className="ledger">
@@ -294,6 +295,77 @@ export function Ops() {
 }
 
 // ---------------------------------------------------------------- Settings
+
+function ResumeStep({ w }: { w: any }) {
+  const [busy, run] = useBusy();
+  return (
+    <span className="actions" style={{ justifyContent: "flex-end" }}>
+      <Status kind="stop">Paused</Status>
+      <button className="btn line sm" disabled={busy} onClick={() => run(() => api(`/api/watch/${encodeURIComponent(w.template_key)}/resume`, { method: "POST" }), "Resumed. The next 20 sends are watched again.")}>Resume</button>
+    </span>
+  );
+}
+
+function AddSuppression({ onDone }: { onDone: () => void }) {
+  const [kind, setKind] = useState("email");
+  const [value, setValue] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, run] = useBusy();
+  return (
+    <div className="actions" style={{ flexWrap: "wrap", marginBottom: 12 }}>
+      <select className="select" style={{ width: 120 }} value={kind} onChange={(e) => setKind(e.target.value)} aria-label="What to block">
+        <option value="email">Email</option><option value="domain">Domain</option><option value="phone">Phone</option>
+      </select>
+      <input className="input" style={{ flex: 1, minWidth: 180 }} value={value} onChange={(e) => setValue(e.target.value)} placeholder={kind === "domain" ? "company.com" : kind === "phone" ? "+1 555 0100" : "name@company.com"} aria-label="Value" />
+      <input className="input" style={{ flex: 1, minWidth: 180 }} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why" aria-label="Why" />
+      <button className="btn sm" disabled={busy || !value.trim() || reason.trim().length < 3} onClick={() => run(async () => {
+        await api("/api/suppressions", { method: "POST", body: { kind, value, reason } });
+        setValue(""); setReason(""); onDone();
+      }, "Added. Their sequences stop now.")}>Add</button>
+    </div>
+  );
+}
+
+function LiftButton({ id, onDone }: { id: number; onDone: () => void }) {
+  const [busy, run] = useBusy();
+  return <button className="btn quiet sm" disabled={busy} onClick={() => run(async () => { await api(`/api/suppressions/${id}`, { method: "DELETE" }); onDone(); }, "Lifted.")}>Lift</button>;
+}
+
+/** Accounts and people from a CSV. Rows the desk refuses come back with the reason, row by row. */
+function ImportBox() {
+  const [kind, setKind] = useState<"accounts" | "people">("accounts");
+  const [result, setResult] = useState<any>(null);
+  const [busy, run] = useBusy();
+  const pick = (file: File | undefined) => {
+    if (!file) return;
+    run(async () => {
+      const csv = await file.text();
+      setResult(await api<any>(`/api/import/${kind}`, { method: "POST", body: { csv } }));
+    });
+  };
+  return (
+    <Section title="Bring your data" right={<span className="mute small">CSV. Accounts first, then people.</span>}>
+      <div className="actions" style={{ flexWrap: "wrap" }}>
+        <select className="select" style={{ width: 160 }} value={kind} onChange={(e) => setKind(e.target.value as any)} aria-label="What to import">
+          <option value="accounts">Accounts</option><option value="people">People</option>
+        </select>
+        <label className="btn line sm" style={{ cursor: "pointer" }}>
+          Choose a file<input type="file" accept=".csv,text/csv" className="sr-only" disabled={busy} onChange={(e) => pick(e.target.files?.[0])} />
+        </label>
+        <span className="mute small">{kind === "accounts" ? "name, domain, industry, employees, country, lifecycle, owner_email, crm_id, parent_domain" : "full_name, company_domain, title, email, linkedin_url, phone, country, timezone"}</span>
+      </div>
+      {result ? (
+        <div className="ledger" style={{ marginTop: 12 }}>
+          <div className="row" style={{ gridTemplateColumns: "minmax(0,1fr)" }}><Status kind="ok">{n0(result.imported)} imported</Status></div>
+          {result.refused.slice(0, 20).map((r: any) => (
+            <div key={r.row} className="row" style={{ gridTemplateColumns: "80px minmax(0,1fr)" }}><span className="mute">Row {r.row}</span><Status kind="stop">{r.why}</Status></div>
+          ))}
+          {result.refused.length > 20 ? <div className="row mute small">and {result.refused.length - 20} more refused</div> : null}
+        </div>
+      ) : null}
+    </Section>
+  );
+}
 
 export function Settings() {
   const { data, error, reload } = useData<any>("/api/settings");
@@ -348,15 +420,18 @@ export function Settings() {
         </div>
         <div className="small mute">Tier A from {data.icp.rules.tiers.A}, tier B from {data.icp.rules.tiers.B}. Published {day(data.icp.published_at)}.</div>
       </Section>
+      {me && me.user.role !== "sdr" ? <ImportBox /> : null}
       <Section title="Do not contact">
+        <AddSuppression onDone={reload} />
         {data.suppressions.length ? (
           <div className="ledger">
             {data.suppressions.slice(0, 20).map((x: any) => (
-              <div key={x.id} className="row" style={{ gridTemplateColumns: "100px minmax(0,1fr) minmax(0,1fr) 90px", minHeight: 36 }}>
+              <div key={x.id} className="row" style={{ gridTemplateColumns: "100px minmax(0,1fr) minmax(0,1fr) 90px 70px", minHeight: 36 }}>
                 <span className="mute">{cap(x.kind === "email_hash" ? "erased" : x.kind)}</span>
                 <span className="clip">{x.kind === "email_hash" ? "Address kept only as a fingerprint" : x.value}</span>
                 <span className="mute clip">{x.reason}</span>
                 <span className="num mute small">{day(x.created_at)}</span>
+                {me?.user.role === "manager" && String(x.source).startsWith("person:") ? <LiftButton id={x.id} onDone={reload} /> : <span />}
               </div>
             ))}
           </div>

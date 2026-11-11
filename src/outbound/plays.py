@@ -57,13 +57,15 @@ def match(cur, account_id: int) -> int | None:
     if gate.account_reasons(cur, account_id):
         return None
     score = db.one(cur, "select priority, fit, inputs from account_scores where account_id = %s", account_id)
-    acc = db.one(cur, "select fit_tier, owner_id from accounts where id = %s", account_id)
+    acc = db.one(cur, "select fit_tier, owner_id, lifecycle from accounts where id = %s", account_id)
     if not score or acc["fit_tier"] not in ("A", "B"):
         return None
     best = None
     for play in db.all(cur, "select * from plays where status = 'live' order by urgent desc, id"):
         trig = play["trigger"]
         if acc["fit_tier"] not in trig.get("fit_tiers", ["A", "B"]) or score["priority"] < trig.get("min_priority", 0):
+            continue
+        if acc["lifecycle"] in trig.get("exclude_lifecycles", []):
             continue
         sig = _trigger_signal(cur, play, account_id)
         if sig is None:
@@ -238,7 +240,7 @@ DEMOTE = {"autonomous": "supervised", "supervised": "draft", "draft": "draft", "
 
 @jobs.handler("autonomy_watch")
 def autonomy_watch(cur, payload: dict) -> None:
-    """Automatic demotion (docs/SPEC.md section 9): a complaint, a day with bounces over 3%, or SDRs editing more than
+    """Automatic demotion (docs/SPEC.md section 9): a complaint, bounces over 3% of the last 200 sends, or SDRs editing more than
     30% of the last 20 drafts moves a play down one stage. Promotion is never automatic."""
     from . import alerts
     for p in db.all(cur, "select * from plays where status = 'live' and autonomy in ('supervised', 'autonomous')"):
@@ -248,18 +250,21 @@ def autonomy_watch(cur, payload: dict) -> None:
                                     where ap.play_id = %s and d.event = 'complaint'
                                     and d.at > coalesce((select max(at) from play_stage_changes where play_id = %s), '-infinity')""",
                             p["id"], p["id"])
-        day = db.one(cur, """select count(*) filter (where d.event = 'sent') as sent,
-                                    count(*) filter (where d.event = 'bounced_hard') as bounced
-                             from deliveries d join messages m on m.id = d.message_id join enrollments e on e.id = m.enrollment_id
-                             join account_plays ap on ap.id = e.account_play_id
-                             where ap.play_id = %s and d.at > app_now() - interval '1 day'""", p["id"])
+        # Hard bounces over the play's last 200 sends (SPEC 22.5), not one day, so a small day cannot swing it.
+        day = db.one(cur, """with last as (select m.id from messages m join enrollments e on e.id = m.enrollment_id
+                                            join account_plays ap on ap.id = e.account_play_id
+                                            where ap.play_id = %s and m.channel = 'email' and m.status = 'sent'
+                                            order by m.sent_at desc limit 200)
+                             select (select count(*) from last) as sent,
+                                    (select count(*) from deliveries d where d.message_id in (select id from last)
+                                     and d.event = 'bounced_hard') as bounced""", p["id"])
         last = db.all(cur, """select m.edited from messages m join enrollments e on e.id = m.enrollment_id
                               join account_plays ap on ap.id = e.account_play_id
                               where ap.play_id = %s and m.approval_mode = 'person' order by m.approved_at desc limit 20""", p["id"])
         if complaints:
             why = "A spam complaint"
-        elif day["sent"] >= 20 and day["bounced"] / day["sent"] > 0.03:
-            why = f"Bounce rate {day['bounced'] / day['sent']:.1%} in a day"
+        elif day["sent"] >= 50 and day["bounced"] / day["sent"] > 0.03:
+            why = f"Bounce rate {day['bounced'] / day['sent']:.1%} over the last {day['sent']} sends"
         elif len(last) == 20 and sum(1 for m in last if m["edited"]) > 6:
             why = "SDRs edited more than 30% of the last 20 drafts"
         if why:

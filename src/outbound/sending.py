@@ -109,13 +109,21 @@ def send_one(cur, payload: dict) -> None:
         later(timeutil.next_slot(now + timedelta(days=1), timezone=person["timezone"], country=person["country"],
                                  window=window, jitter_key=f"m{m['id']}c"), "mailbox at its daily cap")
         return
+    # Record today's cap where the trigger can check it (guarantee 8), under the lock taken above.
+    db.run(cur, "update mailboxes set cap_today = %s, cap_day = app_now()::date where id = %s",
+           outreach.mailbox_capacity(cur, mailbox), mailbox["id"])
     # The trigger is the last check. A refusal here means a rule changed between the gate and now.
     try:
         with cur.connection.transaction():
             db.run(cur, "update messages set status = 'sending', mailbox_id = %s, sent_at = app_now() where id = %s",
                    mailbox["id"], m["id"])
     except psycopg.errors.RaiseException as exc:
-        outreach.stop_enrollment(cur, e["id"], "refused: " + str(exc).split("\n")[0][:120])
+        why = str(exc).split("\n")[0]
+        if "daily cap" in why:  # a cap is a reason to wait, not to stop the person
+            later(timeutil.next_slot(now + timedelta(days=1), timezone=person["timezone"], country=person["country"],
+                                     window=window, jitter_key=f"m{m['id']}c"), "mailbox at its daily cap")
+            return
+        outreach.stop_enrollment(cur, e["id"], "refused: " + why[:120])
         return
     # 'sending' commits with this job. The provider call is a separate job, so a crash after the provider accepted
     # the email leaves the message in 'sending', which the sweep resolves by asking the provider, never by resending.
@@ -331,6 +339,43 @@ def reply_rate_drops(cur) -> list[dict]:
         join mailboxes mb on mb.id = x.mailbox_id
         where mb.status = 'active' and x.sent >= 60 and x.expected >= 5 and x.replied < 0.5 * x.expected
         order by mb.id""")
+
+
+@jobs.handler("dns_check")
+def dns_check(cur, payload: dict) -> None:
+    """Read each sending domain's SPF, DKIM, DMARC and blocklists. A domain that stops passing stops sending at once
+    (mailbox_sendable reads these columns) and the team hears why; one that comes back is announced too."""
+    dns = adapters.get().dns
+    for d in db.all(cur, "select * from sending_domains order by domain"):
+        selector = d["dkim_selector"] or db.val(cur, """select case max(provider) when 'microsoft' then 'selector1' else 'google' end
+                                                        from mailboxes where domain = %s""", d["domain"])
+        try:
+            r = dns.check(cur, d["domain"], selector)
+        except Exception as exc:  # a failed lookup is unknown, never a pass or a fail
+            db.run(cur, "update sending_domains set dns_detail = dns_detail || %s where domain = %s",
+                   J({"error": str(exc)[:200]}), d["domain"])
+            continue
+        was_ok = d["spf"] and d["dkim"] and d["dmarc"] and d["dmarc_aligned"] and not d["blocklisted"]
+        blocked = bool(r.blocklists) if r.blocklists is not None else d["blocklisted"]
+        now_ok = r.spf and r.dkim and r.dmarc and r.dmarc_aligned and not blocked
+        db.run(cur, """update sending_domains set spf = %s, dkim = %s, dmarc = %s, dmarc_policy = %s, dmarc_aligned = %s,
+                       blocklisted = %s, blocklists = %s, checked_at = app_now(),
+                       dns_detail = (dns_detail - 'error') || %s where domain = %s""",
+               r.spf, r.dkim, r.dmarc, r.dmarc_policy, r.dmarc_aligned, blocked, r.blocklists or d["blocklists"],
+               J({k: v for k, v in r.detail.items() if k != "seeded"}), d["domain"])
+        if was_ok and not now_ok:
+            missing = [n for n, ok in (("SPF", r.spf), ("DKIM", r.dkim), ("DMARC", r.dmarc), ("alignment", r.dmarc_aligned))
+                       if not ok] + (["a blocklist"] if blocked else [])
+            alerts.raise_alert(cur, kind="dns_broken", severity="urgent", channel="#outbound-ops",
+                               title=f"{d['domain']} stopped sending: {', '.join(missing)} failing",
+                               body="No mailbox on it sends until the check passes again. Usually a DNS edit removed a record.",
+                               object_kind="domain", object_id=None,
+                               dedup_key=f"dns:{d['domain']}:{db.val(cur, 'select app_now()::date')}")
+        elif now_ok and not was_ok and d["checked_at"] is not None:
+            alerts.raise_alert(cur, kind="dns_fixed", severity="info", channel="#outbound-ops",
+                               title=f"{d['domain']} passes its DNS checks again", body="Its mailboxes can send.",
+                               object_kind="domain", object_id=None,
+                               dedup_key=f"dnsok:{d['domain']}:{db.val(cur, 'select app_now()::date')}")
 
 
 @jobs.handler("telemetry")

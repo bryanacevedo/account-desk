@@ -1,0 +1,16 @@
+{
+  "users": [
+    {"name": "Avery Lane", "email": "avery@yourcompany.example", "role": "manager", "timezone": "America/New_York"},
+    {"name": "Jordan Price", "email": "jordan@yourcompany.example", "role": "gtm", "timezone": "America/New_York"},
+    {"name": "Riley Moss", "email": "riley@yourcompany.example", "role": "sdr", "timezone": "America/Chicago"}
+  ],
+  "sending_domains": [
+    {"domain": "getyourcompany.example", "registered": "2026-06-01", "mailboxes": [
+      {"address": "riley@getyourcompany.example", "owner_email": "riley@yourcompany.example", "provider": "google",
+       "warmup_started": "2026-07-01"}
+    ]}
+  ],
+  "lia_ref": "LIA-YOUR-REF",
+  "sources": ["product", "crm", "events", "jobs_feed", "funding_feed"],
+  "starter_plays": true
+}

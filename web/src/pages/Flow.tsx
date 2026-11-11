@@ -1,9 +1,10 @@
+import { api } from "../api";
 import { Avatar } from "../marks";
 import { SignalIcon, SignalLabel } from "../signalIcons";
 import { ArrowSquareOut } from "@phosphor-icons/react";
 import {
   Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, n0, navigate, pct, usePath, useData,
-  withParam,
+  withParam, useBusy,
 } from "../lib";
 import { LABEL, STAGE, openSheet } from "../sheets";
 
@@ -94,7 +95,7 @@ export function Signals() {
       <Seg label="View" value={tab} onChange={(v) => navigate(withParam("tab", v === "feed" ? null : v), true)}
         options={[["feed", "Latest"], ["types", "Which signals work"], ["sources", "Sources"], ["unmatched", "Not matched"]]} />
       {tab === "feed" && <Feed rows={data.feed.filter((s: any) => s.status === "matched")} />}
-      {tab === "unmatched" && <Feed rows={unmatched} />}
+      {tab === "unmatched" && <Unmatched rows={unmatched} />}
       {tab === "types" && <Types rows={data.types} />}
       {tab === "sources" && (
         <div className="ledger">
@@ -127,6 +128,29 @@ function Feed({ rows }: { rows: any[] }) {
           <span className="clip hide-sm">{s.evidence.summary}</span>
           <span className="num mute small hide-sm">{ago(s.ingested_at)}</span>
           {s.evidence.url ? <a className="iconbtn" href={s.evidence.url} target="_blank" rel="noreferrer noopener" aria-label="Open the source"><ArrowSquareOut size={15} /></a> : <span />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Signals about companies the desk does not know: add the company as an account, or set it aside. */
+function Unmatched({ rows }: { rows: any[] }) {
+  const [busy, run] = useBusy();
+  if (!rows.length) return <Empty title="Every signal matched an account" />;
+  const act = (id: number, action: string) => run(() => api(`/api/signals/${id}/resolve`, { method: "POST", body: { action } }),
+    action === "create" ? "Added as an account. It is scored now." : "Set aside.");
+  return (
+    <div className="ledger">
+      {rows.map((s: any) => (
+        <div key={s.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) minmax(0,1.4fr) auto" }}>
+          <SignalIcon type={s.type_key} />
+          <div className="cell-main"><span className="t">{s.raw_domain || s.raw_company || "Unknown company"}</span><span className="s">{s.label}, {s.status_reason}</span></div>
+          <span className="clip hide-sm">{s.evidence.summary}</span>
+          <span className="actions">
+            <button className="btn quiet sm" disabled={busy} onClick={() => act(s.id, "ignore")}>Set aside</button>
+            {s.raw_domain ? <button className="btn line sm" disabled={busy} onClick={() => act(s.id, "create")}>Add account</button> : null}
+          </span>
         </div>
       ))}
     </div>

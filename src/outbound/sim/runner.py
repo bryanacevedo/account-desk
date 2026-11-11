@@ -28,6 +28,11 @@ def setup(*, start: datetime, seed: int = 7, n_accounts: int = 700) -> dict:
         load.load_catalog(cur, start=start)
         info = world.build(cur, seed=seed, n_accounts=n_accounts, start=start)
         _sim_placement(cur, random.Random(seed), start)
+        db.run(cur, """update sending_domains set dns_detail = jsonb_build_object('seeded', jsonb_build_object('spf', spf,
+                       'dkim', dkim, 'dmarc', dmarc, 'aligned', dmarc_aligned, 'policy', dmarc_policy))""")
+        first = db.val(cur, "select domain from sending_domains order by domain limit 1")
+        db.run(cur, "insert into sim_dns (domain, dkim_broken_from, dkim_broken_until) values (%s, %s, %s)",
+               first, start + timedelta(days=36), start + timedelta(days=39))
         pipeline.crm_sync(cur, {})  # the first read of the CRM: its history becomes the desk's
         for r in db.all(cur, "select id from accounts"):
             scoring.rescore(cur, r["id"])

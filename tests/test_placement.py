@@ -107,3 +107,30 @@ def test_a_mailbox_gone_quiet_next_to_its_peers_raises_an_alert(cur, box):
     assert "reply_drop" in alerts_for(cur, box["id"])
     assert db.val(cur, "select count(*) from jobs where kind = 'placement_tests' and payload->>'mailbox_id' = %s",
                   str(box["id"])) == 1
+
+
+def test_a_dkim_record_that_disappears_stops_the_domain_until_it_is_back(cur, box):
+    sending.dns_check(cur, {})
+    m = mailbox(cur, box["id"])
+    assert outreach.mailbox_sendable(cur, m) in (None, "Warming up")
+    db.run(cur, "insert into sim_dns (domain, dkim_broken_from, dkim_broken_until) values (%s, app_now() - interval '1 hour', "
+                "app_now() + interval '1 day')", box["domain"])
+    sending.dns_check(cur, {})
+    assert outreach.mailbox_sendable(cur, m) == "Domain authentication incomplete"
+    assert db.val(cur, "select count(*) from alerts where kind = 'dns_broken' and title like %s", f"%{box['domain']}%") == 1
+    db.run(cur, "delete from sim_dns where domain = %s", box["domain"])
+    sending.dns_check(cur, {})
+    assert outreach.mailbox_sendable(cur, m) is None
+    assert db.val(cur, "select count(*) from alerts where kind = 'dns_fixed' and title like %s", f"%{box['domain']}%") == 1
+
+
+def test_live_dns_reads_records_and_never_claims_a_clean_blocklist(monkeypatch):
+    from outbound.adapters import live
+    records = {"acme.example": ['"v=spf1 include:_spf.google.com ~all"'],
+               "_dmarc.acme.example": ["v=DMARC1; p=quarantine; rua=mailto:d@acme.example"],
+               "google._domainkey.acme.example": ["v=DKIM1; k=rsa; p=MIIB"]}
+    monkeypatch.setattr(live, "_txt", lambda name: [r.strip('"') for r in records.get(name, [])])
+    r = live.DohDns().check(None, "acme.example", "google")
+    assert (r.spf, r.dkim, r.dmarc, r.dmarc_policy, r.dmarc_aligned, r.blocklists) == (True, True, True, "quarantine", True, None)
+    r = live.DohDns().check(None, "acme.example", "selector1")
+    assert r.dkim is False and r.dmarc_aligned is False

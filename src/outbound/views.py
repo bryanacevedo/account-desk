@@ -521,8 +521,11 @@ def health(cur) -> dict:
                                then l.cost_cents else l.qty end) from ledger l where l.vendor = b.vendor
                                and l.at >= date_trunc('month', app_now())), 0) as used from budgets b order by b.vendor""")
     llm_calls = db.all(cur, "select task, source, count(*) as n from llm_calls group by 1,2 order by 1,2")
+    # Guarantee 21: the checks themselves are checked. They run every 6 hours; older than 12 means they stopped.
+    last_run = db.val(cur, "select max(at) from monitor_runs")
+    stale = last_run is None or db.val(cur, "select %s < app_now() - interval '12 hours'", last_run)
     return {"monitors": monitors.latest(cur), "jobs": jobs, "outbox": outbox, "alerts": alerts, "budgets": budgets,
-            "llm": llm_calls, "adapters": adapters.get().notes,
+            "checks_ran_at": last_run, "checks_stale": bool(stale), "llm": llm_calls, "adapters": adapters.get().notes,
             "kill_switch": bool(db.val(cur, "select value from settings where key = 'kill_switch'"))}
 
 
@@ -533,5 +536,5 @@ def settings(cur) -> dict:
             "icp": db.one(cur, "select * from icp_versions order by published_at desc limit 1"),
             "personas": db.all(cur, "select * from personas"),
             "regions": db.all(cur, "select * from region_rules order by country"),
-            "suppressions": db.all(cur, "select id, kind, value, reason, source, created_at, expires_at from suppressions "
+            "suppressions": db.all(cur, "select id, kind, value, reason, source, created_at, expires_at from suppressions where expires_at is null or expires_at > app_now() "
                                         "order by created_at desc limit 100")}

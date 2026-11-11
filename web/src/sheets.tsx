@@ -325,6 +325,30 @@ function LinkedInLog({ personId, canAccept, onDone }: { personId: number; canAcc
   );
 }
 
+/** Put the account on hold: a partner is talking to them, legal asked, the timing is wrong. Nothing sends until then. */
+function HoldBox({ accountId, onDone }: { accountId: number; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [until, setUntil] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, run] = useBusy();
+  if (!open) return <div className="actions" style={{ marginTop: 8 }}><button className="btn quiet sm" onClick={() => setOpen(true)}>Hold this account</button></div>;
+  return (
+    <Section title="Hold this account">
+      <div className="form-row">
+        <label className="field"><span>Until</span><input className="input" type="date" value={until} onChange={(e) => setUntil(e.target.value)} /></label>
+        <label className="field" style={{ flex: 2 }}><span>Why</span><input className="input" value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} placeholder="A partner is talking to them" /></label>
+      </div>
+      <div className="actions" style={{ justifyContent: "flex-end" }}>
+        <button className="btn quiet sm" onClick={() => setOpen(false)}>Cancel</button>
+        <button className="btn sm" disabled={busy || !until || reason.trim().length < 3} onClick={() => run(async () => {
+          await api(`/api/accounts/${accountId}/hold`, { method: "POST", body: { until: new Date(until + "T12:00:00").toISOString(), reason } });
+          setOpen(false); onDone();
+        }, "On hold. Nothing sends until then.")}>Hold</button>
+      </div>
+    </Section>
+  );
+}
+
 // ---------------------------------------------------------------- meeting
 
 const ATTR: Record<string, string> = { sourced: "Sourced by outbound", influenced: "Influenced by outbound", none: "Not from outbound" };
@@ -465,6 +489,7 @@ export function AccountSheet({ id }: { id: number }) {
       {tab === "signals" && <SignalTimeline signals={data.signals} />}
       {tab === "outreach" && <AccountOutreach d={data} />}
       {cur ? null : data.holds.length ? <Section title={`Rests until ${day(data.holds[0].until)}`}><div className="small mute">{cap(data.holds[0].reason)}</div></Section> : null}
+      {tab === "overview" ? <HoldBox accountId={id} onDone={reload} /> : null}
     </Frame>
   );
 }
@@ -718,6 +743,12 @@ export function MessageSheet({ id }: { id: number }) {
         <button className="btn" disabled={busy} onClick={approve}>{editing ? "Save and approve" : "Approve"}</button>
       </>
     )
+  ) : m.status === "send_unknown" ? (
+    <>
+      <span className="mute small" style={{ flex: 1 }}>The mail provider never said. Check the mailbox's sent folder.</span>
+      <button className="btn line" disabled={busy} onClick={() => run(() => api(`/api/messages/${id}/outcome`, { method: "POST", body: { sent: false } }), "Recorded. It goes out again in their window.")}>It is not there</button>
+      <button className="btn" disabled={busy} onClick={() => run(() => api(`/api/messages/${id}/outcome`, { method: "POST", body: { sent: true } }), "Recorded as sent.")}>It went out</button>
+    </>
   ) : undefined;
   return (
     <Frame crumb={<>Email {m.step_index + 1} to {m.full_name}</>} foot={foot}>

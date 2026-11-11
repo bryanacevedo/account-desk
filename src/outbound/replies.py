@@ -83,6 +83,9 @@ def rules_label(from_addr: str, subject: str | None, cleaned: str) -> tuple[str,
         return "out_of_office", 0.97
     if OPT_OUT.search(cleaned) and len(cleaned.split()) <= 25:
         return "unsubscribe", 0.96
+    # The List-Unsubscribe mailto: arrives as an email with that subject and, often, no body at all.
+    if (subject or "").strip().lower() in ("unsubscribe", "remove", "remove me") and len(cleaned.split()) <= 25:
+        return "unsubscribe", 0.97
     if LEFT.search(cleaned):
         return "left_company", 0.9
     return None

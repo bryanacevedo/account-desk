@@ -5,6 +5,8 @@
   simulate [days]    simulate N more days on the current database
   serve              run the web app and API (and the worker in-process)
   monitors           run every monitor once and print the result
+  init FILE          set up a real desk from a JSON file (see examples/desk.example.json)
+  import KIND FILE   import accounts or people from a CSV file
 """
 from __future__ import annotations
 
@@ -26,6 +28,18 @@ def main(argv: list[str]) -> int:
     CONFIG.validate()
     if cmd == "migrate":
         print(db.migrate())
+    elif cmd == "init":
+        from . import setup_desk
+        db.migrate()
+        cfg = setup_desk.DeskConfig.model_validate_json(open(argv[2]).read())
+        with db.tx() as cur:
+            print(json.dumps(setup_desk.init(cur, cfg)))
+    elif cmd == "import":
+        from . import scoring, setup_desk  # noqa: F401 register the rescore handler
+        kind, path = argv[2], argv[3]
+        fn = {"accounts": setup_desk.import_accounts, "people": setup_desk.import_people}[kind]
+        with db.tx() as cur:
+            print(json.dumps(fn(cur, open(path, encoding="utf-8-sig").read()), indent=1))
     elif cmd == "demo":
         from . import monitors, outreach, pipeline, replies, scheduler, scoring, sending  # noqa: F401 register handlers
         from .sim import runner

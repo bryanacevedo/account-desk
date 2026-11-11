@@ -32,18 +32,26 @@ def scene(cur):
                         values (%s, %s, %s, 'treated', 'active', '{}', %s) returning id""", a, pl, s, u)
     db.run(cur, "insert into personas (key, label, title_patterns, committee_role, angle) values ('cfo', 'F', '{cfo}', "
                 "'economic_buyer', 'a') on conflict do nothing")
-    e = db.val(cur, """insert into enrollments (account_play_id, person_id, persona_key, state) values (%s, %s, 'cfo', 'active')
-                       returning id""", ap, p)
-    m = db.val(cur, """insert into messages (enrollment_id, step_index, channel, subject, body, status, body_hash)
-                       values (%s, 0, 'email', 'hi', 'Ana, hello.', 'awaiting_approval', '') returning id""", e)
+    dom = f"send{id(cur)}.example"
+    db.run(cur, """insert into sending_domains (domain, spf, dkim, dmarc, dmarc_aligned, registered_at)
+                   values (%s, true, true, true, true, now()::date - 200)""", dom)
+    mb = db.val(cur, """insert into mailboxes (address, domain, provider, display_name, user_id, warmup_started, ramp_start,
+                                               cap_today, cap_day)
+                        values (%s, %s, 'google', 'T', %s, now()::date - 100, now()::date - 90, 30, app_now()::date) returning id""",
+                f"t@{dom}", dom, u)
+    e = db.val(cur, """insert into enrollments (account_play_id, person_id, persona_key, state, mailbox_id)
+                       values (%s, %s, 'cfo', 'active', %s) returning id""", ap, p, mb)
+    m = db.val(cur, """insert into messages (enrollment_id, step_index, channel, subject, body, status, body_hash, mailbox_id)
+                       values (%s, 0, 'email', 'hi', 'Ana, hello.', 'awaiting_approval', '', %s) returning id""", e, mb)
     db.run(cur, "update messages set approved_hash = body_hash, approved_at = now(), approval_mode = 'person', "
                 "status = 'scheduled' where id = %s", m)
-    return {"account": a, "person": p, "ap": ap, "enrollment": e, "message": m, "play": pl, "signal": s, "user": u}
+    return {"account": a, "person": p, "ap": ap, "enrollment": e, "message": m, "play": pl, "signal": s, "user": u,
+            "mailbox": mb}
 
 
 def send(cur, m):
     with cur.connection.transaction():
-        db.run(cur, "update messages set status = 'sending', sent_at = now(), mailbox_id = null where id = %s", m)
+        db.run(cur, "update messages set status = 'sending', sent_at = now() where id = %s", m)
 
 
 def refused(cur, m, match: str):
@@ -331,3 +339,20 @@ def test_production_settings_refuse_unsafe_defaults(monkeypatch):
     monkeypatch.setenv("AUTH_MODE", "header")
     with pytest.raises(SystemExit, match="CF_ACCESS"):
         Config().validate()
+
+
+def test_a_mailbox_at_its_daily_cap_cannot_send(cur, scene):
+    db.run(cur, "update mailboxes set cap_today = 0 where id = %s", scene["mailbox"])
+    refused(cur, scene["message"], "mailbox at its daily cap")
+
+
+def test_a_mailbox_whose_cap_was_not_set_today_cannot_send(cur, scene):
+    db.run(cur, "update mailboxes set cap_day = app_now()::date - 1 where id = %s", scene["mailbox"])
+    refused(cur, scene["message"], "daily cap not set")
+
+
+def test_a_domain_at_its_daily_cap_cannot_send(cur, scene):
+    db.run(cur, "update sending_domains set daily_cap = 0 where domain = (select domain from mailboxes where id = %s)",
+           scene["mailbox"])
+    refused(cur, scene["message"], "domain at its daily cap")
+

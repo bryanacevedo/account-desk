@@ -17,7 +17,6 @@ SETTINGS = {
     "stagger_days": 2,
     "send_window": [["08:30", "11:30"], ["13:30", "16:00"]],
     "mailbox_max_daily": 30,
-    "auto_create_accounts": True,
     "sla_business_hours": 4,
     "approval_lapse_business_days": 5,
     # Inbox placement from seed tests, our defaults (tune per team): under 80% at any provider holds the mailbox at

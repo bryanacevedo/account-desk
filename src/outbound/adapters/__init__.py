@@ -90,6 +90,22 @@ class Telemetry(Protocol):
     def placement(self, cur, mailbox: dict) -> list[PlacementResult]: ...  # a seed test, one result per provider
 
 
+@dataclass
+class DnsResult:
+    domain: str
+    spf: bool
+    dkim: bool
+    dmarc: bool
+    dmarc_policy: str | None
+    dmarc_aligned: bool
+    blocklists: list[str] | None  # None: not checked (needs a vendor), never "clean"
+    detail: dict
+
+
+class Dns(Protocol):
+    def check(self, cur, domain: str, dkim_selector: str | None) -> DnsResult: ...
+
+
 class Chat(Protocol):
     def post(self, channel: str, text: str, blocks: list | None = None) -> bool: ...
     def ensure_channel(self, name: str, invite: list[str]) -> str: ...
@@ -125,6 +141,7 @@ class Adapters:
     research: Research
     email: EmailChannel
     telemetry: Telemetry
+    dns: Dns
     chat: Chat
     crm: Crm
     notes: list[str] = field(default_factory=list)

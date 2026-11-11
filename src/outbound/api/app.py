@@ -507,6 +507,121 @@ async def webhook_meeting(request: Request) -> dict:
     return {"ok": True, "meeting_id": mid}
 
 
+class ImportFile(BaseModel):
+    csv: str = Field(min_length=1, max_length=5_000_000)
+
+
+@app.post("/api/import/{kind}")
+def import_rows(kind: Literal["accounts", "people"], body: ImportFile, u: dict = Depends(writer)) -> dict:
+    """Bring your own accounts and people. Rows the desk refuses come back with the reason."""
+    need(u, "manager", "gtm")
+    from .. import setup_desk
+    with db.tx() as cur:
+        out = (setup_desk.import_accounts if kind == "accounts" else setup_desk.import_people)(cur, body.csv)
+        audit.log(cur, "person", f"imported_{kind}", "desk", None, {"imported": out["imported"],
+                                                                     "refused": len(out["refused"])}, actor_id=u["id"])
+    return out
+
+
+class Suppression(BaseModel):
+    kind: Literal["email", "domain", "person", "account", "phone"]
+    value: str = Field(min_length=1, max_length=320)
+    reason: str = Field(min_length=3, max_length=300)
+
+
+@app.post("/api/suppressions")
+def add_suppression(body: Suppression, u: dict = Depends(writer)) -> dict:
+    """Do not contact, added by a person: takes effect on the next send check, and the send trigger enforces it."""
+    with db.tx() as cur:
+        value = body.value.strip().lower()
+        db.run(cur, "insert into suppressions (kind, value, reason, source) values (%s,%s,%s,%s)",
+               body.kind, value, body.reason, f"person:{u['id']}")
+        if body.kind in ("person", "email", "domain"):
+            people = db.all(cur, """select id from people where (%s = 'person' and id::text = %s) or (%s = 'email' and email = %s)
+                                    or (%s = 'domain' and split_part(email, '@', 2) = %s)""",
+                            body.kind, value, body.kind, value, body.kind, value)
+            for p in people:
+                for e in db.all(cur, "select id from enrollments where person_id = %s and state in ('pending','active','paused')", p["id"]):
+                    outreach.stop_enrollment(cur, e["id"], "suppressed")
+        audit.log(cur, "person", "suppressed", body.kind, None, {"value": value, "reason": body.reason}, actor_id=u["id"])
+    return {"ok": True}
+
+
+@app.delete("/api/suppressions/{sup_id}")
+def remove_suppression(sup_id: int, u: dict = Depends(writer)) -> dict:
+    """Only a manager lifts a do-not-contact, and only one a person added by hand."""
+    need(u, "manager")
+    with db.tx() as cur:
+        sup = db.one(cur, "select * from suppressions where id = %s", sup_id)
+        if sup is None:
+            raise HTTPException(404, "No such entry.")
+        if not sup["source"].startswith("person:"):
+            raise HTTPException(409, "Only an entry a person added by hand can be lifted. Opt-outs, replies and "
+                                     "erasures stay.")
+        db.run(cur, "update suppressions set expires_at = app_now() where id = %s", sup_id)
+        audit.log(cur, "person", "suppression_lifted", sup["kind"], None, {"value": sup["value"]}, actor_id=u["id"])
+    return {"ok": True}
+
+
+class Hold(BaseModel):
+    until: datetime
+    reason: str = Field(min_length=3, max_length=300)
+
+
+@app.post("/api/accounts/{account_id}/hold")
+def hold_account(account_id: int, body: Hold, u: dict = Depends(writer)) -> dict:
+    """Put an account on hold (a partner is talking to them, legal asked): nothing sends until the date."""
+    with db.tx() as cur:
+        db.run(cur, "insert into holds (account_id, reason, until, set_by) values (%s,%s,%s,%s)",
+               account_id, body.reason, body.until, f"person:{u['id']}")
+        audit.log(cur, "person", "held", "account", account_id, {"until": body.until.isoformat()}, actor_id=u["id"])
+    return {"ok": True}
+
+
+class Resolve(BaseModel):
+    action: Literal["create", "link", "ignore"]
+    account_id: int | None = None
+    name: str | None = Field(None, max_length=200)
+    domain: str | None = Field(None, max_length=300)
+
+
+@app.post("/api/signals/{signal_id}/resolve")
+def resolve_signal(signal_id: int, body: Resolve, u: dict = Depends(writer)) -> dict:
+    """A person decides what an unmatched signal is about: a new account, one we have, or nothing."""
+    with db.tx() as cur:
+        s = db.one(cur, "select * from signals where id = %s and status = 'unmatched' for update", signal_id)
+        if s is None:
+            raise HTTPException(404, "No unmatched signal with that id.")
+        if body.action == "ignore":
+            db.run(cur, "update signals set status = 'ignored', status_reason = %s where id = %s",
+                   f"ignored by {u['name']}", signal_id)
+            return {"ok": True}
+        if body.action == "create":
+            dom = signals.normalize_domain(body.domain or s["raw_domain"])
+            name = (body.name or s["raw_company"] or (dom or "").split(".")[0].title()).strip()
+            if not dom:
+                raise HTTPException(422, "A new account needs its company domain.")
+            if db.val(cur, "select account_id from account_domains where domain = %s", dom):
+                raise HTTPException(409, "An account with that domain exists. Link to it instead.")
+            aid = db.val(cur, """insert into accounts (name, name_key, primary_domain, source) values (%s,%s,%s,'signal')
+                                 returning id""", name, signals.normalize_name(name), dom)
+            db.run(cur, "insert into account_domains (domain, account_id) values (%s,%s)", dom, aid)
+        else:
+            aid = body.account_id
+            if not aid or not db.val(cur, "select exists (select 1 from accounts where id = %s)", aid):
+                raise HTTPException(422, "Pick the account it belongs to.")
+            if s["raw_domain"] and not db.val(cur, "select exists (select 1 from account_domains where domain = %s)", s["raw_domain"]):
+                db.run(cur, "insert into account_domains (domain, account_id) values (%s,%s)", s["raw_domain"], aid)
+        db.run(cur, "update signals set status = 'matched', status_reason = null, account_id = %s where id = %s", aid, signal_id)
+        db.run(cur, """insert into facts (account_id, person_id, kind, text, source, source_url, observed_at)
+                       values (%s,%s,%s,%s,%s,%s,%s)""", aid, s["person_id"], "signal:" + s["type_key"],
+               s["evidence"]["summary"], s["source"], s["evidence"].get("url"), s["observed_at"])
+        jobs.enqueue(cur, "rescore", {"account_id": aid, "reason": "signal"}, dedupe_key=f"rescore:{aid}")
+        audit.log(cur, "person", "signal_resolved", "signal", signal_id, {"action": body.action, "account_id": aid},
+                  actor_id=u["id"])
+    return {"ok": True, "account_id": aid}
+
+
 class PlayChange(BaseModel):
     status: Literal["live", "paused"] | None = None
     autonomy: Literal["research", "draft", "supervised", "autonomous"] | None = None

@@ -9,7 +9,7 @@ from .db import J
 PERIODIC = {  # kind: minutes
     "send_due": 10, "due_steps": 15, "expire_proposals": 60, "close_stale_plays": 360, "rescore_all": 1440,
     "sla_check": 30, "crm_push": 10, "mailbox_health": 360, "telemetry": 1440, "monitors": 360, "crm_sync": 360,
-    "watch_reset": 1440, "sweep_sending": 15, "autonomy_watch": 360, "placement_tests": 10080,
+    "watch_reset": 1440, "sweep_sending": 15, "autonomy_watch": 360, "placement_tests": 10080, "dns_check": 1440,
 }
 
 

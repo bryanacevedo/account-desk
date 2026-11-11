@@ -8,7 +8,7 @@ import random
 import re
 
 from .. import db
-from . import Adapters, Candidate, CrmDeal, DomainTelemetry, Page, PlacementResult, SendResult
+from . import Adapters, Candidate, CrmDeal, DnsResult, DomainTelemetry, Page, PlacementResult, SendResult
 
 log = logging.getLogger("outbound.sim")
 
@@ -148,6 +148,18 @@ class SimChat:
         return name
 
 
+class SimDns:
+    """What DNS would say: the seeded records, except while a simulated DNS edit has broken DKIM."""
+    def check(self, cur, domain: str, dkim_selector: str | None) -> DnsResult:
+        d = db.one(cur, "select * from sending_domains where domain = %s", domain)
+        broken = db.val(cur, """select exists (select 1 from sim_dns where domain = %s and app_now() >= dkim_broken_from
+                                 and app_now() < dkim_broken_until)""", domain)
+        seeded = d["dns_detail"].get("seeded") or {"spf": True, "dkim": True, "dmarc": True, "aligned": True,
+                                                    "policy": d["dmarc_policy"] or "quarantine"}
+        return DnsResult(domain, seeded["spf"], seeded["dkim"] and not broken, seeded["dmarc"], seeded["policy"],
+                         seeded["aligned"] and not broken, [], {"seeded": seeded, "dkim_record": not broken})
+
+
 class SimCrm:
     def deals_changed(self, cur, since, limit: int) -> list[CrmDeal]:
         rows = db.all(cur, """select d.*, a.primary_domain from sim_crm_deals d join accounts a on a.id = d.account_id
@@ -165,5 +177,5 @@ class SimCrm:
 
 def adapters() -> Adapters:
     return Adapters(people=SimPeopleSearch(), finder=SimFinder(), verifier=SimVerifier(), phone=SimPhone(),
-                    research=SimResearch(), email=SimEmail(), telemetry=SimTelemetry(), chat=SimChat(), crm=SimCrm(),
+                    research=SimResearch(), email=SimEmail(), telemetry=SimTelemetry(), dns=SimDns(), chat=SimChat(), crm=SimCrm(),
                     notes=["All vendors simulated"])
