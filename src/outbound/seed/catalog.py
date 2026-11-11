@@ -70,7 +70,7 @@ SIGNAL_TYPES = [
     ("job_change", "Someone we know moved", "A person we have spoken to joined this company.", "person", 12, 60),
     ("closed_lost_revisit", "Closed-lost, time to revisit", "We lost a deal here over timing, and the timing has passed.",
      "account", 14, 60),
-    ("product_signup", "Signed up for the free tier", "Someone at the company created a free workspace.", "account", 20, 14),
+    ("product_signup", "Signed up for the free tier", "Trying the product means they already have the problem.", "account", 20, 14),
     ("event_attended", "Came to our event", "Someone from the company attended our webinar or dinner.", "person", 10, 21),
     ("news_negative", "Layoffs or a hiring freeze", "Cost cutting pauses new tools, so priority drops.", "account", -15, 45),
 ]

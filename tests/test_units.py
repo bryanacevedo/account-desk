@@ -261,3 +261,13 @@ def test_the_public_demo_links_to_itself_not_localhost():
     from pathlib import Path
     docker = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text()
     assert "PUBLIC_URL=https://outbound-desk.onrender.com" in docker
+
+
+def test_draft_sentences_keep_names_articles_and_never_repeat_the_company():
+    from outbound.sim.signals_gen import article
+    from outbound.sim_llm import clause
+    assert clause("Brightwave Apps", "Pilar Vasquez joined Brightwave Apps.") == "Pilar Vasquez joined Brightwave Apps"
+    assert clause("Brightwave Apps", "Posted a job for an Accounts Receivable Lead.") == \
+        "Brightwave Apps posted a job for an Accounts Receivable Lead"
+    assert article("Accounts Receivable Lead") == "an" and article("Billing Specialist") == "a"
+    assert article("18") == "an" and article("25") == "a"

@@ -13,6 +13,14 @@ from ..db import J
 
 POSITIVE = [
     "Hi {sender}, good timing actually. We're feeling this at month end. Can you send a couple of times next week?",
+    "{sender}, we're two weeks from quarter close and this is exactly the mess. Thursday or Friday afternoon?",
+    "Fair point on the invoicing. Our controller has been asking the same thing. Open to 30 minutes.",
+    "We moved two products to usage pricing this year and billing hasn't caught up. Let's find a time.",
+    "Not sure we need a new tool, but I'm curious how you handle credits. Can you walk me through it?",
+    "Appreciate the specific note. Can we do something early next week? Mornings are best.",
+    "Yes. Add Priya from finance systems to the invite, she owns {stack}.",
+    "How long does a rollout usually take for a team our size? If it's under a quarter, let's talk.",
+    "Send me something I can forward to our CFO first, then we can set up a call.",
     "Thanks for reaching out. This is on our list for Q1. Happy to take a call, does Thursday work?",
     "Interesting. How does this work with {stack}? If it does, I'd like to see it.",
     "We're evaluating options right now. What does pricing look like for a team our size?",

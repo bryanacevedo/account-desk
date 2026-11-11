@@ -47,8 +47,8 @@ ASK = [
     "Would it help to see how a team your size set this up?",
 ]
 FOLLOW = [
-    "Following up on {fact}. Teams that moved early kept month-end close from growing.",
-    "One more note on {fact}: this is usually where the manual invoice work starts.",
+    "Following up on my last note, since {clause}. Teams that moved early kept month-end close from growing.",
+    "One more thought: since {clause}, this is usually where the manual invoice work starts.",
 ]
 BREAKUP = [
     "I'll stop here. If billing comes up later this year, I'm easy to find.",
@@ -56,17 +56,26 @@ BREAKUP = [
 ]
 
 
+VERBS = ("Posted", "Raised", "Appointed", "Started", "Stopped", "Created", "Announced", "Left", "Signed", "Adopted")
+
+
+def clause(company: str, text: str) -> str:
+    """A fact as a clause with the company as its subject, proper nouns kept as written.
+    'Posted a job for an Accounts Receivable Lead.' -> 'Brightwave Apps posted a job for an Accounts Receivable Lead'
+    'Pilar Vasquez joined Brightwave Apps.'         -> 'Pilar Vasquez joined Brightwave Apps'"""
+    t = text.strip().rstrip(".")
+    first, _, rest = t.partition(" ")
+    if first in VERBS:
+        return f"{company} {first.lower()} {rest}".strip()
+    return t  # it already names its subject (the company, or a person); keep it whole
+
+
 def _claim(company: str, f: dict) -> str | None:
     """Turn a stored fact into a sentence that keeps its proper nouns as written."""
     t = f["text"].rstrip(".")
     kind = f["kind"]
     if kind.startswith("signal:"):
-        verb = t.split(" ", 1)
-        if verb[0] in ("Posted", "Raised", "Appointed", "Started", "Stopped", "Created", "Announced", "Left"):
-            return f"Saw that {company} {verb[0].lower()} {verb[1]}." if len(verb) > 1 else None
-        if t.startswith(company):
-            return f"Saw that {t}."
-        return f"Noticed this about {company}: {t[0].lower() + t[1:]}."
+        return f"Saw that {clause(company, t)}."
     if kind == "page:billing":
         return f"Your docs say {t[0].lower() + t[1:]}."
     if kind == "page:careers":
@@ -97,9 +106,11 @@ def draft(p: dict) -> dict:
         s.append({"text": r.choice(WHY.get(persona, WHY["cfo"])), "kind": "courtesy", "fact_ids": []})
         s.append({"text": r.choice(ASK), "kind": "ask", "fact_ids": []})
     elif job == "follow_up":
-        short = lead["text"].rstrip(".") if lead else "your billing setup"
-        short = short[0].lower() + short[1:] if not short.startswith(company) else short
-        s.append({"text": r.choice(FOLLOW).format(fact=short), "kind": "claim", "fact_ids": [lead["id"]] if lead else []})
+        if lead:
+            s.append({"text": r.choice(FOLLOW).format(clause=clause(company, lead["text"])), "kind": "claim",
+                      "fact_ids": [lead["id"]]})
+        else:
+            s.append({"text": "Following up on my last note about billing.", "kind": "courtesy", "fact_ids": []})
         s.append({"text": r.choice(ASK), "kind": "ask", "fact_ids": []})
     else:
         s.append({"text": r.choice(BREAKUP), "kind": "courtesy", "fact_ids": []})

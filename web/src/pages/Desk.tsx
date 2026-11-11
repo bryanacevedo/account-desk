@@ -16,14 +16,14 @@ export function Deliverability() {
   const paused = data.watch.filter((w: any) => w.paused);
   return (
     <div className="page">
-      <div className="head"><div><h1>Inboxes</h1><div className="sub">Where outreach is sent from, and whether each domain and mailbox is healthy enough to send.</div></div></div>
+      <div className="head"><div><h1>Inboxes</h1></div></div>
       <div className="figs">
         <Fig value={healthy} unit={`of ${data.mailboxes.length}`} label="Mailboxes able to send" />
         <Fig value={data.capacity} label="Emails a day, at today's limits" />
         <Fig value={scheduled} label="Scheduled, next 14 days" />
         {paused.length ? <Fig value={paused.length} label="Play steps paused" /> : null}
       </div>
-      <Section title="Domains" count={data.domains.length}>
+      <Section title="Domains">
         <div className="ledger">
           <div className="row head" style={{ gridTemplateColumns: D_COLS }}><span>Domain</span><span>Authentication</span><span className="num">Age</span><span className="num">Spam rate</span><span className="num">Mailboxes</span></div>
           {data.domains.map((d: any) => {
@@ -33,15 +33,14 @@ export function Deliverability() {
                 <div className="cell-main"><span className="t">{d.domain}</span><span className="s">DMARC {d.dmarc_policy}{d.blocklisted ? ", on a blocklist" : ""}</span></div>
                 <Status kind={auth ? "ok" : "stop"}>{auth ? "SPF, DKIM, DMARC aligned" : "Incomplete"}</Status>
                 <span className="num">{d.age_days} d</span>
-                <span className="num">{d.spam_rate === null ? <span className="mute">Unknown</span> : pct(d.spam_rate, 2)}</span>
+                <span className="num">{d.spam_rate === null ? <span className="mute">Not reported yet</span> : pct(d.spam_rate, 2)}</span>
                 <span className="num">{d.mailboxes}</span>
               </div>
             );
           })}
         </div>
-        <div className="small mute">Spam rate comes from the mail providers' own reports and needs volume before it appears. Unknown is treated as unknown: a domain cannot gain sending capacity until it is known.</div>
       </Section>
-      <Section title="Mailboxes" count={data.mailboxes.length}>
+      <Section title="Mailboxes">
         <div className="ledger">
           <div className="row head" style={{ gridTemplateColumns: M_COLS }}><span>Mailbox</span><span>Status</span><span className="num">Today</span><span className="num">Sent, 14 d</span><span className="num">Bounced</span></div>
           {data.mailboxes.map((m: any) => (
@@ -56,12 +55,11 @@ export function Deliverability() {
         </div>
       </Section>
       {data.watch.length ? (
-        <Section title="First sends of each play step" count={data.watch.length}>
-          <div className="small mute">The first 20 sends of every step are watched. Two hard bounces or one complaint pauses that step until someone looks.</div>
+        <Section title="First 20 sends of each email step">
           <div className="ledger">
             {data.watch.slice(0, 16).map((w: any) => (
               <div key={w.template_key} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 90px 90px 160px" }}>
-                <span className="clip">{cap(w.template_key.split(":")[0])}, email step {Number(w.template_key.split(":")[1]) + 1}</span>
+                <span className="clip">{w.play}, email {w.step}</span>
                 <span className="num">{Math.min(w.sends, 20)} <span className="faint">of 20</span></span>
                 <span className="num">{w.hard_bounces} bounced</span>
                 <Status kind={w.paused ? "stop" : w.sends >= 20 ? "ok" : "half"}>{w.paused ? "Paused" : w.sends >= 20 ? "Past the first batch" : "Watching"}</Status>
@@ -89,9 +87,8 @@ export function Results() {
   const lmax = Math.max(1, ...labels.map((l: any) => l.n));
   return (
     <div className="page">
-      <div className="head"><div><h1>Results</h1><div className="sub">Every account a play has offered, from the signal to the meeting, compared with matched accounts nobody contacted.</div></div></div>
+      <div className="head"><div><h1>Results</h1></div></div>
       <div className="figs">
-        <Fig value={f.meetings} label="Meetings booked" />
         <Fig value={data.opportunities.sourced} label="Opportunities sourced" />
         {me?.money ? <Fig value={money(data.opportunities.sourced_cents)} label="Pipeline sourced" /> : null}
         <Fig value={data.sla.median_hours ? `${data.sla.median_hours.toFixed(1)} h` : "None yet"} label="Median time to answer a hot reply" />
@@ -108,11 +105,11 @@ export function Results() {
             <Bar label="Meeting" value={f.meetings} of={of} hint={pct(f.meetings / of)} tone="accent" />
           </div>
         </Section>
-        <Section title="Meetings, contacted or not"><LiftBlock lift={data.lift} /></Section>
+        <Section title="Meetings: contacted against held back"><LiftBlock lift={data.lift} /></Section>
       </div>
       <Section title="Which signals turn into meetings">
         <div className="ledger">
-          <div className="row head" style={{ gridTemplateColumns: "minmax(0,1.4fr) 110px minmax(160px,1.6fr)" }}><span>Signal</span><span className="num">Plays started</span><span>Meeting rate</span></div>
+          <div className="row head" style={{ gridTemplateColumns: "minmax(0,1.4fr) 110px minmax(160px,1.6fr)" }}><span>Signal</span><span className="num">Plays started</span><span>Meetings within 60 days</span></div>
           {data.signals.filter((s: any) => s.treated > 0).sort((a: any, b: any) => (b.meeting_rate || 0) - (a.meeting_rate || 0)).map((s: any) => (
             <div key={s.key} className="row" style={{ gridTemplateColumns: "minmax(0,1.4fr) 110px minmax(160px,1.6fr)" }}>
               <span className="clip">{s.label}</span>
@@ -166,7 +163,6 @@ export function Results() {
               </div>
             ))}
           </div>
-          <div className="small mute">Credits are shown in each vendor's own unit; the dollar column uses the configured rates.</div>
         </Section>
       ) : null}
     </div>
@@ -191,7 +187,7 @@ export function Ops() {
   return (
     <div className="page">
       <div className="head">
-        <div><h1>Health</h1><div className="sub">What the database cannot refuse on its own is checked here on a schedule. Nothing here fixes anything; it says what is wrong.</div></div>
+        <div><h1>Health</h1></div>
         <div className="actions">
           <input className="input" placeholder="Reason" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Reason" style={{ width: 180 }} />
           <button className={data.kill_switch ? "btn" : "btn ink"} disabled={busy || reason.trim().length < 3}
@@ -210,7 +206,7 @@ export function Ops() {
           {data.monitors.map((m: any) => (
             <div key={m.monitor} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 120px 100px" }}>
               <Status kind={m.error ? "wait" : m.ok ? "ok" : "stop"}>{m.title}</Status>
-              <span className="num">{m.error ? "Did not run" : m.ok ? "None found" : `${m.found} found`}</span>
+              <span className="num">{m.error ? "Did not run" : m.monitor === "monitors_ran" ? (m.ok ? "All ran" : `${m.found} failed`) : m.ok ? "None found" : `${m.found} found`}</span>
               <span className="num mute small">{ago(m.at)}</span>
             </div>
           ))}
@@ -230,10 +226,9 @@ export function Ops() {
               </div>))}
             </div>
           ) : <Empty title="Nothing waiting" />}
-          <div className="small mute">AI calls: {data.llm.map((l: any) => `${l.n} ${l.task} (${l.source})`).join(", ")}. {data.adapters.join(". ")}.</div>
         </Section>
       </div>
-      <Section title="Alerts" count={data.alerts.length}>
+      <Section title="Alerts">
         <div className="ledger">
           {data.alerts.map((a: any) => (
             <div key={a.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 150px 120px 80px" }}>
@@ -260,13 +255,12 @@ export function Settings() {
   const canEdit = me?.user.role === "gtm";
   return (
     <div className="page">
-      <div className="head"><div><h1>Settings</h1><div className="sub">{canEdit ? "Changes apply to the next score and the next send." : "Only GTM engineering changes these."}</div></div></div>
-      <Section title="Signals and their weight" count={data.signal_types.length}>
+      <div className="head"><div><h1>Settings</h1></div></div>
+      <Section title="Signals and their weight">
         <div className="ledger">
-          <div className="row head" style={{ gridTemplateColumns: W_COLS }}><span>Signal</span><span className="num">Weight</span><span className="num">Half-life, days</span><span>On</span></div>
+          <div className="row head" style={{ gridTemplateColumns: W_COLS }}><span>Signal</span><span className="num">Weight</span><span className="num">Fades by half in, days</span><span>On</span></div>
           {data.signal_types.map((t: any) => <WeightRow key={t.key} t={t} canEdit={canEdit} />)}
         </div>
-        <div className="small mute">A signal's pull halves every half-life. A negative weight lowers priority.</div>
       </Section>
       <div className="two">
         <Section title="Limits">
@@ -305,7 +299,7 @@ export function Settings() {
         </div>
         <div className="small mute">Tier A from {data.icp.rules.tiers.A}, tier B from {data.icp.rules.tiers.B}. Published {day(data.icp.published_at)}.</div>
       </Section>
-      <Section title="Do not contact" count={data.suppressions.length}>
+      <Section title="Do not contact">
         {data.suppressions.length ? (
           <div className="ledger">
             {data.suppressions.slice(0, 20).map((x: any) => (

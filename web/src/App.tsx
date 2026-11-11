@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  ChartLineUp, CheckSquare, ChatsCircle, Gauge, GearSix, Lightning, ListChecks, Pulse, Sun, Target, EnvelopeSimple,
+  CaretRight, ChartLineUp, CheckSquare, ChatsCircle, DotsThree, Gauge, GearSix, Lightning, ListChecks, Pulse, Sun, Target,
+  EnvelopeSimple,
 } from "@phosphor-icons/react";
 import { api, setActingAs } from "./api";
 import { Toaster, changed, navigate, setNow, toast, useBusy, useData, usePath } from "./lib";
@@ -34,8 +35,8 @@ export function App() {
   useEffect(() => { if (me?.now) setNow(me.now); }, [me?.now]);
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (t.closest("input, textarea, select") || e.metaKey || e.ctrlKey) return;
+      const t = e.target as HTMLElement | null;
+      if ((t && typeof t.closest === "function" && t.closest("input, textarea, select")) || e.metaKey || e.ctrlKey) return;
       const map: Record<string, string> = { t: "/", a: "/accounts", p: "/approvals", r: "/replies", s: "/signals" };
       if (map[e.key] && !new URLSearchParams(window.location.search).get("sheet")) navigate(map[e.key]);
     };
@@ -43,7 +44,8 @@ export function App() {
     return () => window.removeEventListener("keydown", on);
   }, []);
   const routes = ROUTES.filter((r) => !r.roles || (me && r.roles.includes(me.user.role)));
-  const route = routes.find((r) => r.path === path) || routes[0];
+  const more = { path: "/more", label: "More", icon: null, page: () => <More routes={routes.slice(4)} me={me} /> } as any;
+  const route = path === "/more" ? more : routes.find((r) => r.path === path) || routes[0];
   const Page = route.page;
   useEffect(() => { document.title = `${route.label}, Outbound Desk`; }, [route.label]);
   const nav = (
@@ -91,14 +93,34 @@ export function App() {
         {me ? <Page key={`${route.path}:${me.user.id}`} /> : null}
       </main>
       <nav className="phone-nav" aria-label="Main">
-        {routes.slice(0, 5).map((r) => (
+        {routes.slice(0, 4).map((r) => (
           <a key={r.path} href={r.path} aria-current={r.path === route.path ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(r.path); }}>
-            {r.icon}<span>{r.label}</span>
+            <span className="pn-icon">{r.icon}{r.count && me?.counts[r.count] ? <i className="pn-n">{me.counts[r.count]}</i> : null}</span><span>{r.label}</span>
           </a>
         ))}
+        <a href="/more" aria-current={route.path === "/more" || routes.slice(4).some((r) => r.path === route.path) ? "page" : undefined}
+          onClick={(e) => { e.preventDefault(); navigate("/more"); }}><span className="pn-icon"><DotsThree size={18} weight="bold" /></span><span>More</span></a>
       </nav>
       <SheetHost />
       <Toaster />
+    </div>
+  );
+}
+
+// The pages that do not fit the phone's bottom bar, and the demo clock.
+function More({ routes, me }: { routes: typeof ROUTES; me: Me | null }) {
+  return (
+    <div className="page">
+      <div className="head"><h1>More</h1></div>
+      <div className="ledger">
+        {routes.map((r) => (
+          <a key={r.path} href={r.path} className="row" style={{ gridTemplateColumns: "24px minmax(0,1fr) auto" }}
+            onClick={(e) => { e.preventDefault(); navigate(r.path); }}>
+            <span className="mute">{r.icon}</span><span className="cell-main"><span className="t">{r.label}</span></span><CaretRight size={16} className="mute" />
+          </a>
+        ))}
+      </div>
+      {me?.simulated ? <Clock me={me} /> : null}
     </div>
   );
 }

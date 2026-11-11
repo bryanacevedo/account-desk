@@ -448,11 +448,16 @@ def activate(cur, enrollment_id: int) -> None:
     ap = db.one(cur, "select * from account_plays where id = %s", e["account_play_id"])
     person = db.one(cur, "select * from people where id = %s", e["person_id"])
     stagger = int(db.val(cur, "select value from settings where key = 'stagger_days'") or 2)
-    order = db.val(cur, """select count(*) from enrollments where account_play_id = %s and state in ('active','done','paused')
-                           and started_at is not null""", ap["id"])
+    # Each colleague starts two business days after the last start at this account, whatever has happened to that
+    # colleague since; the account row lock keeps two approvals from picking the same day.
+    db.one(cur, "select id from accounts where id = %s for update", ap["account_id"])
+    last = db.val(cur, """select max(e.started_at) from enrollments e join account_plays x on x.id = e.account_play_id
+                          where x.account_id = %s and e.started_at is not null and e.id <> %s""",
+                  ap["account_id"], enrollment_id)
     now = db.val(cur, "select app_now()")
-    start = timeutil.add_business_days(now, stagger * order, country=person["country"], timezone=person["timezone"]) \
-        if order else now
+    start = now
+    if last is not None:
+        start = max(now, timeutil.add_business_days(last, stagger, country=person["country"], timezone=person["timezone"]))
     db.run(cur, "update enrollments set state = 'active', started_at = %s, next_at = %s, step_index = 0 where id = %s",
            start, start, enrollment_id)
     if ap["state"] == "approving":

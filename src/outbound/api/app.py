@@ -198,7 +198,9 @@ def today(u: dict = Depends(current_user)) -> dict:
 def accounts(view: Literal["priority", "in_play", "rising", "all"] = "priority", q: str | None = None,
              owner: int | None = None, u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
-        return {"accounts": views.accounts(cur, q=(q or "")[:80] or None, view=view, owner=owner)}
+        rows = views.accounts(cur, q=(q or "")[:80] or None, view=view, owner=owner)
+        total = db.val(cur, "select count(*) from accounts" + ("" if view == "all" else " where fit_tier in ('A','B')"))
+        return {"accounts": rows, "total": total if not q and view in ("all", "priority") else len(rows)}
 
 
 @app.get("/api/accounts/{account_id}")
@@ -222,6 +224,16 @@ def plays_page(u: dict = Depends(current_user)) -> dict:
         return {"plays": views.plays_page(cur, money=money(u))}
 
 
+@app.get("/api/plays/{play_id}/accounts")
+def play_accounts(play_id: int, u: dict = Depends(current_user)) -> dict:
+    with db.tx() as cur:
+        return {"accounts": db.all(cur, """select ap.id, ap.state, ap.arm, ap.proposed_at, a.id as account_id, a.name,
+                                           a.primary_domain, u.name as owner
+                                    from account_plays ap join accounts a on a.id = ap.account_id
+                                    left join users u on u.id = ap.owner_id
+                                    where ap.play_id = %s order by ap.proposed_at desc limit 100""", play_id)}
+
+
 @app.get("/api/messages/{message_id}")
 def message(message_id: int, u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
@@ -232,9 +244,9 @@ def message(message_id: int, u: dict = Depends(current_user)) -> dict:
 
 
 @app.get("/api/replies")
-def replies_page(view: Literal["all", "hot", "needs_person"] = "all", u: dict = Depends(current_user)) -> dict:
+def replies_page(view: Literal["mine", "all", "hot", "needs_person"] = "mine", u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
-        return {"replies": views.replies_page(cur, view=view)}
+        return {"replies": views.replies_page(cur, view=view, user_id=u["id"])}
 
 
 @app.get("/api/replies/{reply_id}")

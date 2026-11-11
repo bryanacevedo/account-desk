@@ -86,7 +86,8 @@ def accounts(cur, *, q: str | None, view: str, owner: int | None, limit: int = 2
         left join lateral (select sum(priority - coalesce(previous, 0)) as delta from score_history h
                            where h.account_id = a.id and h.at > app_now() - interval '7 days') sh on true
         where {' and '.join(where)}
-        order by sc.priority desc nulls last, a.name limit %s""", *args, limit)
+        order by {"coalesce(sh.delta, 0) desc," if view == "rising" else ""} sc.priority desc nulls last, a.name limit %s""",
+        *args, limit)
 
 
 def account(cur, account_id: int, *, money: bool) -> dict | None:
@@ -156,7 +157,7 @@ def signals_page(cur) -> dict:
     feed = []
     for status in ("matched", "unmatched"):
         feed += db.all(cur, """select s.id, s.type_key, t.label, s.observed_at, s.ingested_at, s.evidence, s.source, s.status,
-                                      s.status_reason, s.raw_company, a.id as account_id, a.name, a.primary_domain, a.fit_tier
+                                      s.status_reason, s.raw_company, s.raw_domain, a.id as account_id, a.name, a.primary_domain, a.fit_tier
                                from signals s join signal_types t on t.key = s.type_key
                                left join accounts a on a.id = s.account_id
                                where s.status = %s order by s.ingested_at desc limit 120""", status)
@@ -304,9 +305,11 @@ def message(cur, message_id: int) -> dict | None:
     return m
 
 
-def replies_page(cur, *, view: str) -> list[dict]:
-    where = {"needs_person": "r.needs_review and r.handled_at is null",
-             "hot": "r.hot", "all": "true"}.get(view, "true")
+def replies_page(cur, *, view: str, user_id: int | None = None) -> list[dict]:
+    where = {"needs_person": "r.needs_review and r.handled_at is null", "hot": "r.hot", "all": "true",
+             "mine": f"""coalesce((select ap.owner_id from account_plays ap where ap.account_id = r.account_id
+                         order by ap.proposed_at desc limit 1), (select owner_id from accounts where id = r.account_id))
+                         = {int(user_id or 0)}"""}.get(view, "true")
     return db.all(cur, f"""select r.id, r.received_at, r.label, r.confidence, r.classified_by, r.cleaned, r.hot,
                                   r.needs_review, r.review_reason, r.handled_at, r.outcome, r.sla_due_at, r.same_person,
                                   r.language, pe.full_name, pe.photo_url, pe.title, a.name as company, a.id as account_id
@@ -341,7 +344,12 @@ def deliverability(cur) -> dict:
     forecast = db.all(cur, """select date_trunc('day', scheduled_for) as day, count(*) as scheduled from messages
                               where status = 'scheduled' and scheduled_for < app_now() + interval '14 days'
                               group by 1 order by 1""")
+    names = {r["key"]: r["name"] for r in db.all(cur, "select key, name from plays")}
     watch = db.all(cur, "select * from play_step_watch order by paused desc, template_key")
+    for w in watch:
+        key, _, step = w["template_key"].partition(":")
+        w["play"] = names.get(key, key)
+        w["step"] = int(step or 0) + 1
     capacity = sum(b["cap"] for b in boxes if not b["blocked"])
     return {"domains": domains, "mailboxes": boxes, "forecast": forecast, "capacity": capacity, "watch": watch}
 

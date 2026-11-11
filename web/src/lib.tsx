@@ -139,8 +139,10 @@ export const cap = (s: string | null | undefined) => (s ? s.replace(/_/g, " ").r
 
 export type Glyph = "ok" | "go" | "wait" | "half" | "stop" | "off" | "hold" | "none";
 
+// A shape only where the state needs someone's attention (waiting, stopped, on hold). Everything else is a word.
+const ATTENTION = new Set<Glyph>(["wait", "stop", "hold"]);
 export function Status({ kind, children }: { kind: Glyph; children: ReactNode }) {
-  return <span className="status"><i className={`glyph ${kind}`} aria-hidden="true" />{children}</span>;
+  return <span className="status">{ATTENTION.has(kind) ? <i className={`glyph ${kind}`} aria-hidden="true" /> : null}{children}</span>;
 }
 
 export function Fig({ value, label, unit, onClick, sm }: { value: ReactNode; label: string; unit?: string; onClick?: () => void; sm?: boolean }) {

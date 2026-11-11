@@ -155,10 +155,11 @@ def ingest(cur, *, from_addr: str, subject: str | None, raw: str, received_at: d
 
 def stop_first(cur, person_id: int | None, account_id: int | None, reply_id: int) -> None:
     if person_id:
-        db.run(cur, """update enrollments set state = 'paused', pause_reason = 'reply_received', next_at = null
+        db.run(cur, """update enrollments set state = 'paused', pause_reason = 'reply_received'
                        where person_id = %s and state = 'active'""", person_id)
     if account_id:
-        db.run(cur, """update enrollments e set state = 'paused', pause_reason = 'account_reply', next_at = null
+        # A pause keeps each person's planned time, so a resume never brings a colleague's first email forward.
+        db.run(cur, """update enrollments e set state = 'paused', pause_reason = 'account_reply'
                        from account_plays ap where ap.id = e.account_play_id and ap.account_id = %s
                        and e.state = 'active' and e.person_id is distinct from %s""", account_id, person_id)
     db.run(cur, """update messages set status = 'approved' where status = 'scheduled' and enrollment_id in
@@ -240,7 +241,8 @@ def _resume_others(cur, account_id: int, except_person: int | None) -> None:
 
 def resume(cur, enrollment_id: int, at: datetime | None = None) -> None:
     now = db.val(cur, "select app_now()")
-    at = max(at or now, now)
+    planned = db.val(cur, "select next_at from enrollments where id = %s", enrollment_id)
+    at = max(at or now, now, planned or now)
     db.run(cur, "update enrollments set state = 'active', pause_reason = null, pause_until = null, next_at = %s "
                 "where id = %s and state = 'paused'", at, enrollment_id)
     m = db.one(cur, """select m.id from messages m join enrollments e on e.id = m.enrollment_id

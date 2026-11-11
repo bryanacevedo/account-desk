@@ -4,7 +4,7 @@ import { api } from "./api";
 import { Avatar, Logo } from "./marks";
 import {
   Bar, Empty, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTime, money, n0, navigate, pct,
-  useBusy, useData, withParam, type Glyph,
+  toast, useBusy, useData, withParam, type Glyph,
 } from "./lib";
 
 // ---------------------------------------------------------------- the sheet frame
@@ -63,7 +63,7 @@ export function SheetHost() {
   if (!sheet) return null;
   const [kind, id] = sheet.split(":");
   const key = sheet;
-  if (kind === "account") return <AccountSheet key={key} id={Number(id)} />;
+  if (kind === "account") return <AccountSheet key={`account:${id}`} id={Number(id)} />;
   if (kind === "message") return <MessageSheet key={key} id={Number(id)} />;
   if (kind === "reply") return <ReplySheet key={key} id={Number(id)} />;
   if (kind === "play") return <PlaySheet key={key} id={Number(id)} />;
@@ -76,7 +76,7 @@ export const PLAY_STATE: Record<string, [Glyph, string]> = {
   proposed: ["wait", "Proposed"], accepted: ["half", "Accepted"], researching: ["half", "Researching"],
   approving: ["wait", "Drafts to approve"], active: ["go", "In sequence"], engaged: ["ok", "Replied"],
   meeting: ["ok", "Meeting"], converted: ["ok", "Opportunity"], lost: ["stop", "Not interested"],
-  stopped: ["off", "Ended"], skipped: ["off", "Skipped"], expired: ["off", "Expired"], held_out: ["none", "Comparison group"],
+  stopped: ["off", "Ended"], skipped: ["off", "Skipped"], expired: ["off", "Expired"], held_out: ["none", "Held back"],
 };
 export const LABEL: Record<string, [Glyph, string]> = {
   interested: ["ok", "Interested"], meeting_request: ["ok", "Wants a meeting"], question: ["ok", "Asked a question"],
@@ -115,7 +115,13 @@ const PERSONA: Record<string, string> = { cfo: "Finance leader", controller: "Co
 
 export function AccountSheet({ id }: { id: number }) {
   const { data, error, reload } = useData<any>(`/api/accounts/${id}`);
-  const [tab, setTab] = useState("overview");
+  // The open tab lives in the URL, so Back from an email opened here returns to this tab.
+  const tab = (new URLSearchParams(window.location.search).get("sheet") || "").split(":")[2] || "overview";
+  const setTab = (t: string) => {
+    const u = new URL(window.location.href);
+    u.searchParams.set("sheet", `account:${id}:${t}`);
+    navigate(u.pathname + "?" + u.searchParams.toString(), true);
+  };
   if (error) return <Frame crumb="Account"><Failed error={error} retry={reload} /></Frame>;
   if (!data) return <Frame crumb="Account"><Loading rows={8} /></Frame>;
   const a = data.account, s = data.score, cur = data.current;
@@ -143,7 +149,7 @@ export function AccountSheet({ id }: { id: number }) {
       {tab === "people" && <AccountPeople d={data} />}
       {tab === "signals" && <SignalTimeline signals={data.signals} />}
       {tab === "outreach" && <AccountOutreach d={data} />}
-      {cur ? null : data.holds.length ? <Section title="On hold"><div className="small mute">{data.holds[0].reason}, until {day(data.holds[0].until)}</div></Section> : null}
+      {cur ? null : data.holds.length ? <Section title={`Rests until ${day(data.holds[0].until)}`}><div className="small mute">{cap(data.holds[0].reason)}</div></Section> : null}
     </Frame>
   );
 }
@@ -162,9 +168,16 @@ function WhyNow({ why }: { why: any }) {
   );
 }
 
+// One bar per kind of signal: two pricing visits are one reason, pulling harder.
+function grouped(contribs: any[]): { label: string; value: number }[] {
+  const m = new Map<string, number>();
+  contribs.forEach((c) => m.set(c.label, (m.get(c.label) || 0) + c.value));
+  return [...m.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+}
+
 function AccountOverview({ d }: { d: any }) {
   const cur = d.current;
-  const max = Math.max(1, ...d.contributions.map((c: any) => c.value));
+  const max = Math.max(1, ...grouped(d.contributions).map((c) => c.value));
   const fit = (d.account.fit_breakdown?.factors || []) as any[];
   return (
     <>
@@ -184,12 +197,12 @@ function AccountOverview({ d }: { d: any }) {
           ) : null}
         </Section>
       ) : d.plays[0]?.state === "held_out" ? (
-        <Section title="Comparison group"><div className="mute">Matched {d.plays[0].play} on {day(d.plays[0].proposed_at)}. Not contacted, so the desk can measure what outreach adds.</div></Section>
+        <Section title="Held back"><div className="mute">Matched {d.plays[0].play} on {day(d.plays[0].proposed_at)}. Not contacted, on purpose.</div></Section>
       ) : null}
       <Section title="What moves the score">
         {d.contributions.length ? (
           <div className="bars">
-            {d.contributions.slice(0, 7).map((c: any) => <Bar key={c.signal_id} label={c.label} value={c.value} of={max} shown={c.value.toFixed(1)} />)}
+            {grouped(d.contributions).slice(0, 7).map((c: any) => <Bar key={c.label} label={c.label} value={c.value} of={max} shown={c.value.toFixed(1)} />)}
           </div>
         ) : <Empty title="No recent signals">The score is fit alone.</Empty>}
       </Section>
@@ -232,7 +245,7 @@ function AccountPeople({ d }: { d: any }) {
         <Avatar name={p.full_name} photo={p.photo_url} />
         <div className="cell-main">
           <span className="t">{p.full_name}{p.is_champion ? <span className="mute small"> &middot; past champion</span> : null}</span>
-          <span className="s">{p.title}{p.persona_key ? `, ${PERSONA[p.persona_key] || p.persona_key}` : ""}</span>
+          <span className="s">{p.title}{p.persona_key && !(p.title || "").toLowerCase().includes((PERSONA[p.persona_key] || "").toLowerCase()) ? `, ${PERSONA[p.persona_key] || p.persona_key}` : ""}</span>
         </div>
         {e ? <Status kind={GOOD_STOPS.has(p.stop_reason) ? "ok" : e[0]}>{p.enrollment === "stopped" || p.enrollment === "paused" ? stopWord(p.stop_reason || p.pause_reason) || e[1] : e[1]}</Status>
           : p.status !== "active" ? <Status kind="off">{cap(p.status)}</Status> : <span className="mute small">{p.email_status === "valid" ? "Verified email" : ""}</span>}
@@ -241,7 +254,7 @@ function AccountPeople({ d }: { d: any }) {
   };
   return (
     <>
-      <Section title="Buying committee" count={enrolled.length}>
+      <Section title="Buying committee">
         {enrolled.length ? <div className="ledger">{enrolled.map(row)}</div> : <Empty title="Nobody contacted yet" />}
         {d.gaps.length ? (
           <div className="ledger">
@@ -254,7 +267,7 @@ function AccountPeople({ d }: { d: any }) {
           </div>
         ) : null}
       </Section>
-      <Section title="Others at the company" count={others.length}>
+      <Section title="Others at the company">
         {others.length ? <div className="ledger">{others.map(row)}</div> : <Empty title="No one else on record" />}
       </Section>
     </>
@@ -282,7 +295,7 @@ export function SignalTimeline({ signals }: { signals: any[] }) {
 function AccountOutreach({ d }: { d: any }) {
   return (
     <>
-      <Section title="Emails" count={d.messages.length}>
+      <Section title="Emails">
         {d.messages.length ? (
           <div className="ledger">
             {d.messages.map((m: any) => (
@@ -295,7 +308,7 @@ function AccountOutreach({ d }: { d: any }) {
           </div>
         ) : <Empty title="No emails yet" />}
       </Section>
-      <Section title="Replies" count={d.replies.length}>
+      <Section title="Replies">
         {d.replies.length ? (
           <div className="ledger">
             {d.replies.map((r: any) => (
@@ -328,6 +341,20 @@ function AccountOutreach({ d }: { d: any }) {
 
 function sentenceKind(k: string) { return k === "claim" ? "claim" : ""; }
 
+// After a decision, the next email waiting for this person opens; with none left, the panel closes.
+async function nextEmail(done: number) {
+  const t = await api<any>("/api/today");
+  const next = (t.approvals || []).find((m: any) => m.id !== done);
+  const u = new URL(window.location.href);
+  if (next) {
+    u.searchParams.set("sheet", `message:${next.id}`);
+    u.searchParams.delete("from");
+    navigate(u.pathname + "?" + u.searchParams.toString(), true);
+  } else {
+    closeSheet();
+  }
+}
+
 export function MessageSheet({ id }: { id: number }) {
   const { data: m, error, reload } = useData<any>(`/api/messages/${id}`);
   const [editing, setEditing] = useState(false);
@@ -351,10 +378,11 @@ export function MessageSheet({ id }: { id: number }) {
   const approve = () => run(async () => {
     await api(`/api/messages/${id}/approve`, { method: "POST", body: editing ? { subject, body } : {} });
     setEditing(false);
-  }, "Approved. It will go out in their send window.");
+    await nextEmail(id);
+  }, "Approved. It goes out in their send window.");
   const reject = () => run(async () => {
     await api(`/api/messages/${id}/reject`, { method: "POST", body: { reason } });
-    closeSheet();
+    await nextEmail(id);
   }, "Rejected.");
   const foot = open ? (
     rejecting ? (
@@ -411,7 +439,7 @@ export function MessageSheet({ id }: { id: number }) {
           {footer ? <div className="footer">{"--\n" + footer}</div> : null}
         </div>
       )}
-      <Section title="What it rests on" count={m.facts.length}>
+      <Section title="What it rests on">
         {m.facts.length ? (
           <ul className="facts">
             {m.facts.map((f: any) => (
@@ -422,14 +450,11 @@ export function MessageSheet({ id }: { id: number }) {
             ))}
           </ul>
         ) : <Empty title="No facts cited" />}
-        <div className="small mute">Highlighted sentences say something about them. Each one is checked against the fact it cites.</div>
       </Section>
-      {lastAttempt && m.attempts.length > 1 ? (
-        <Section title="Checks">
-          <div className="small mute">The first draft failed: {(lastAttempt.failures || []).map((f: any) => f.message).join("; ")}. The desk rewrote it once.</div>
-        </Section>
+      {lastAttempt && m.attempts.length > 1 && m.gate?.passed ? (
+        <div className="small mute">First draft: {(lastAttempt.failures || []).map((f: any) => f.message.toLowerCase()).join("; ")}. Rewritten once.</div>
       ) : null}
-      <Section title="Why now"><WhyNow why={m.why_now} /></Section>
+      <WhyNow why={m.why_now} />
     </Frame>
   );
 }
@@ -472,7 +497,7 @@ export function ReplySheet({ id }: { id: number }) {
         </div>
       </div>
       <div className="figs">
-        <Fig value={<Status kind={l[0]}>{l[1]}</Status>} label={r.classified_by === "rules" ? "Read by rules" : r.classified_by === "person" ? "Labelled by a person" : `Read by the model, ${pct(r.confidence)} sure`} sm />
+        <Fig value={<Status kind={l[0]}>{l[1]}</Status>} label="What it says" sm />
         <Fig value={ago(r.received_at)} label="Received" sm />
         {r.hot && open && r.sla_due_at ? <Fig value={ahead(r.sla_due_at)} label="Answer by" sm /> : null}
         {r.handled_at ? <Fig value={cap(r.outcome || "handled")} label="Done" sm /> : null}
@@ -486,10 +511,9 @@ export function ReplySheet({ id }: { id: number }) {
             <dt>Email</dt><dd>{ex.referral.email || <span className="mute">Not in the reply; the desk will look it up</span>}</dd></dl>
         </Section>
       ) : null}
-      {ex.suggested ? (
-        <Section title="A reply you could send">
+      {ex.suggested && open ? (
+        <Section title="A reply you could send" right={<button className="btn quiet sm" onClick={() => { navigator.clipboard?.writeText(ex.suggested); toast("Copied. Paste it into your own inbox."); }}>Copy</button>}>
           <div className="quote ours">{ex.suggested}</div>
-          <div className="small mute">Send it from your own inbox. The desk does not reply for you.</div>
         </Section>
       ) : null}
       <details>
@@ -547,7 +571,8 @@ export function PlaySheet({ id }: { id: number }) {
           <Bar label="Meeting" value={f.meetings} of={f.proposed} hint={pct(f.proposed ? f.meetings / f.proposed : 0)} tone="accent" />
         </div>
       </Section>
-      <Section title="Compared with not contacted"><LiftBlock lift={lift} /></Section>
+      <Section title="Meetings: contacted against held back"><LiftBlock lift={lift} /></Section>
+      <PlayAccounts id={id} />
       <Section title="Trigger">
         <dl className="kv">
           <dt>Signals</dt><dd>{p.trigger.any_of.map(cap).join(", ")}</dd>
@@ -563,14 +588,14 @@ export function PlaySheet({ id }: { id: number }) {
           {p.sequence.map((s: any, i: number) => (
             <div key={i} className="row" style={{ gridTemplateColumns: "56px minmax(0,1fr) auto", minHeight: 36 }}>
               <span className="mute">Day {s.day}</span>
-              <span>{STEP[s.channel] || cap(s.channel)}, {cap(s.job).toLowerCase()}</span>
+              <span>{STEP[s.channel] || cap(s.channel)}{s.job !== s.channel ? `, ${cap(s.job).toLowerCase()}` : ""}</span>
               <span className="mute small">{s.by === "desk" ? "The desk sends" : "SDR task"}</span>
             </div>
           ))}
         </div>
       </Section>
       {promo.next ? (
-        <Section title={`Before moving to ${STAGE[promo.next].toLowerCase()}`}>
+        <Section title={`Before: ${STAGE[promo.next]}`}>
           <div className="ledger">
             {promo.checks.map((c: any) => (
               <div key={c.label} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto", minHeight: 36 }}>
@@ -581,6 +606,27 @@ export function PlaySheet({ id }: { id: number }) {
         </Section>
       ) : null}
     </Frame>
+  );
+}
+
+function PlayAccounts({ id }: { id: number }) {
+  const { data } = useData<any>(`/api/plays/${id}/accounts`);
+  if (!data?.accounts?.length) return null;
+  return (
+    <Section title="Accounts">
+      <div className="ledger">
+        {data.accounts.slice(0, 40).map((a: any) => {
+          const st = PLAY_STATE[a.state];
+          return (
+            <button key={a.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }} onClick={() => openSheet("account", a.account_id)}>
+              <Logo domain={a.primary_domain} name={a.name} />
+              <div className="cell-main"><span className="t">{a.name}</span><span className="s">{a.owner || "Unassigned"}, {day(a.proposed_at)}</span></div>
+              <Status kind={st[0]}>{st[1]}</Status>
+            </button>
+          );
+        })}
+      </div>
+    </Section>
   );
 }
 
@@ -596,9 +642,15 @@ export function LiftBlock({ lift }: { lift: any }) {
         <Bar label="Not contacted" value={h.rate || 0} of={Math.max(t.rate || 0, h.rate || 0, 0.01)} shown={pct(h.rate, 1)} hint={`${h.meetings} of ${h.accounts}`} tone="soft" />
       </div>
       {lift.enough && lift.difference !== null ? (
-        <div>Meeting rate is <b>{pct(lift.difference, 1)}</b> points {lift.difference >= 0 ? "higher" : "lower"} when contacted, with 90% confidence between {pct(lift.interval[0], 1)} and {pct(lift.interval[1], 1)}.</div>
+        <div className="figs">
+          <Fig value={`${lift.difference >= 0 ? "+" : ""}${pct(lift.difference, 1)}`} label="Difference" sm />
+          <Fig value={`${pct(lift.interval[0], 1)} to ${pct(lift.interval[1], 1)}`} label="Likely range" sm />
+        </div>
       ) : (
-        <div className="mute">Not enough accounts yet to tell a {pct(lift.detectable_lift)}-point difference from chance. That needs {n0(lift.still_needed.holdout)} more not contacted and {n0(lift.still_needed.treated)} more contacted.</div>
+        <div className="figs">
+          <Fig value="Too few to compare" label="Yet" sm />
+          <Fig value={n0(lift.still_needed.holdout)} label="More held back needed" sm />
+        </div>
       )}
     </div>
   );

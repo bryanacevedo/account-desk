@@ -1,10 +1,10 @@
 import { Avatar } from "../marks";
 import { ArrowSquareOut } from "@phosphor-icons/react";
 import {
-  Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, day, n0, navigate, pct, usePath, useData,
+  Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, n0, navigate, pct, usePath, useData,
   withParam,
 } from "../lib";
-import { LABEL, MSG, STAGE, openSheet } from "../sheets";
+import { LABEL, STAGE, openSheet } from "../sheets";
 
 // ---------------------------------------------------------------- Approvals
 
@@ -16,52 +16,50 @@ export function Approvals() {
   const ready = data.approvals.filter((m: any) => m.status === "awaiting_approval");
   const list = (rows: any[]) => (
     <div className="ledger">
-      <div className="row head" style={{ gridTemplateColumns: A_COLS }}><span /><span>To</span><span>Subject</span><span>Play</span><span>Status</span><span className="num">Drafted</span></div>
+      <div className="row head" style={{ gridTemplateColumns: A_COLS }}><span /><span>To</span><span>Subject</span><span>Play</span><span className="num">Drafted</span></div>
       {rows.map((m: any) => (
         <button key={m.id} className="row" style={{ gridTemplateColumns: A_COLS }} onClick={() => openSheet("message", m.id)}>
           <Avatar name={m.full_name} photo={m.photo_url} />
-          <div className="cell-main"><span className="t">{m.full_name}</span><span className="s">{m.title}, {m.company}</span></div>
+          <div className="cell-main"><span className="t">{m.full_name}</span><span className="s">{m.title}, {m.company}</span><span className="s only-sm">{m.subject}</span></div>
           <div className="cell-main hide-sm"><span className="t" style={{ fontWeight: 450 }}>{m.subject}</span><span className="s">Email {m.step_index + 1}</span></div>
           <span className="clip mute hide-sm">{m.play}</span>
-          <Status kind={MSG[m.status][0]}>{MSG[m.status][1]}</Status>
-          <span className="num mute small hide-sm">{ago(m.created_at)}</span>
+          <span className="num mute small">{ago(m.created_at)}</span>
         </button>
       ))}
     </div>
   );
   return (
     <div className="page">
-      <div className="head"><div><h1>Approvals</h1><div className="sub">Every email the desk drafted that a person has to read before it goes out.</div></div></div>
-      <Section title="Ready to approve" count={ready.length}>{ready.length ? list(ready) : <Empty title="Nothing waiting" />}</Section>
-      {failed.length ? <Section title="Need a rewrite" count={failed.length}>{list(failed)}</Section> : null}
+      <div className="head"><div><h1>Approvals</h1></div></div>
+      <Section title="Ready to approve">{ready.length ? list(ready) : <Empty title="Nothing waiting" />}</Section>
+      {failed.length ? <Section title="Needs a rewrite">{list(failed)}</Section> : null}
     </div>
   );
 }
-const A_COLS = "28px minmax(0,1.2fr) minmax(0,1.6fr) minmax(0,1fr) 140px 76px";
+const A_COLS = "28px minmax(0,1.2fr) minmax(0,1.6fr) minmax(0,1fr) 76px";
 
 // ---------------------------------------------------------------- Replies
 
 export function Replies() {
   const [, params] = usePath();
-  const view = (params.get("view") || "all") as "all" | "hot" | "needs_person";
+  const view = (params.get("view") || "mine") as "mine" | "all" | "hot" | "needs_person";
   const { data, error, reload } = useData<any>(`/api/replies?view=${view}`);
   return (
     <div className="page">
-      <div className="head"><div><h1>Replies</h1><div className="sub">Every reply stops its sequence the moment it lands. Then the desk reads it.</div></div></div>
-      <Seg label="Which replies" value={view} onChange={(v) => navigate(withParam("view", v === "all" ? null : v), true)}
-        options={[["all", "All"], ["hot", "Positive"], ["needs_person", "Needs a person"]]} />
+      <div className="head"><div><h1>Replies</h1></div></div>
+      <Seg label="Which replies" value={view} onChange={(v) => navigate(withParam("view", v === "mine" ? null : v), true)}
+        options={[["mine", "Mine"], ["all", "Everyone"], ["hot", "Positive"], ["needs_person", "Needs a person"]]} />
       {error ? <Failed error={error} retry={reload} /> : !data ? <Loading rows={10} /> : !data.replies.length ? <Empty title="No replies here" /> : (
         <div className="ledger">
-          <div className="row head" style={{ gridTemplateColumns: R_COLS }}><span /><span>From</span><span>What they said</span><span>Read as</span><span>By</span><span className="num">Received</span></div>
+          <div className="row head" style={{ gridTemplateColumns: R_COLS }}><span /><span>From</span><span>What they said</span><span>Read as</span><span className="num">Received</span></div>
           {data.replies.map((r: any) => {
             const l = LABEL[r.label] || LABEL.other;
             return (
               <button key={r.id} className="row" style={{ gridTemplateColumns: R_COLS }} onClick={() => openSheet("reply", r.id)}>
                 <Avatar name={r.full_name || r.company || "?"} photo={r.photo_url} />
-                <div className="cell-main"><span className="t">{r.full_name || "Unknown sender"}</span><span className="s">{r.company || "No account matched"}</span></div>
+                <div className="cell-main"><span className="t">{r.full_name || "Unknown sender"}</span><span className="s">{r.company || "No account matched"}</span><span className="s only-sm">{r.cleaned}</span></div>
                 <span className="clip mute hide-sm">{r.cleaned}</span>
-                <Status kind={l[0]}>{l[1]}</Status>
-                <span className="mute small hide-sm">{r.needs_review && !r.handled_at ? "Waiting for a person" : r.classified_by === "rules" ? "Rules" : r.classified_by === "person" ? "A person" : `Model, ${pct(r.confidence)}`}</span>
+                <span className="hide-sm">{r.needs_review && !r.handled_at ? <Status kind="wait">Needs a person</Status> : <Status kind={l[0]}>{l[1]}</Status>}</span>
                 <span className="num mute small hide-sm">{ago(r.received_at)}</span>
               </button>
             );
@@ -71,7 +69,7 @@ export function Replies() {
     </div>
   );
 }
-const R_COLS = "28px minmax(0,1.1fr) minmax(0,2fr) 150px 150px 80px";
+const R_COLS = "28px minmax(0,1.1fr) minmax(0,2fr) 160px 80px";
 
 // ---------------------------------------------------------------- Signals
 
@@ -86,11 +84,10 @@ export function Signals() {
   const silent = data.sources.filter((s: any) => s.enabled && s.key !== "webhook" && (!s.last_run || Date.now() - new Date(s.last_run).getTime() > 1e15)).length;
   return (
     <div className="page">
-      <div className="head"><div><h1>Signals</h1><div className="sub">Moments that suggest a company may need you now, each tied to its source.</div></div></div>
+      <div className="head"><div><h1>Signals</h1></div></div>
       <div className="figs">
         <Fig value={n0(week)} label="Signals in the last 7 days" />
         <Fig value={data.sources.filter((s: any) => s.enabled).length} label="Sources" />
-        <Fig value={unmatched.length} label="Not matched to an account" onClick={() => navigate(withParam("tab", "unmatched"))} />
         {silent ? <Fig value={silent} label="Sources silent" /> : null}
       </div>
       <Seg label="View" value={tab} onChange={(v) => navigate(withParam("tab", v === "feed" ? null : v), true)}
@@ -125,7 +122,7 @@ function Feed({ rows }: { rows: any[] }) {
           <span className="mute small">{ago(s.ingested_at)}</span>
           {s.account_id
             ? <button className="cell-main" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }} onClick={() => openSheet("account", s.account_id)}><span className="t">{s.name}</span><span className="s">{s.label}</span></button>
-            : <div className="cell-main"><span className="t">{s.evidence.summary ? (s.raw_company || "Unknown company") : ""}</span><span className="s">{s.status_reason}</span></div>}
+            : <div className="cell-main"><span className="t">{s.raw_domain || s.raw_company || "Unknown company"}</span><span className="s">{s.label}</span></div>}
           <span className="clip hide-sm">{s.evidence.summary}</span>
           {s.evidence.url ? <a className="iconbtn" href={s.evidence.url} target="_blank" rel="noreferrer noopener" aria-label="Open the source"><ArrowSquareOut size={15} /></a> : <span />}
         </div>
@@ -138,24 +135,22 @@ function Types({ rows }: { rows: any[] }) {
   const max = Math.max(0.0001, ...rows.map((r) => r.meeting_rate || 0));
   return (
     <>
-      <div className="small mute">For each kind of signal: how many accounts it started a play for, and how many of those booked a meeting within 60 days.</div>
-      <div className="ledger">
-        <div className="row head" style={{ gridTemplateColumns: T_COLS }}><span>Signal</span><span className="num">Weight</span><span className="num">Seen</span><span className="num">Started a play</span><span>Meeting rate</span></div>
+            <div className="ledger">
+        <div className="row head" style={{ gridTemplateColumns: T_COLS }}><span>Signal</span><span className="num">Weight</span><span className="num">Seen</span><span className="num">Plays started</span><span className="num">Held back</span><span>Meetings within 60 days</span></div>
         {rows.map((r) => (
           <div key={r.key} className="row" style={{ gridTemplateColumns: T_COLS }} title={r.because}>
             <div className="cell-main"><span className="t">{r.label}</span><span className="s">{r.because}</span></div>
             <span className="num">{Number(r.weight) > 0 ? `+${Number(r.weight)}` : Number(r.weight)}</span>
             <span className="num">{r.seen}</span>
-            <span className="num">{r.treated}{r.holdout ? <span className="faint"> +{r.holdout}</span> : null}</span>
+            <span className="num">{r.treated}</span><span className="num">{r.holdout}</span>
             <div>{r.treated ? <Bar label="" value={r.meeting_rate || 0} of={max} shown={pct(r.meeting_rate)} hint={`${r.treated_meetings} of ${r.treated}`} /> : <span className="faint">No plays yet</span>}</div>
           </div>
         ))}
       </div>
-      <div className="small mute">The number after a plus is accounts held back in the comparison group.</div>
     </>
   );
 }
-const T_COLS = "minmax(0,1.6fr) 60px 56px 110px minmax(160px,1.2fr)";
+const T_COLS = "minmax(0,1.6fr) 60px 56px 96px 80px minmax(160px,1.2fr)";
 
 // ---------------------------------------------------------------- Plays
 
@@ -165,14 +160,14 @@ export function Plays() {
   if (!data) return <div className="page"><div className="head"><h1>Plays</h1></div><Loading /></div>;
   return (
     <div className="page">
-      <div className="head"><div><h1>Plays</h1><div className="sub">Each play is a bet: when this happens, these people need us, for this reason.</div></div></div>
+      <div className="head"><div><h1>Plays</h1></div></div>
       <div className="ledger">
-        <div className="row head" style={{ gridTemplateColumns: P_COLS }}><span>Play</span><span>Who writes</span><span className="num">Accounts</span><span className="num">Positive</span><span className="num">Meetings</span><span className="num">To first email</span></div>
+        <div className="row head" style={{ gridTemplateColumns: P_COLS }}><span>Play</span><span>Who writes</span><span className="num">Accounts</span><span className="num">Positive</span><span className="num">Meetings</span><span className="num">Signal to first email</span></div>
         {data.plays.map((p: any) => {
           const f = p.funnel;
           return (
             <button key={p.id} className="row" style={{ gridTemplateColumns: P_COLS }} onClick={() => openSheet("play", p.id)}>
-              <div className="cell-main"><span className="t">{p.name}</span><span className="s">{p.status === "live" ? (p.urgent ? "Live, answer the same day" : "Live") : cap(p.status)}</span></div>
+              <div className="cell-main"><span className="t">{p.name}</span><span className="s">{p.status === "live" ? (p.urgent ? "Live, decide within a day" : "Live") : cap(p.status)}</span></div>
               <span className="mute clip hide-sm">{STAGE[p.autonomy]}</span>
               <span className="num">{f.proposed}</span>
               <span className="num">{f.positive}</span>
@@ -182,10 +177,9 @@ export function Plays() {
           );
         })}
       </div>
-      <div className="small mute">Accounts counts those offered to an SDR. Each play also holds some matched accounts back, uncontacted, to measure what outreach adds. Updated {day(new Date().toISOString())}.</div>
     </div>
   );
 }
-const P_COLS = "minmax(0,1.6fr) minmax(0,1.2fr) 80px 72px 80px 100px";
+const P_COLS = "minmax(0,1.6fr) minmax(0,1.2fr) 80px 72px 80px 150px";
 
 export { cap };

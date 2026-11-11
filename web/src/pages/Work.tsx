@@ -3,7 +3,7 @@ import { LinkedinLogo, Phone, MagnifyingGlass } from "@phosphor-icons/react";
 import { api } from "../api";
 import { Avatar, Logo } from "../marks";
 import {
-  Empty, Failed, Fig, Loading, Section, Seg, Status, ago, ahead, cap, day, dayTime, navigate, useBusy, useData,
+  Empty, Failed, Fig, Loading, Section, Seg, Status, ago, ahead, cap, day, dayTime, n0, navigate, useBusy, useData,
   weekday, withParam, usePath,
 } from "../lib";
 import { LABEL, MSG, PLAY_STATE, openSheet } from "../sheets";
@@ -12,6 +12,7 @@ import { LABEL, MSG, PLAY_STATE, openSheet } from "../sheets";
 
 export function Today() {
   const { data, error, reload } = useData<any>("/api/today");
+  const me = useData<any>("/api/me").data;
   const [busy, run] = useBusy();
   const [skipping, setSkipping] = useState<number | null>(null);
   const [reason, setReason] = useState("");
@@ -35,7 +36,7 @@ export function Today() {
         <Fig value={data.meetings.length} label="Meetings this week" />
       </div>
 
-      <Section title="Replies" count={data.replies.length}>
+      <Section title="Replies">
         {data.replies.length ? (
           <div className="ledger">
             {data.replies.map((r: any) => {
@@ -44,7 +45,7 @@ export function Today() {
               return (
                 <button key={r.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1.2fr) minmax(0,2fr) 150px 92px" }} onClick={() => openSheet("reply", r.id)}>
                   <Avatar name={r.full_name || r.company} photo={r.photo_url} />
-                  <div className="cell-main"><span className="t">{r.full_name || "Unknown sender"}</span><span className="s">{r.company}</span></div>
+                  <div className="cell-main"><span className="t">{r.full_name || "Unknown sender"}</span><span className="s">{r.company}</span><span className="s only-sm">{r.cleaned}</span></div>
                   <span className="clip mute hide-sm">{r.cleaned}</span>
                   <span className="hide-sm"><Status kind={l[0]}>{l[1]}</Status></span>
                   <span className="num small" style={{ color: late ? "var(--ink)" : "var(--mute)", fontWeight: late ? 600 : 400 }}>
@@ -54,20 +55,20 @@ export function Today() {
               );
             })}
           </div>
-        ) : <Empty title="No replies waiting">Hot replies land here with the time you have to answer.</Empty>}
+        ) : <Empty title="No replies waiting" />}
       </Section>
 
-      <Section title="Accounts proposed to you" count={data.proposals.length}>
+      <Section title={me?.user.role === "sdr" ? "Accounts proposed to you" : "Accounts proposed to the team"}>
         {data.proposals.length ? (
           <div className="ledger">
             {data.proposals.map((p: any) => (
               <div key={p.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1.1fr) minmax(0,2fr) 52px auto" }}>
                 <Logo domain={p.primary_domain} name={p.name} />
                 <button className="cell-main" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }} onClick={() => openSheet("account", p.account_id)}>
-                  <span className="t">{p.name}</span><span className="s">{p.play}{p.urgent ? ", answer today" : ""}</span>
+                  <span className="t">{p.name}</span><span className="s">{p.play}{p.urgent ? ", decide today" : ""}{me?.user.role !== "sdr" && p.owner ? `, ${p.owner}` : ""}</span><span className="s only-sm">{p.why_now.summary}</span>
                 </button>
                 <div className="cell-main hide-sm"><span className="t" style={{ fontWeight: 450 }}>{p.why_now.summary}</span><span className="s">{p.why_now.label}, {ago(p.why_now.observed_at)}</span></div>
-                <span className="num hide-sm" title="Priority">{p.priority}</span>
+                <span className="num hide-sm"><span className="mute small">Priority </span>{p.priority}</span>
                 {skipping === p.id ? (
                   <div className="actions">
                     <input className="input" style={{ width: 200 }} placeholder="Why skip?" value={reason} autoFocus onChange={(e) => setReason(e.target.value)} aria-label="Reason for skipping" />
@@ -83,11 +84,11 @@ export function Today() {
               </div>
             ))}
           </div>
-        ) : <Empty title="Nothing to decide">The desk proposes an account when a signal fits a play.</Empty>}
+        ) : <Empty title="Nothing to decide" />}
       </Section>
 
       <div className="two">
-        <Section title="Emails to approve" count={data.approvals.length}>
+        <Section title="Emails to approve">
           {data.approvals.length ? (
             <div className="ledger">
               {data.approvals.slice(0, 8).map((m: any) => (
@@ -100,7 +101,7 @@ export function Today() {
             </div>
           ) : <Empty title="All approved" />}
         </Section>
-        <Section title="Calls and LinkedIn" count={data.tasks.length}>
+        <Section title="Calls and LinkedIn">
           {data.tasks.length ? (
             <div className="ledger">
               {data.tasks.slice(0, 8).map((t: any) => <TaskRow key={t.id} t={t} />)}
@@ -110,7 +111,7 @@ export function Today() {
       </div>
 
       {data.meetings.length ? (
-        <Section title="Meetings this week" count={data.meetings.length}>
+        <Section title="Meetings this week">
           <div className="ledger">
             {data.meetings.map((m: any) => (
               <button key={m.id} className="row" style={{ gridTemplateColumns: "120px minmax(0,1fr) auto" }} onClick={() => openSheet("account", m.account_id)}>
@@ -153,13 +154,14 @@ export function Accounts() {
   return (
     <div className="page">
       <div className="head">
-        <div><h1>Accounts</h1><div className="sub">Ranked by priority: how well they fit, and how strongly they are showing it now.</div></div>
+        <div><h1>Accounts</h1></div>{data ? <Fig value={data.accounts.length < data.total ? `${data.accounts.length} of ${n0(data.total)}` : n0(data.total)} label="Accounts" sm /> : null}
       </div>
       <div className="toolbar">
         <Seg label="Which accounts" value={view} onChange={(v) => navigate(withParam("view", v === "priority" ? null : v), true)}
           options={[["priority", "Fit our profile"], ["in_play", "In a play"], ["rising", "Rising this week"], ["all", "All"]]} />
-        <form onSubmit={(e) => { e.preventDefault(); navigate(withParam("q", q.trim() || null), true); }}>
-          <input className="input" style={{ width: 240 }} type="search" placeholder="Company or domain" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search accounts" />
+        <form onSubmit={(e) => e.preventDefault()}>
+          <input className="input" style={{ width: 240 }} type="search" placeholder="Company or domain" value={q} aria-label="Search accounts"
+            onChange={(e) => { const v = e.target.value; setQ(v); window.clearTimeout((window as any).__acctq); (window as any).__acctq = window.setTimeout(() => navigate(withParam("q", v.trim() || null), true), 220); }} />
         </form>
       </div>
       {error ? <Failed error={error} retry={reload} /> : !data ? <Loading rows={12} /> : data.accounts.length === 0 ? <Empty title="No accounts match" /> : (
@@ -172,12 +174,12 @@ export function Accounts() {
             return (
               <button key={a.id} className="row" style={{ gridTemplateColumns: COLS }} onClick={() => openSheet("account", a.id)}>
                 <Logo domain={a.primary_domain} name={a.name} />
-                <div className="cell-main"><span className="t">{a.name}</span><span className="s">{a.industry}, {a.employees} people, tier {a.fit_tier}</span></div>
+                <div className="cell-main"><span className="t">{a.name}</span><span className="s">{a.industry}, {n0(a.employees)} people, tier {a.fit_tier}</span><span className="s only-sm">{a.reason || "No recent signal"}</span></div>
                 <div className="cell-main hide-sm">{a.reason ? <><span className="t" style={{ fontWeight: 450 }}>{a.reason}</span><span className="s">{day(a.reason_at)}</span></> : <span className="mute">No recent signal</span>}</div>
                 <span className="num strong">{a.priority ?? 0}</span>
                 <span className="num hide-sm" style={{ color: a.week_change > 0 ? "var(--ink)" : "var(--faint)" }}>{a.week_change > 0 ? `+${a.week_change}` : a.week_change < 0 ? a.week_change : ""}</span>
                 <span className="hide-sm">{st ? <Status kind={st[0]}>{st[1]}</Status>
-                  : a.last_state === "held_out" && a.hold_until ? <Status kind="none">Comparison group</Status>
+                  : a.last_state === "held_out" && a.hold_until ? <span className="mute">Held back</span>
                   : a.hold_until ? <span className="mute">Rests until {day(a.hold_until)}</span>
                   : <span className="faint">Not in a play</span>}</span>
                 <span className="clip mute hide-sm">{a.owner || "Unassigned"}</span>

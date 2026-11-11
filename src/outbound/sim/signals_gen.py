@@ -25,6 +25,8 @@ RATES = {
     "news_negative": ("news_feed", 0.0009, 0.0, False),
 }
 
+OUTSIDE_A = "Alder Basalt Cobalt Delta Ember Fjord Garnet Halcyon Iris Jasper Kelp Lattice Morrow Nimbus Onyx Prism".split()
+OUTSIDE_B = "Freight Foods Studio Robotics Media Clinics Logistics Retail Energy Travel Insurance Labs".split()
 ROLES = ["Revenue Accountant", "Billing Specialist", "Finance Systems Analyst", "Billing Operations Manager",
          "Senior Revenue Accountant", "Accounts Receivable Lead"]
 COMPETITORS = ["Chargewise", "Meterline"]
@@ -38,21 +40,33 @@ def _slug(name: str) -> str:
     return name.lower().replace(" ", "-")
 
 
+def article(word: str) -> str:
+    """'a' or 'an' by sound: an Accounts Receivable Lead, an $18M round, a $25M round."""
+    w = word.lstrip("$")
+    if w[:1].isdigit():
+        return "an" if w.startswith(("8", "11", "18")) else "a"
+    return "an" if w[:1].lower() in "aeio" else "a"
+
+
+def day_month(at: datetime) -> str:
+    return f"{at.day} {at:%B}"
+
+
 def evidence(rng: random.Random, kind: str, acct: dict, at: datetime, person: dict | None) -> dict:
     name, slug, dom = acct["name"], _slug(acct["name"]), acct["primary_domain"]
     n = rng.randint(1000, 9999)
     if kind == "new_exec":
         title = rng.choice(EXEC_TITLES)
-        return {"summary": f"Appointed a new {title} on {at:%d %B}.", "url": f"https://news.example.net/{slug}-names-{_slug(title)}-{n}",
+        return {"summary": f"Appointed a new {title} on {day_month(at)}.", "url": f"https://news.example.net/{slug}-names-{_slug(title)}-{n}",
                 "quote": f"{name} today announced the appointment of a new {title}."}
     if kind == "hiring_function":
         role = rng.choice(ROLES)
-        return {"summary": f"Posted a job for a {role}.", "url": f"https://jobs.example.net/{slug}/{_slug(role)}-{n}",
+        return {"summary": f"Posted a job for {article(role)} {role}.", "url": f"https://jobs.example.net/{slug}/{_slug(role)}-{n}",
                 "quote": f"You will own monthly invoicing and revenue reconciliation as the {role}."}
     if kind == "funding":
         amt = rng.choice([12, 18, 25, 30, 40, 55, 70])
         rnd = rng.choice(["Series A", "Series B", "Series C"])
-        return {"summary": f"Raised a ${amt}M {rnd} on {at:%d %B}.", "url": f"https://news.example.net/{slug}-raises-{amt}m-{n}",
+        return {"summary": f"Raised {article(str(amt))} ${amt}M {rnd} on {day_month(at)}.", "url": f"https://news.example.net/{slug}-raises-{amt}m-{n}",
                 "quote": f"{name} raised ${amt} million in {rnd} funding."}
     if kind == "pricing_visit":
         v = rng.randint(2, 6)
@@ -121,13 +135,17 @@ def day_signals(cur, rng: random.Random, day_start: datetime) -> dict[str, list[
                 raw.pop("domain")
                 raw["company"] = acct["name"] + rng.choice(["", " Inc.", " Ltd"])
             out.setdefault(source, []).append(raw)
-    # Noise every real feed has: companies we do not know.
+    # Noise every real feed has: companies outside the account list, from several sources.
     for _ in range(rng.randint(0, 3)):
-        out.setdefault("intent_feed", []).append({
-            "type": "intent_topic", "external_id": f"intent-unknown-{rng.randint(10**8, 10**9)}",
-            "observed_at": day_start + timedelta(hours=rng.randint(0, 23)),
-            "domain": f"unknown{rng.randint(100, 999)}.com", "strength": 0.5,
-            "evidence": {"summary": "Research on usage-based billing.", "url": "https://intent.example.net/unknown"}})
+        name = f"{rng.choice(OUTSIDE_A)} {rng.choice(OUTSIDE_B)}"
+        dom = name.lower().replace(" ", "") + rng.choice([".com", ".io", ".co"])
+        kind, source = rng.choice([("intent_topic", "intent_feed"), ("site_visit", "web_visits"),
+                                   ("hiring_function", "jobs_feed"), ("funding", "funding_feed")])
+        at = day_start + timedelta(hours=rng.randint(0, 23))
+        fake = {"name": name, "primary_domain": dom}
+        out.setdefault(source, []).append({
+            "type": kind, "external_id": f"{source}-outside-{rng.randint(10**8, 10**9)}", "observed_at": at,
+            "domain": dom, "strength": 0.5, "evidence": evidence(rng, kind, fake, at, None)})
     # Job changes: a known person moves. Most are reported by two sources a few days apart.
     if rng.random() < 0.35:
         mover = db.one(cur, """select p.id, p.full_name, p.linkedin_url, p.email, p.is_champion, p.account_id
