@@ -104,7 +104,7 @@ def day_signals(cur, rng: random.Random, day_start: datetime) -> dict[str, list[
                            join sim_accounts sa on sa.account_id = a.id where a.lifecycle <> 'competitor'""")
     for acct in accts:
         for kind, (source, base, link, person_level) in RATES.items():
-            if rng.random() >= base + link * acct["need"]:
+            if rng.random() >= 1.5 * (base + link * acct["need"]):
                 continue
             at = day_start + timedelta(minutes=rng.randint(0, 24 * 60 - 1))
             person = None

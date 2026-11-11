@@ -267,6 +267,23 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
   *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; }
 }
 
+/* ------------------------------------------------------------------ what buyers said: three lists that grow */
+
+.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 36px; align-items: start; }
+.callcol { display: grid; gap: 10px; align-content: start; }
+.callcol h3 { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+/* Scrolls inside itself as notes pile up: no border, no visible scrollbar, the page keeps its place. */
+.scrolly { max-height: 432px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; display: grid; align-content: start; }
+.scrolly::-webkit-scrollbar { display: none; }
+.said { padding: 12px 0; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
+.said:last-child { border-bottom: 0; }
+.said-top { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; }
+.said-text { font-weight: 500; line-height: 21px; }
+.said-n { color: var(--mute); font-size: 12.5px; flex: none; }
+.said-quote { color: var(--ink-2); font-size: 13px; line-height: 19px; }
+.said-meta { color: var(--mute); font-size: 12.5px; }
+.qmark { color: var(--accent); font-weight: 700; margin-right: 2px; }
+
 /* ------------------------------------------------------------------ phone */
 
 @media (max-width: 900px) {
@@ -276,7 +293,7 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
   .phone-nav { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-around; background: var(--ground); border-top: 1px solid var(--line); z-index: 6; padding-bottom: env(safe-area-inset-bottom); }
   .phone-nav a { flex: 1; display: grid; justify-items: center; gap: 2px; padding: 8px 0; font-size: 11px; color: var(--mute); min-height: 52px; }
   .phone-nav a[aria-current="page"] { color: var(--accent); }
-  .two, .split { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .two, .split, .three { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .fig { padding: 0 16px; }
   .ledger .row { grid-template-columns: minmax(0, 1fr) auto !important; }
   .ledger .row > .hide-sm { display: none; }

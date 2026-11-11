@@ -171,8 +171,11 @@ def extract(p: dict) -> dict:
         low = ln.lower()
         if not ln:
             continue
-        if "chargewise" in low or "meterline" in low:
-            items.append({"kind": "competitor", "text": "Compared us with an incumbent billing tool", "quote": ln})
+        tool = next((name for key, name in (("chargewise", "Chargewise"), ("meterline", "Meterline"),
+                                            ("spreadsheet", "Spreadsheets"), ("in-house", "An in-house system"))
+                     if key in low), None)
+        if tool:
+            items.append({"kind": "competitor", "text": tool, "quote": ln})
         elif any(w in low for w in ("worried", "concern", "too expensive", "timing", "not sure")):
             items.append({"kind": "objection", "text": ln[:120], "quote": ln})
         elif any(w in low for w in ("need", "want", "close", "audit", "board")):

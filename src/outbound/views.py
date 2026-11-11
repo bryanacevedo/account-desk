@@ -372,8 +372,14 @@ def results(cur, *, money: bool) -> dict:
                                 count(*) filter (where escalated_at is not null) as missed, count(*) as total
                          from replies where hot and handled_at is not null""")
     labels = db.all(cur, "select label, count(*) as n from replies where label is not null group by label order by n desc")
-    learn = db.all(cur, """select l.kind, l.text, l.quote, p.name as play from learnings l left join plays p on p.id = l.play_id
-                           order by l.id desc limit 30""")
+    # The model extracted each item from one call; code groups them, so a theme shows how many calls raised it.
+    learn = db.all(cur, """
+        select l.kind, l.text, count(distinct l.call_note_id) as calls, max(cn.created_at) as last_at,
+               array_agg(distinct a.name) as companies, array_agg(distinct p.name) filter (where p.name is not null) as plays,
+               (array_agg(l.quote order by cn.created_at desc))[1] as quote
+        from learnings l join call_notes cn on cn.id = l.call_note_id join meetings m on m.id = cn.meeting_id
+        join accounts a on a.id = m.account_id left join plays p on p.id = l.play_id
+        group by l.kind, l.text order by calls desc, last_at desc""")
     out = {"funnel": f, "lift": stats.lift_report(f["meetings"], f["proposed"], f["holdout_meetings"], f["holdout"]),
            "opportunities": opps, "sla": sla, "labels": labels, "signals": signal_performance(cur), "learnings": learn}
     if money:

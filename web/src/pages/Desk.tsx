@@ -122,23 +122,39 @@ export function Results() {
           ))}
         </div>
       </Section>
-      <div className="two">
-        <Section title="What replies said">
-          <div className="bars">
-            {labels.map((l: any) => <Bar key={l.label} label={(LABEL[l.label] || LABEL.other)[1]} value={l.n} of={lmax} />)}
+      <Section title="What replies said">
+        <div className="bars" style={{ maxWidth: 720 }}>
+          {labels.map((l: any) => <Bar key={l.label} label={(LABEL[l.label] || LABEL.other)[1]} value={l.n} of={lmax} />)}
+        </div>
+      </Section>
+      <Section title="What buyers said on calls" count={new Set(data.learnings.map((l: any) => l.kind + l.text)).size}>
+        {data.learnings.length ? (
+          <div className="three">
+            {([["reason_to_buy", "Why they'd buy"], ["objection", "What's holding them back"], ["competitor", "Other tools they named"]] as const).map(([kind, title]) => {
+              const rows = data.learnings.filter((l: any) => l.kind === kind);
+              return (
+                <div key={kind} className="callcol">
+                  <h3>{title}</h3>
+                  {rows.length ? (
+                    <ul className="scrolly">
+                      {rows.map((l: any) => (
+                        <li key={l.text} className="said">
+                          <div className="said-top">
+                            <span className="said-text">{kind === "competitor" ? l.text : <><span className="qmark" aria-hidden="true">&ldquo;</span>{l.text}</>}</span>
+                            <span className="num said-n">{l.calls} {l.calls === 1 ? "call" : "calls"}</span>
+                          </div>
+                          {kind === "competitor" ? <div className="said-quote"><span className="qmark" aria-hidden="true">&ldquo;</span>{l.quote}</div> : null}
+                          <div className="said-meta">{names(l.companies)}{l.plays?.length ? `, ${l.plays.join(" and ").toLowerCase()}` : ""}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <Empty title="Nothing yet" />}
+                </div>
+              );
+            })}
           </div>
-        </Section>
-        <Section title="From call notes" count={data.learnings.length}>
-          {data.learnings.length ? (
-            <ul className="facts">
-              {data.learnings.slice(0, 8).map((l: any, i: number) => (
-                <li key={i}><span className="mono faint" style={{ fontSize: 11 }}>{l.kind === "competitor" ? "Comp" : l.kind === "objection" ? "Obj" : "Why"}</span>
-                  <span><span className="quote" style={{ display: "block", padding: "8px 12px 8px 32px" }}>{l.quote}</span><span className="small mute">{l.play}</span></span></li>
-              ))}
-            </ul>
-          ) : <Empty title="No call notes yet" />}
-        </Section>
-      </div>
+        ) : <Empty title="No call notes yet">After a meeting, the SDR adds their notes and marks what is worth learning from.</Empty>}
+      </Section>
       {me?.money && data.spend ? (
         <Section title="Spend this month">
           <div className="ledger">
@@ -155,6 +171,12 @@ export function Results() {
       ) : null}
     </div>
   );
+}
+
+function names(list: string[]): string {
+  if (!list?.length) return "";
+  if (list.length <= 2) return list.join(" and ");
+  return `${list.slice(0, 2).join(", ")} and ${list.length - 2} more`;
 }
 
 // ---------------------------------------------------------------- Ops (health)

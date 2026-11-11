@@ -22,7 +22,7 @@ def reset(url: str | None = None) -> None:
     db.migrate(url)
 
 
-def setup(*, start: datetime, seed: int = 7, n_accounts: int = 460) -> dict:
+def setup(*, start: datetime, seed: int = 7, n_accounts: int = 700) -> dict:
     clock.set_sim(start)
     with db.tx() as cur:
         load.load_catalog(cur, start=start)
@@ -131,7 +131,7 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
         for r in db.all(cur, """select r.* from replies r join tasks t on t.reply_id = r.id and t.kind = 'reply'
                                 where t.owner_id = %s and t.status = 'open' order by r.received_at limit 4""", u["id"]):
             if rng.random() < 0.85:
-                if r["label"] in ("meeting_request", "interested") and rng.random() < 0.72 or rng.random() < 0.3:
+                if r["label"] in ("meeting_request", "interested") and rng.random() < 0.85 or rng.random() < 0.45:
                     starts = timeutil.add_business_days(at, rng.randint(2, 7))
                     pipeline.book_meeting(cur, account_id=r["account_id"], person_id=r["person_id"], starts_at=starts,
                                           source="sdr", owner_id=u["id"])
@@ -146,21 +146,37 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
                    "done" if rng.random() < 0.75 else "skipped", at, t["id"])
 
 
+# What buyers say on first calls, weighted so some themes recur across calls the way they do in real life.
+REASONS = [("Board wants clean usage revenue by next quarter.", 5), ("They close the books in 9 days and want it under 5.", 4),
+           ("Need finance and product to agree on one usage number.", 4), ("Want invoices to match contracts without manual fixes.", 3),
+           ("Audit flagged revenue recognition on usage contracts.", 2), ("Need to launch usage pricing for the API product in Q1.", 2),
+           ("Want one place for contract terms and invoices.", 1), ("Close team spends a week reconciling usage by hand.", 2)]
+OBJECTIONS = [("Worried about migration effort and losing invoice history.", 5), ("Not sure about timing, a renewal is due in March.", 3),
+              ("Too expensive was the first reaction; asked about a phased rollout.", 3),
+              ("Concern about adding another tool for a small finance team.", 2),
+              ("Worried the ERP sync will need engineering time.", 3), ("Not sure who owns billing after the reorg.", 1)]
+TOOLS = [("Currently on Chargewise, contract ends in June.", 4), ("Evaluating Meterline as well.", 3),
+         ("Billing runs on spreadsheets and Stripe invoices.", 3), ("Built an in-house billing script that one engineer maintains.", 2)]
+CONTEXT = ["On the call: the CFO and the controller.", "Next step: a sandbox with last month's usage data.",
+           "Follow up with pricing for 40,000 invoices a month.", "They will bring the data team to the next call."]
+
+
+def call_notes(rng: random.Random) -> str:
+    def pick(pool, k):
+        return rng.choices([x for x, _ in pool], weights=[w for _, w in pool], k=k)
+    lines = [rng.choice(CONTEXT)] + pick(REASONS, rng.randint(1, 2)) + pick(OBJECTIONS, rng.randint(0, 2)) + pick(TOOLS, rng.randint(0, 1))
+    return "\n".join(dict.fromkeys(lines))
+
+
 def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
     for m in db.all(cur, """select m.*, sa.need::float as need from meetings m join sim_accounts sa on sa.account_id = m.account_id
                             where m.status = 'booked' and m.starts_at < %s""", at):
         status = "held" if rng.random() < 0.84 else "no_show"
         pipeline.set_meeting_status(cur, m["id"], status)
         if status == "held":
-            notes = rng.choice([
-                "They close the books in 9 days and want it under 5.\nWorried about migration effort from Chargewise.\n"
-                "Board wants clean usage revenue by next quarter.",
-                "Billing runs on spreadsheets and Stripe invoices.\nNot sure about timing, audit in progress.\n"
-                "Need finance and product to agree on one usage number.",
-                "Evaluating Meterline as well.\nToo expensive was the first reaction, then asked about phased rollout.\n"
-                "Want a sandbox with last month's usage data."])
+            notes = call_notes(rng)
             nid = pipeline.record_call_notes(cur, m["id"], notes, m["owner_id"])
-            if rng.random() < 0.6:
+            if rng.random() < 0.9:
                 pipeline.learn_from(cur, nid, m["owner_id"])
             if rng.random() < 0.22 + 0.5 * m["need"]:
                 db.run(cur, "insert into sim_events (at, kind, payload) values (%s, 'opportunity', %s)",
