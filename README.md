@@ -6,7 +6,7 @@ Outbound Desk runs signal-based, account-based outbound for a B2B sales team. It
 
 It is built for a small team that would rather write to 40 companies at the right moment than to 4,000 at random.
 
-The demo company, its accounts, people and vendors are all invented. Every vendor is simulated. Read "What is real and what is simulated" before trusting any number in it.
+**[Try the live demo](https://outbound-desk.onrender.com).** Pick who you are acting as in the sidebar (an SDR, the sales manager, or GTM engineering). The company, its accounts, people and vendors are all invented, and every vendor is simulated. If it has been idle, the first load takes about a minute. Read "What is real and what is simulated" before trusting any number in it.
 
 ## The rules it is built on
 

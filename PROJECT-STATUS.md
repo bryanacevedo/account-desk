@@ -4,7 +4,7 @@
 
 ## Where it stands
 
-v1 is built end to end on simulated vendors. **Public** at https://github.com/bryanacevedo/outbound-desk since 2026-11-11 (Bryan: keep the name, publish). CI green on the first push (lint, the suite on Postgres 18, the web build). Not hosted yet: the Render service needs Bryan's go-ahead to use the Render key.
+v1 is built end to end on simulated vendors. **Public** at https://github.com/bryanacevedo/outbound-desk since 2026-11-11 (Bryan: keep the name, publish). CI green on the first push (lint, the suite on Postgres 18, the web build). **Live demo** at https://outbound-desk.onrender.com since 2026-11-11 (Render free plan, service `outbound-desk`, Docker with Postgres inside; the 60-day simulation is built into the image, so a start or a wake takes seconds; checked on the live link: every page 200 in under 0.7 s). The first deploy failed because the simulation ran at start and took longer than Render's port wait; fixed by building it into the image.
 
 Checked on 2026-11-11 by running them:
 
@@ -38,8 +38,7 @@ Checked on 2026-11-11 by running them:
 
 ## Next
 
-1. Bryan: the go-ahead to create the Render service with the Render key.
-2. A fresh hands-on design review of every screen against `docs/DESIGN-CHECKLIST.md`, including phone width.
-3. Evals for drafts and briefs with live calls (the reply set is done).
-4. The MCP server, live adapters vendor by vendor (Apollo, a verifier, Instantly or Smartlead, HeyReach, HubSpot, Slack, Google Postmaster).
-5. A second fresh code review.
+1. A fresh hands-on design review of every screen against `docs/DESIGN-CHECKLIST.md`, including phone width.
+2. Evals for drafts and briefs with live calls (the reply set is done).
+3. The MCP server, live adapters vendor by vendor (Apollo, a verifier, Instantly or Smartlead, HeyReach, HubSpot, Slack, Google Postmaster).
+4. A second fresh code review.

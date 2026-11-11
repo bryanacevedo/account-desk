@@ -48,7 +48,7 @@ def _queue_day_signals(cur, rng: random.Random, day: datetime) -> int:
 
 def _process_events(cur, until: datetime) -> int:
     n = 0
-    for ev in db.all(cur, """select * from sim_events where not done and kind <> 'signal' and at <= %s order by at""", until):
+    for ev in db.all(cur, """select * from sim_events where not done and kind not in ('signal', 'opportunity') and at <= %s order by at""", until):
         db.run(cur, "update sim_clock set at = greatest(at, %s)", ev["at"])
         p = ev["payload"]
         if ev["kind"] in ("reply", "bounce"):
@@ -164,7 +164,7 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
                 pipeline.learn_from(cur, nid, m["owner_id"])
             if rng.random() < 0.22 + 0.5 * m["need"]:
                 db.run(cur, "insert into sim_events (at, kind, payload) values (%s, 'opportunity', %s)",
-                       at + timedelta(days=rng.randint(2, 15)),
+                       at + timedelta(days=rng.randint(2, 8)),
                        J({"account_id": m["account_id"], "amount": rng.randint(30, 180) * 100000}))
     for ev in db.all(cur, "select * from sim_events where kind = 'opportunity' and not done and at <= %s", at):
         p = ev["payload"]
