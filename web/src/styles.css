@@ -631,3 +631,19 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .pa-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
 .pa-tools .input { flex: 1; min-width: 160px; }
 .pa-list { max-height: 520px; overflow-y: auto; overscroll-behavior: contain; }
+
+/* The account's play is the first thing the eye lands on: a card with a cobalt halo, strongest while it waits for a
+   decision. The halo is two soft layers (a tight wash ring and a wide blurred glow), never a hard border. */
+.play-card { position: relative; margin: 6px 0 22px; padding: 4px 18px 16px; border-radius: var(--r-l); background: var(--ground);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-wash) 70%, transparent), 0 10px 30px -10px rgba(43, 71, 201, .22); }
+.play-card.is-proposed { border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  box-shadow: 0 0 0 4px var(--accent-wash), 0 0 0 5px color-mix(in srgb, var(--accent) 14%, transparent),
+              0 16px 52px -6px rgba(43, 71, 201, .48); animation: play-glow 2.6s var(--ease) 1; }
+.play-card > .section { border-top: 0; margin-top: 0; padding-top: 12px; }
+@keyframes play-glow { from { box-shadow: 0 0 0 10px transparent, 0 0 0 0 transparent, 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .play-card.is-proposed { animation: none; } }
+.play-decide { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; margin-top: 16px;
+  padding-top: 14px; border-top: 1px solid var(--line); }
+.play-decide > .small { flex: 1; min-width: 180px; }
+.play-decide > .input { flex: 1; min-width: 160px; }

@@ -707,22 +707,27 @@ export function AccountSheet({ id }: { id: number }) {
     () => api(`/api/account-plays/${cur.id}/decide`, { method: "POST", body: { accept, reason: accept ? null : reason } }),
     accept ? "Accepted. The desk is researching the account and drafting first emails." : "Skipped.",
   ).then(() => { setSkipping(false); setReason(""); reload(); });
-  const foot = canDecide ? (skipping ? (
-    <>
-      <input className="input" style={{ flex: 1, minWidth: 160 }} placeholder="Why skip?" value={reason} autoFocus onChange={(e) => setReason(e.target.value)} aria-label="Reason for skipping" />
-      <button className="btn quiet" onClick={() => setSkipping(false)}>Cancel</button>
-      <button className="btn line" disabled={busy || reason.trim().length < 3} onClick={() => decide(false)}>Skip</button>
-    </>
-  ) : (
-    <>
-      <button className="btn line" disabled={busy} onClick={() => setSkipping(true)}>Skip</button>
-      <button className="btn" disabled={busy} onClick={() => decide(true)}>Accept</button>
-    </>
-  )) : undefined;
+  const decision = canDecide ? (
+    <div className="play-decide">
+      {skipping ? (
+        <>
+          <input className="input" placeholder="Why skip?" value={reason} autoFocus onChange={(e) => setReason(e.target.value)} aria-label="Reason for skipping" />
+          <button className="btn quiet" onClick={() => setSkipping(false)}>Cancel</button>
+          <button className="btn line" disabled={busy || reason.trim().length < 3} onClick={() => decide(false)}>Skip</button>
+        </>
+      ) : (
+        <>
+          <span className="small mute">Accept to start research and first drafts, or skip with a reason.</span>
+          <button className="btn line" disabled={busy} onClick={() => setSkipping(true)}>Skip</button>
+          <button className="btn" disabled={busy} onClick={() => decide(true)}>Accept</button>
+        </>
+      )}
+    </div>
+  ) : null;
   const tabs: [string, string, number?][] = [["overview", "Overview"], ["people", "People", data.people.length],
     ["signals", "Signals", data.signals.length], ["outreach", "Outreach", data.messages.length + data.replies.length]];
   return (
-    <Frame kind="account" crumb="Account" foot={foot}>
+    <Frame kind="account" crumb="Account">
       <div className="who">
         <Logo domain={a.primary_domain} name={a.name} size={44} />
         <div style={{ minWidth: 0 }}>
@@ -739,7 +744,7 @@ export function AccountSheet({ id }: { id: number }) {
       <div className="tabs" role="tablist">
         {tabs.map(([k, l, n]) => <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}{n !== undefined ? <span className="n">{n}</span> : null}</button>)}
       </div>
-      {tab === "overview" && <AccountOverview d={data} />}
+      {tab === "overview" && <AccountOverview d={data} decision={decision} />}
       {tab === "people" && <AccountPeople d={data} />}
       {tab === "signals" && <SignalTimeline signals={data.signals} />}
       {tab === "outreach" && <AccountOutreach d={data} />}
@@ -791,7 +796,7 @@ function CompanyData({ a }: { a: any }) {
   );
 }
 
-function AccountOverview({ d }: { d: any }) {
+function AccountOverview({ d, decision }: { d: any; decision?: ReactNode }) {
   const cur = d.current;
   const max = Math.max(1, ...grouped(d.contributions).map((c) => c.value));
   const fit = (d.account.fit_breakdown?.factors || []) as any[];
@@ -799,6 +804,7 @@ function AccountOverview({ d }: { d: any }) {
     <>
       <CompanyData a={d.account} />
       {cur ? (
+        <div className={`play-card${cur.state === "proposed" ? " is-proposed" : ""}`}>
         <Section title={cur.state === "proposed" ? "Proposed play" : "In play"} right={<Status kind={PLAY_STATE[cur.state][0]}>{PLAY_STATE[cur.state][1]}</Status>}>
           <div className="play-line">
             <button className="link-row play-name" onClick={() => openSheet("play", cur.play_id)}>{cur.play}</button>
@@ -816,7 +822,9 @@ function AccountOverview({ d }: { d: any }) {
               </ul>
             </div>
           ) : null}
+          {decision}
         </Section>
+        </div>
       ) : d.plays[0]?.state === "held_out" ? (
         <Section title="Held back"><div className="mute">Matched <button className="link" onClick={() => openSheet("play", d.plays[0].play_id)}>{d.plays[0].play}</button> on {day(d.plays[0].proposed_at)}. Not contacted, on purpose.</div></Section>
       ) : null}
