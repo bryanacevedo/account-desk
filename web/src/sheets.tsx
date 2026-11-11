@@ -694,13 +694,35 @@ export function AccountSheet({ id }: { id: number }) {
     u.searchParams.set("sheet", `account:${id}:${t}`);
     navigate(u.pathname + "?" + u.searchParams.toString(), true);
   };
+  const me = useData<any>("/api/me").data;
+  const [busy, run] = useBusy();
+  const [skipping, setSkipping] = useState(false);
+  const [reason, setReason] = useState("");
   if (error) return <Frame crumb="Account"><Failed error={error} retry={reload} /></Frame>;
   if (!data) return <Frame crumb="Account"><Loading rows={8} /></Frame>;
   const a = data.account, s = data.score, cur = data.current;
+  // A proposal is decided where it is read: the owner (or a manager) accepts or skips it here, as on Today.
+  const canDecide = cur?.state === "proposed" && me && (me.user.role !== "sdr" || me.user.id === cur.owner_id);
+  const decide = (accept: boolean) => run(
+    () => api(`/api/account-plays/${cur.id}/decide`, { method: "POST", body: { accept, reason: accept ? null : reason } }),
+    accept ? "Accepted. The desk is researching the account and drafting first emails." : "Skipped.",
+  ).then(() => { setSkipping(false); setReason(""); reload(); });
+  const foot = canDecide ? (skipping ? (
+    <>
+      <input className="input" style={{ flex: 1, minWidth: 160 }} placeholder="Why skip?" value={reason} autoFocus onChange={(e) => setReason(e.target.value)} aria-label="Reason for skipping" />
+      <button className="btn quiet" onClick={() => setSkipping(false)}>Cancel</button>
+      <button className="btn line" disabled={busy || reason.trim().length < 3} onClick={() => decide(false)}>Skip</button>
+    </>
+  ) : (
+    <>
+      <button className="btn line" disabled={busy} onClick={() => setSkipping(true)}>Skip</button>
+      <button className="btn" disabled={busy} onClick={() => decide(true)}>Accept</button>
+    </>
+  )) : undefined;
   const tabs: [string, string, number?][] = [["overview", "Overview"], ["people", "People", data.people.length],
     ["signals", "Signals", data.signals.length], ["outreach", "Outreach", data.messages.length + data.replies.length]];
   return (
-    <Frame kind="account" crumb="Account">
+    <Frame kind="account" crumb="Account" foot={foot}>
       <div className="who">
         <Logo domain={a.primary_domain} name={a.name} size={44} />
         <div style={{ minWidth: 0 }}>

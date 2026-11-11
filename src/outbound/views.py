@@ -112,7 +112,7 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
                 continue
             contributions.append({**c, "label": labels.get(c["type"], {}).get("label", c["type"])})
     plays_ = db.all(cur, """select ap.id, ap.state, ap.arm, ap.proposed_at, ap.closed_at, ap.close_reason, ap.why_now,
-                                   ap.brief, p.id as play_id, p.name as play, p.autonomy, u.name as owner
+                                   ap.brief, ap.owner_id, p.id as play_id, p.name as play, p.autonomy, u.name as owner
                             from account_plays ap join plays p on p.id = ap.play_id left join users u on u.id = ap.owner_id
                             where ap.account_id = %s order by ap.proposed_at desc""", account_id)
     current = next((x for x in plays_ if x["state"] in OPEN), None)
