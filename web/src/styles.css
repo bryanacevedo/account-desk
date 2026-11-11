@@ -357,3 +357,8 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .link-row:hover .t { color: var(--accent); }
 .link-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .notice { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 10px 12px; border-radius: 8px; background: var(--well); margin: 4px 0 16px; }
+
+/* A figure that opens something: ink like the other figures, an underline only on hover. */
+.fig-link { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.fig-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.fig-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }

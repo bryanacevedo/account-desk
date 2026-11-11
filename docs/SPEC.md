@@ -132,7 +132,7 @@ All tables are in `migrations/`. Every state column has a CHECK constraint namin
 | expansion | account | Opened an office or entered a market we serve. | 8 | 60 d |
 | news_negative | account | Layoffs or a freeze: lowers priority. | -15 | 45 d |
 
-**Ingest** dedupes on (source, external_id), resolves the company by domain through `account_domains` (normalised: lowercase, strip `www.`, public email domains rejected), then by exact normalised name, else stores the signal as `unmatched` with the reason. An unmatched signal for a company that fits the ICP can create an account (setting `auto_create_accounts`). Person signals resolve by email, then LinkedIn URL. A `champion_moved` signal also marks the person `left` at the old account and creates the person at the new one.
+**Ingest** dedupes on (source, external_id), resolves the company by domain through `account_domains` (normalised: lowercase, strip `www.`, public email domains rejected), then by exact normalised name, else stores the signal as `unmatched` with the reason. An unmatched signal waits in Signals, Not matched, where a person adds the company as an account or sets it aside (decision 21: no automatic account creation). Person signals resolve by email, then LinkedIn URL. A `champion_moved` signal also marks the person `left` at the old account and creates the person at the new one.
 
 Signals older than 3 half-lives are kept but contribute nothing.
 
@@ -425,7 +425,7 @@ Each play has `latency_hours` (default 48 business hours; 24 for pricing visit a
 
 ### 22.9 Sources of accounts and facts
 
-- **Account universe**: CSV or CRM import of the target account list, refreshed on a schedule; `auto_create_accounts` only for tier A fit from a signal.
+- **Account universe**: CSV or CRM import of the target account list, refreshed on a schedule; a signal never creates an account on its own (decision 21).
 - **Research**: before the brief, an AI research step may add `facts` with a `source_url` (live mode: web search tool; demo: the simulated world's pages). Cached by domain for 30 days. The brief cites facts from signals and research alike.
 - **Re-enrichment**: people re-verified when older than 45 days at the moment of a send, and every 90 days for people in open account plays. Accounts' firmographics refresh every 90 days.
 - **First-party signals**: `product_signup`, `closed_lost_revisit`, `event_attended`, `form_abandoned`, `job_change` (any known person who moved; `champion_moved` only when `is_champion`). Website visits stay at the account level; a de-anonymised visitor never becomes a contact.

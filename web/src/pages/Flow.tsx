@@ -83,7 +83,7 @@ export function Signals() {
   if (!data) return <div className="page"><div className="head"><h1>Signals</h1></div><Loading /></div>;
   const week = data.sources.reduce((s: number, x: any) => s + Number(x.week), 0);
   const unmatched = data.feed.filter((s: any) => s.status === "unmatched");
-  const silent = data.sources.filter((s: any) => s.enabled && s.key !== "webhook" && (!s.last_run || Date.now() - new Date(s.last_run).getTime() > 1e15)).length;
+  const silent = data.sources.filter((s: any) => s.enabled && s.adapter !== "webhook" && (!s.last_run || Date.now() - new Date(s.last_run).getTime() > 1e15)).length;
   return (
     <div className="page">
       <div className="head"><div><h1>Signals</h1></div></div>

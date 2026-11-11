@@ -138,8 +138,9 @@ def complete(cur, task_id: int, *, user: dict, outcome: str, text: str | None = 
     if t["kind"] == "call" and outcome == "connected" and p:
         in_conversation(cur, p["id"], t["account_play_id"])
     label = allowed.get(outcome, "Skipped")
-    db.run(cur, "update tasks set status = %s, done_at = app_now(), note = %s where id = %s",
-           "skipped" if outcome == "skipped" else "done", note or label, task_id)
+    # A task's own note (why a referral could not be enrolled) is kept; the outcome goes in only where there was none.
+    db.run(cur, "update tasks set status = %s, done_at = app_now(), note = coalesce(%s, note, %s) where id = %s",
+           "skipped" if outcome == "skipped" else "done", note, label, task_id)
     if t["kind"] in ("linkedin_connect", "linkedin_message", "call"):
         db.run(cur, "insert into crm_outbox (kind, payload, idempotency_key) values ('activity', %s, %s) on conflict do nothing",
                J({"task_id": task_id, "kind": t["kind"], "outcome": outcome, "person_id": t["person_id"]}), f"task:{task_id}")

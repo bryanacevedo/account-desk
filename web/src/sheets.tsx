@@ -377,14 +377,13 @@ export function MeetingSheet({ id }: { id: number }) {
         <Avatar name={m.full_name || m.company} photo={m.photo_url} size={44} />
         <div style={{ minWidth: 0 }}>
           <h2 className="clip">{m.person_id ? <button className="link-row" onClick={() => openSheet("person", m.person_id)}>{m.full_name}</button> : m.company}</h2>
-          <div className="meta clip">{m.person_title ? `${m.person_title} at ` : ""}<button className="link" onClick={() => openSheet("account", m.account_id)}>{m.company}</button></div>
+          <div className="meta clip">{m.person_title ? `${m.person_title} at ` : ""}<button className="link" onClick={() => openSheet("account", m.account_id)}>{m.company}</button>{m.owner ? `, with ${m.owner}` : ""}</div>
         </div>
       </div>
       <div className="figs">
         <Fig value={dayTime(m.starts_at)} label="When" sm />
         <Fig value={<Status kind={m.status === "held" ? "ok" : m.status === "booked" ? "go" : "off"}>{MEETING[m.status] || cap(m.status)}</Status>} label="Status" sm />
-        <Fig value={m.source === "inbound" ? "They asked" : m.play ? <button className="link" onClick={() => openSheet("play", m.play_id)}>{m.play}</button> : "Booked by hand"} label="Came from" sm />
-        <Fig value={m.owner || "Nobody"} label="Owner" sm />
+        <Fig value={m.source === "inbound" ? "They asked" : m.play ? <button className="fig-link" onClick={() => openSheet("play", m.play_id)}>{m.play}</button> : "Booked by hand"} label="Came from" sm />
       </div>
       <Section title="Call notes">
         {m.notes.length ? (

@@ -75,13 +75,37 @@ make setup
 make demo
 ```
 
-That builds an invented company with 460 accounts, simulates 60 days of signals, SDRs, buyers and vendors (about 30 seconds), and serves the desk at http://localhost:8800. Pick who you are acting as in the sidebar. "Move a day ahead" runs the world forward a day.
+That builds an invented company with 700 accounts, simulates 60 days of signals, SDRs, buyers and vendors (about 30 seconds), and serves the desk at http://localhost:8800. Pick who you are acting as in the sidebar. "Move a day ahead" runs the world forward a day.
 
 ```bash
 make test
 ```
 
 The tests run on real Postgres, including a 21-day simulation of the whole desk followed by every promise checked against what actually happened: nobody in the comparison group was contacted, nothing was sent after a reply, every sent email matches what was approved and carries its legal footer, no email cites tracking data.
+
+### A real desk, not the demo
+
+```bash
+python -m outbound init examples/desk.example.json
+```
+
+```bash
+python -m outbound import accounts examples/accounts.example.csv
+```
+
+```bash
+python -m outbound import people examples/people.example.csv
+```
+
+`init` creates the team, sending domains and mailboxes from one file, on an empty database only. Plays start as drafts with your own legitimate-interest reference, for a manager to read and launch. Domains send nothing until the daily DNS check has read their SPF, DKIM and DMARC. Imports report every row they refuse and why. GTM and managers can also import from Settings.
+
+### Ask it from an assistant
+
+```bash
+python -m outbound mcp
+```
+
+A read-only MCP server on stdio with five tools: find accounts, why an account is hot, what is waiting on someone, how a play did, and the results summary. Every query runs in a read-only transaction and none returns money.
 
 ### At production size
 
@@ -113,9 +137,9 @@ Two of the three misses are calls a reviewer could go either way on ("¿Podemos 
 
 ## What is real and what is simulated
 
-**Real and tested:** the scoring, plays, the contact gate and the database trigger behind it, the copy checks, the account calendar, send windows and holidays, mailbox and domain health rules, stop-first reply handling, reply cleaning and the rules that label replies, attribution, the statistics, signed webhooks, one-click unsubscribe, erasure, the job queue and the monitors.
+**Real and tested:** the scoring, plays, the contact gate and the database trigger behind it (including mailbox and domain daily caps, and no email after someone engaged on LinkedIn or by phone), the copy checks for email and LinkedIn, the account calendar, send windows and holidays, mailbox and domain health rules, inbox placement rules, stop-first reply handling, reply cleaning and the rules that label replies, referrals and job changes from replies, attribution (recomputed when a meeting falls through), the statistics, signed webhooks for replies, signals and calendar bookings, one-click unsubscribe, erasure, setup from a file with CSV imports, the read-only MCP server, the job queue and the monitors. The DNS check is live: it reads SPF, DKIM and DMARC over DNS-over-HTTPS.
 
-**Simulated:** every vendor (people search, email finder and verifier, phone finder, website research, the mail provider, deliverability telemetry, the CRM, Slack) and every buyer. The simulated world gives each company a hidden need; signals and replies are drawn from it, with some signal types linked to need strongly and some barely, so the results pages have something true to find.
+**Simulated:** every other vendor (people search, email finder and verifier, phone finder, website research, the mail provider, deliverability telemetry and seed tests, blocklists, the CRM, Slack) and every buyer. The simulated CRM opens and closes deals, including deals and demo requests that outbound had nothing to do with, so the held-back comparison measures what outbound adds. The simulated world gives each company a hidden need; signals and replies are drawn from it, with some signal types linked to need strongly and some barely, so the results pages have something true to find.
 
 **Not yet proven:**
 

@@ -38,7 +38,17 @@ class SimFinder:
     def find(self, cur, person: dict, domain: str) -> str | None:
         truth = db.one(cur, "select true_email from sim_people where person_id = %s", person["id"])
         if truth is None:
-            return None
+            # Someone the desk learned of another way (a referral, an import): a real finder looks them up by name
+            # and company, so the simulated one matches its hidden people the same way.
+            h = db.one(cur, """select * from sim_hidden_people where account_id = %s and lower(full_name) = lower(%s)
+                               and found_person_id is null limit 1""", person["account_id"], person["full_name"])
+            if h is None:
+                return None
+            db.run(cur, "update sim_hidden_people set found_person_id = %s where id = %s", person["id"], h["id"])
+            db.run(cur, """insert into sim_people (person_id, true_email, email_truth, responsiveness, phone_truth)
+                           values (%s,%s,%s,%s,%s) on conflict do nothing""",
+                   person["id"], h["true_email"], h["email_truth"], h["responsiveness"], h["phone_truth"])
+            truth = {"true_email": h["true_email"]}
         rng = random.Random(f"find:{person['id']}")
         if rng.random() < 0.12:
             return None                                   # not found
