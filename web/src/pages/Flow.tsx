@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Avatar } from "../marks";
-import { SignalIcon, SignalLabel } from "../signalIcons";
+import { SIGNAL_NAME, SignalIcon, SignalLabel } from "../signalIcons";
 import { ArrowSquareOut } from "@phosphor-icons/react";
 import {
   Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, n0, navigate, pct, usePath, useData,
@@ -212,34 +212,47 @@ const T_COLS = "minmax(200px,1.8fr) 60px 56px 96px 80px minmax(160px,1.1fr)";
 
 // ---------------------------------------------------------------- Plays
 
+const STAGES = ["research", "draft", "supervised", "autonomous"];
+
+/** A play as one quiet row: what starts it, its name and the bet it makes, how much it has earned, what it produced. */
+function PlayRow({ p }: { p: any }) {
+  const f = p.funnel, stage = Math.max(0, STAGES.indexOf(p.autonomy));
+  const meta = p.status === "live" ? (p.urgent ? "Decide within a day" : null) : p.status === "draft" ? "Draft, waiting for a manager" : cap(p.status);
+  return (
+    <button className={`prow${p.status !== "live" ? " is-off" : ""}`} onClick={() => openSheet("play", p.id)}>
+      <span className="prow-sigs">{(p.trigger?.any_of || []).slice(0, 3).map((t: string) => (
+        <span key={t} title={SIGNAL_NAME[t] || t}><SignalIcon type={t} size={14} /><span className="sr-only">{SIGNAL_NAME[t] || t}</span></span>
+      ))}</span>
+      <span className="prow-main">
+        <span className="prow-name">{p.name}{meta ? <span className="prow-meta">{meta}</span> : null}</span>
+        <span className="prow-hyp">{p.hypothesis}</span>
+      </span>
+      <span className="prow-stage hide-sm" title={STAGE[p.autonomy]}>
+        <span className="prow-meter">{STAGES.map((x, k) => <i key={x} className={k <= stage ? "on" : ""} />)}</span>
+        <span className="prow-stage-t">{STAGE[p.autonomy]}</span>
+      </span>
+      <span className="prow-n" data-label="Accounts">{n0(f.proposed)}</span>
+      <span className="prow-n is-hero" data-label="Meetings">{n0(f.meetings)}</span>
+    </button>
+  );
+}
+
 export function Plays() {
   const { data, error, reload } = useData<any>("/api/plays");
   const me = useData<any>("/api/me").data;
   if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
   if (!data) return <div className="page"><div className="head"><h1>Plays</h1></div><Loading /></div>;
+  const live = data.plays.filter((p: any) => p.status === "live").length;
   return (
     <div className="page">
-      <div className="head"><div><h1>Plays</h1></div>
+      <div className="head"><div><h1>Plays</h1><p className="sub">{live} live. Each play is a bet: a signal, who to reach, what to say.</p></div>
         {me?.user.role === "gtm" ? <button className="btn" onClick={() => openSheet("playedit", "new")}>New play</button> : null}</div>
-      <div className="ledger wrap-names">
-        <div className="row head" style={{ gridTemplateColumns: P_COLS }}><span>Play</span><span>Who writes</span><span className="num">Accounts</span><span className="num">Positive</span><span className="num">Meetings</span><span className="num">Signal to first email</span></div>
-        {data.plays.map((p: any) => {
-          const f = p.funnel;
-          return (
-            <button key={p.id} className="row" style={{ gridTemplateColumns: P_COLS }} onClick={() => openSheet("play", p.id)}>
-              <div className="cell-main"><span className="t">{p.name}</span><span className="s">{p.status === "live" ? (p.urgent ? "Live, decide within a day" : "Live") : p.status === "draft" ? "Draft, waiting for a manager" : cap(p.status)}</span></div>
-              <span className="mute clip hide-sm">{STAGE[p.autonomy]}</span>
-              <span className="num" data-label="Accounts">{f.proposed}</span>
-              <span className="num" data-label="Positive">{f.positive}</span>
-              <span className="num strong" data-label="Meetings">{f.meetings}</span>
-              <span className="num mute hide-sm">{p.median_hours_to_first_touch ? `${Math.round(p.median_hours_to_first_touch)} h` : ""}</span>
-            </button>
-          );
-        })}
+      <div className="plist">
+        <div className="prow is-head"><span className="prow-sigs" /><span>Play</span><span className="hide-sm">Who writes</span><span className="prow-n">Accounts</span><span className="prow-n">Meetings</span></div>
+        {data.plays.map((p: any) => <PlayRow key={p.id} p={p} />)}
       </div>
     </div>
   );
 }
-const P_COLS = "minmax(0,1.6fr) minmax(0,1.2fr) 80px 72px 80px 150px";
 
 export { cap };

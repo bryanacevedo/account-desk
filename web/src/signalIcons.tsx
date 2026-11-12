@@ -14,6 +14,16 @@ const ICONS: Record<string, Icon> = {
   event_attended: CalendarCheck, news_negative: TrendDown,
 };
 
+/** The signal types' names as the catalog writes them (src/outbound/seed/catalog.py), for hints on icon-only places. */
+export const SIGNAL_NAME: Record<string, string> = {
+  champion_moved: "A past champion joined", new_exec: "New finance leader", hiring_function: "Hiring in finance operations",
+  funding: "Raised a round", pricing_visit: "Looked at our pricing", site_visit: "Visited product pages",
+  intent_topic: "Researching the category", competitor_review: "Reviewing a competitor", tech_added: "Adopted a tool we connect to",
+  tech_removed: "Dropped a tool we replace", pricing_change: "Changed their pricing model", social_engaged: "Engaged with the topic",
+  job_change: "Someone we know moved", closed_lost_revisit: "Closed-lost, time to revisit", product_signup: "Signed up for the free tier",
+  event_attended: "Came to our event", news_negative: "Layoffs or a hiring freeze",
+};
+
 export function SignalIcon({ type, size = 16 }: { type: string; size?: number }) {
   const C = ICONS[type] || Lightning;
   return <span className="sig-icon" aria-hidden="true"><C size={size} weight="regular" /></span>;

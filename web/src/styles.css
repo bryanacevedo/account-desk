@@ -647,3 +647,29 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
   padding-top: 14px; border-top: 1px solid var(--line); }
 .play-decide > .small { flex: 1; min-width: 180px; }
 .play-decide > .input { flex: 1; min-width: 160px; }
+
+/* ---------------------------------------------------------------- Plays: a quiet list, the name and its bet first */
+.plist { display: grid; border-top: 1px solid var(--line); }
+.prow { display: grid; grid-template-columns: 64px minmax(0,1fr) 220px 76px 76px; gap: 20px; align-items: center; padding: 18px 12px;
+  border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  transition: background .15s var(--ease); }
+.prow:not(.is-head):hover { background: var(--well); }
+.prow:not(.is-head):hover .prow-name { color: var(--accent); }
+.prow:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-s); }
+.prow.is-head { padding-top: 10px; padding-bottom: 10px; cursor: default; font-size: 12px; color: var(--faint); }
+.prow-sigs { display: flex; gap: 4px; color: var(--faint); }
+.prow-sigs .sig-icon { width: auto; height: auto; background: none; color: inherit; }
+.prow-main { display: grid; gap: 3px; min-width: 0; }
+.prow-name { font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); transition: color .15s var(--ease);
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.prow-meta { font-size: 12px; font-weight: 450; color: var(--wait); letter-spacing: 0; }
+.prow-hyp { font-size: 13px; line-height: 1.45; color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prow.is-off .prow-name { color: var(--ink-2); }
+.prow-stage { display: grid; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
+.prow-meter { display: flex; gap: 3px; }
+.prow-meter i { width: 18px; height: 3px; border-radius: 2px; background: var(--line-2); }
+.prow-meter i.on { background: var(--ink-2); }
+.prow-n { text-align: right; font-variant-numeric: tabular-nums; font-size: 15px; color: var(--ink-2); }
+.prow-n.is-hero { color: var(--ink); font-weight: 600; }
+.prow.is-head .prow-n { font-size: 12px; color: var(--faint); font-weight: 400; }
+@media (max-width: 720px) { .prow { grid-template-columns: minmax(0,1fr) 64px 64px; gap: 12px; padding: 16px 4px; } .prow-sigs, .prow-stage, .prow.is-head > span:nth-child(3) { display: none; } .prow-hyp { white-space: normal; } }
