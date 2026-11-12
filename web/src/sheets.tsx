@@ -1217,7 +1217,7 @@ export function PlaySheet({ id }: { id: number }) {
         : <button className="btn line" disabled={busy || !isManager} onClick={() => change({ status: "live", reason: "Resumed from the desk" }, "Live again.")}>Resume</button>}
       {promo.next && p.status !== "draft" ? (promo.ready && isManager
         ? <button className="btn" disabled={busy} onClick={() => change({ autonomy: promo.next, reason: "Met every check" }, "Promoted to the next stage.")}>Promote to stage {STAGE_ORDER.indexOf(promo.next) + 1} of 4</button>
-        : <span className="mute small">{promo.ready ? "Ready for the next stage. A manager promotes it." : `Next stage: ${promo.checks.filter((c: any) => c.ok).length} of ${promo.checks.length} checks met`}</span>) : null}
+        : null) : null}
     </>
   ) : undefined;
   return (
