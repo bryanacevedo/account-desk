@@ -49,6 +49,8 @@ class PlayIn(BaseModel):
     holdout_pct: int = Field(ge=0, le=50)
     urgent: bool = False
     latency_hours: int = Field(ge=4, le=168)
+    # The theme a suggestion was built on, when the play is saved from one (docs/PLAY-SUGGESTIONS.md section 4).
+    suggested_from: int | None = None
 
     @field_validator("sequence")
     @classmethod

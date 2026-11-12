@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowSquareOut, Buildings, CalendarCheck, ChatCircleText, CheckSquare, EnvelopeSimple, LinkedinLogo, ListChecks, Phone, UserCircle, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowSquareOut, Buildings, CalendarCheck, ChatCircleText, CheckSquare, EnvelopeSimple, Lightbulb, LinkedinLogo, ListChecks, Phone, UserCircle, X } from "@phosphor-icons/react";
 import { api } from "./api";
 import { Avatar, Logo } from "./marks";
 import { SignalIcon, SignalLabel } from "./signalIcons";
@@ -37,6 +37,7 @@ const KIND: Record<string, { label: string; icon: typeof X; tone: string }> = {
   task: { label: "Task", icon: CheckSquare, tone: "task" },
   meeting: { label: "Meeting", icon: CalendarCheck, tone: "meeting" },
   play: { label: "Play", icon: ListChecks, tone: "play" },
+  suggestion: { label: "Suggested play", icon: Lightbulb, tone: "suggestion" },
 };
 const kindOf = (crumb: ReactNode): string => {
   const w = typeof crumb === "string" ? crumb.toLowerCase() : "";
@@ -94,7 +95,12 @@ export function SheetHost() {
   if (kind === "meeting") return <MeetingSheet key={key} id={Number(id)} />;
   if (kind === "reply") return <ReplySheet key={key} id={Number(id)} />;
   if (kind === "play") return <PlaySheet key={key} id={Number(id)} />;
-  if (kind === "playedit") return <Frame key={key} crumb={id === "new" ? "New play" : "Edit play"}><PlayEditor id={id === "new" ? null : Number(id)} /></Frame>;
+  if (kind === "suggestion") return <SuggestionSheet key={key} id={Number(id)} />;
+  if (kind === "playedit") {
+    const from = id === "new" && params.get("suggestion") ? Number(params.get("suggestion")) : null;
+    return <Frame key={key + (from ?? "")} crumb={id === "new" ? (from ? "New play, from a suggestion" : "New play") : "Edit play"}>
+      <PlayEditor id={id === "new" ? null : Number(id)} fromSuggestion={from} /></Frame>;
+  }
   return null;
 }
 
@@ -1501,3 +1507,109 @@ export function Comparison({ rows }: { rows: [string, any][] }) {
 const CMP = "minmax(0,1.2fr) 130px 130px minmax(0,1.3fr)";
 
 export { withParam };
+
+// ---------------------------------------------------------------- a play suggested from call learnings
+
+/** "1 in 4,000": a chance in words a new hire can read. */
+const oneIn = (p: number) => `1 in ${n0(Math.max(1, 1 / Math.max(p, 1e-12)))}`;
+
+export function SuggestionSheet({ id }: { id: number }) {
+  const { data: s, error, reload } = useData<any>(`/api/play-suggestions/${id}`);
+  const me = useData<any>("/api/me").data;
+  const [busy, run] = useBusy();
+  const [asking, setAsking] = useState<null | "not_now" | "dismissed">(null);
+  const [reason, setReason] = useState("");
+  if (error) return <Frame crumb="Suggested play" kind="suggestion"><Failed error={error} retry={reload} /></Frame>;
+  if (!s) return <Frame crumb="Suggested play" kind="suggestion"><Loading rows={8} /></Frame>;
+  const e = s.evidence, d = s.draft;
+  const role = me?.user.role;
+  const decide = (decision: "not_now" | "dismissed") => run(async () => {
+    await api(`/api/play-suggestions/${id}/decide`, { method: "POST", body: { decision, reason: reason.trim() || null } });
+    closeSheet();
+  }, decision === "not_now" ? "Set aside. It comes back if the pattern grows by half." : "Dismissed. This theme is not suggested again.");
+  const makeDraft = () => {
+    const u = new URL(window.location.href);
+    u.searchParams.set("sheet", "playedit:new");
+    u.searchParams.set("suggestion", String(id));
+    u.searchParams.set("from", `suggestion:${id}`);
+    navigate(u.pathname + "?" + u.searchParams.toString());
+  };
+  const open = s.status === "open";
+  const foot = open && (role === "gtm" || role === "manager") ? (asking ? (
+    <div style={{ display: "grid", gap: 8, width: "100%" }}>
+      <textarea className="input" rows={2} value={reason} maxLength={300} onChange={(x) => setReason(x.target.value)} autoFocus
+        aria-label="Why" placeholder={asking === "not_now" ? "Why not now (needed)" : "Why not (optional)"} />
+      <div className="actions" style={{ justifyContent: "flex-end" }}>
+        <button className="btn quiet sm" disabled={busy} onClick={() => { setAsking(null); setReason(""); }}>Back</button>
+        <button className="btn sm" disabled={busy || (asking === "not_now" && !reason.trim())} onClick={() => decide(asking)}>
+          {asking === "not_now" ? "Set aside" : "Never suggest this theme"}</button>
+      </div>
+    </div>
+  ) : (
+    <>
+      <button className="btn quiet" disabled={busy} onClick={() => setAsking("dismissed")}>No</button>
+      <button className="btn line" disabled={busy} onClick={() => setAsking("not_now")}>Not now</button>
+      {role === "gtm" ? <button className="btn" disabled={busy} onClick={makeDraft}>Make it a draft play</button>
+        : <span className="mute small">GTM turns it into a draft play</span>}
+    </>
+  )) : undefined;
+  const STATUS: Record<string, string> = { drafted: "Made into a draft play", not_now: "Set aside for now", dismissed: "Dismissed for good", lapsed: "The pattern went away" };
+  return (
+    <Frame crumb="Suggested play" kind="suggestion" foot={foot}>
+      <div style={{ display: "grid", gap: 6 }}>
+        <div className="mute small">{s.kind === "competitor" ? "A competitor heard on calls" : "A reason to buy heard on calls"}</div>
+        <h2 style={{ fontSize: 20, lineHeight: "26px", fontWeight: 620, letterSpacing: "-0.02em" }}>{s.theme || "Theme erased"}</h2>
+      </div>
+      {!open ? <div className="notice"><Status kind="off">{STATUS[s.status] || cap(s.status)}</Status>
+        <span className="mute">{s.decided_by_name ? `${s.decided_by_name}, ` : ""}{day(s.decided_at)}{s.reason ? `: ${s.reason}` : ""}</span>
+        {s.play_id ? <button className="link" onClick={() => openSheet("play", s.play_id)}>Open the play</button> : null}</div> : null}
+      <Section title="The pattern">
+        <p style={{ margin: 0, maxWidth: "62ch" }}>Heard at <b>{e.accounts} of the {e.segment_accounts}</b> accounts that came in on{" "}
+          <SignalLabel type={s.segment_signal_type} label={s.segment_label} />, against {e.elsewhere} of {e.elsewhere_accounts} elsewhere,
+          in notes from {e.sdrs} SDRs over the last {e.window_days} days.</p>
+        <div className="lift-pair">
+          <div><b>{pct(e.rate, 0)}</b><span>of accounts that came in on this signal <span className="mute">({e.accounts} of {e.segment_accounts})</span></span></div>
+          <div><b>{pct(e.rate_elsewhere, 0)}</b><span>of the other accounts with call notes <span className="mute">({e.elsewhere} of {e.elsewhere_accounts})</span></span></div>
+        </div>
+        <Status kind="ok" title="A one-sided Fisher exact test, held to 0.05 divided by the number of pairs compared (Bonferroni).">
+          {`A gap this size comes by chance about ${oneIn(e.p)} times`}</Status>
+        <div className="mute small" style={{ maxWidth: "62ch" }}>The desk compared {e.pairs_tested} pairs of theme and signal, so a gap had to be
+          rarer than {oneIn(e.alpha)} to count. This one is.</div>
+      </Section>
+      <Section title="What they said" count={s.quotes.length}>
+        <div className="ledger">
+          {s.quotes.map((q: any) => (
+            <button key={q.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr)" }} onClick={() => openSheet("meeting", q.meeting_id)}>
+              <Logo domain={q.primary_domain} name={q.company} />
+              <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>&ldquo;{q.quote}&rdquo;</span>
+                <span className="s">{q.company}{q.sdr ? `, ${q.sdr}` : ""}, {day(q.created_at)}</span></div>
+            </button>
+          ))}
+        </div>
+      </Section>
+      {s.objections.length ? (
+        <Section title="What you will hear">
+          <div className="ledger">
+            {s.objections.map((o: any) => (
+              <div key={o.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto", minHeight: 36 }}>
+                <span className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{o.label}</span>
+                  <span className="s">{o.kind === "reason_not" ? "Reason not to buy" : "Objection"}</span></span>
+                <span className="num mute small">{o.accounts} {o.accounts === 1 ? "account" : "accounts"}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      ) : null}
+      <Section title="The drafted play">
+        <dl className="kv">
+          <dt>Name</dt><dd>{d.name}</dd>
+          <dt>Why</dt><dd>{d.hypothesis}</dd>
+          <dt>First touch</dt><dd>{d.angle}</dd>
+          <dt>Starts on</dt><dd style={{ display: "grid", gap: 6 }}>{d.trigger.any_of.map((k: string) => <SignalLabel key={k} type={k} label={s.draft_labels?.signals[k] || cap(k)} />)}</dd>
+          <dt>Who</dt><dd>{d.personas.map((k: string) => s.draft_labels?.personas[k] || PERSONA[k] || k).join(", ")}</dd>
+        </dl>
+        <div className="mute small">Saved as a draft at the first stage, where the SDR writes everything. A manager other than its author launches it.</div>
+      </Section>
+    </Frame>
+  );
+}

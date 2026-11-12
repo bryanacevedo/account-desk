@@ -28,6 +28,11 @@ def erase(cur, person_id: int, *, actor_id: int | None) -> dict:
     email = (p["email"] or "").lower()
     counts = {}
     name_like = "%" + p["full_name"].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    # Themes whose learnings go with this person, so a theme left empty goes too (with its suggestions).
+    themes = [r["theme_id"] for r in db.all(cur, """
+        select distinct l.theme_id from learnings l join call_notes cn on cn.id = l.call_note_id
+        join meetings m on m.id = cn.meeting_id where l.theme_id is not null and (l.quote ilike %s or m.person_id = %s)""",
+        name_like, person_id)]
     counts["learnings"] = db.run(cur, "delete from learnings where quote ilike %s", name_like)
     counts["replies"] = db.run(cur, "delete from replies where person_id = %s or (%s <> '' and from_addr = %s)",
                                person_id, email, email)
@@ -54,5 +59,12 @@ def erase(cur, person_id: int, *, actor_id: int | None) -> dict:
         db.run(cur, "insert into suppressions (kind, value, reason, source) values ('email_hash', "
                     "encode(sha256(convert_to(%s, 'UTF8')), 'hex'), 'Erased on request', 'erasure')", email)
     counts["people"] = db.run(cur, "delete from people where id = %s", person_id)  # enrollments and messages cascade
+    if themes:
+        # A theme left with no learnings, and every suggestion on it, goes. A drafted suggestion's play stays, and the
+        # play and the suggestion's record stop pointing at the theme (the foreign keys set them to null).
+        empty = [r["id"] for r in db.all(cur, """select id from learning_themes t where id = any(%s)
+                                                and not exists (select 1 from learnings l where l.theme_id = t.id)""", themes)]
+        counts["play_suggestions"] = db.run(cur, "delete from play_suggestions where theme_id = any(%s) and status <> 'drafted'", empty)
+        counts["learning_themes"] = db.run(cur, "delete from learning_themes where id = any(%s)", empty)
     audit.log(cur, "person", "erased", "person", person_id, {"counts": counts}, actor_id=actor_id)
     return {"ok": True, "counts": counts}

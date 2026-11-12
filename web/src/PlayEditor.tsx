@@ -10,6 +10,7 @@ type Draft = {
   name: string; hypothesis: string; angle: string; personas: string[]; max_people: number; holdout_pct: number;
   urgent: boolean; latency_hours: number; sequence: Step[];
   trigger: { any_of: string[]; fit_tiers: string[]; min_priority: number; within_days: number };
+  suggested_from?: number | null;
 };
 
 const BLANK: Draft = {
@@ -29,11 +30,13 @@ const STEP_KINDS: [string, string, string, string][] = [
 const PERSONAS: [string, string][] = [["cfo", "Finance leader"], ["controller", "Controller"],
   ["revops", "Revenue operations"], ["data", "Data and systems"]];
 
-export function PlayEditor({ id }: { id: number | null }) {
+export function PlayEditor({ id, fromSuggestion = null }: { id: number | null; fromSuggestion?: number | null }) {
   const existing = useData<any>(id ? "/api/plays" : null).data;
+  // From a suggestion: its drafted fields over the defaults for a new play; every other field stays the default.
+  const suggestion = useData<any>(!id && fromSuggestion ? `/api/play-suggestions/${fromSuggestion}` : null).data;
   const settings = useData<any>("/api/settings").data;
   const me = useData<any>("/api/me").data;
-  const [d, setD] = useState<Draft | null>(id ? null : BLANK);
+  const [d, setD] = useState<Draft | null>(id || fromSuggestion ? null : BLANK);
   const [pv, setPv] = useState<any>(null);
   const [pvError, setPvError] = useState<string | null>(null);
   const [busy, run] = useBusy();
@@ -44,6 +47,12 @@ export function PlayEditor({ id }: { id: number | null }) {
     if (p) setD({ name: p.name, hypothesis: p.hypothesis, angle: p.angle, personas: p.personas, max_people: p.max_people,
       holdout_pct: p.holdout_pct, urgent: p.urgent, latency_hours: p.latency_hours, sequence: p.sequence, trigger: p.trigger });
   }, [id, existing, d]);
+  useEffect(() => {
+    if (id || !suggestion || d) return;
+    const x = suggestion.draft;
+    setD({ ...BLANK, name: x.name, hypothesis: x.hypothesis, angle: x.angle, personas: x.personas,
+      trigger: { ...BLANK.trigger, any_of: x.trigger.any_of }, suggested_from: suggestion.theme_id });
+  }, [id, suggestion, d]);
 
   // Preview and price as the play is written, a moment after the last change.
   const key = JSON.stringify(d);
@@ -82,6 +91,9 @@ export function PlayEditor({ id }: { id: number | null }) {
 
   return (
     <div className="editor">
+      {suggestion && d.suggested_from ? (
+        <div className="notice"><span className="mute">Drafted from calls where accounts that came in on {suggestion.segment_label} said: {suggestion.theme}. Change anything before saving.</span></div>
+      ) : null}
       <Section title="The idea">
         <label className="field"><span>Name</span><input className="input" value={d.name} maxLength={80} onChange={(e) => set({ name: e.target.value })} placeholder="New finance leader, first 90 days" /></label>
         <label className="field"><span>When this happens, these people need us, because</span>

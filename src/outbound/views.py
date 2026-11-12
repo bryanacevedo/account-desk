@@ -2,7 +2,7 @@
 (managers and GTM); a rep's read never carries it."""
 from __future__ import annotations
 
-from . import adapters, db, monitors, outreach, spend, stats
+from . import adapters, db, monitors, outreach, spend, stats, suggestions
 
 OPEN = ("proposed", "accepted", "researching", "approving", "active", "engaged", "meeting")
 
@@ -404,7 +404,9 @@ def lifts(cur, play_id: int | None = None) -> tuple[dict, dict]:
 
 def plays_page(cur, *, money: bool) -> list[dict]:
     out = []
-    for p in db.all(cur, "select p.*, u.name as owner from plays p left join users u on u.id = p.owner_id order by p.id"):
+    for p in db.all(cur, """select p.*, u.name as owner, t.label as suggested_theme from plays p
+                            left join users u on u.id = p.owner_id left join learning_themes t on t.id = p.suggested_from
+                            order by p.id"""):
         f = db.one(cur, "select " + FUNNEL + """,
                    count(*) filter (where state in ('proposed','accepted','researching','approving','active','engaged','meeting')) as open
             from account_plays ap where ap.play_id = %s""", p["id"])
@@ -637,6 +639,7 @@ def settings(cur) -> dict:
             "signal_types": db.all(cur, "select * from signal_types order by weight desc"),
             "icp": db.one(cur, "select * from icp_versions order by published_at desc limit 1"),
             "personas": db.all(cur, "select * from personas"),
+            "suggestion_rule": suggestions.RULE,
             "regions": db.all(cur, "select * from region_rules order by country"),
             "suppressions": db.all(cur, "select id, kind, value, reason, source, created_at, expires_at from suppressions where expires_at is null or expires_at > app_now() "
                                         "order by created_at desc limit 100")}

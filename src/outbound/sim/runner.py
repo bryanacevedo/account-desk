@@ -214,25 +214,47 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
             work_task(cur, rng, t, u, at)
 
 
-# What buyers say on first calls, weighted so some themes recur across calls the way they do in real life.
-REASONS = [("Board wants clean usage revenue by next quarter.", 5), ("They close the books in 9 days and want it under 5.", 4),
-           ("Need finance and product to agree on one usage number.", 4), ("Want invoices to match contracts without manual fixes.", 3),
-           ("Audit flagged revenue recognition on usage contracts.", 2), ("Need to launch usage pricing for the API product in Q1.", 2),
-           ("Want one place for contract terms and invoices.", 1), ("Close team spends a week reconciling usage by hand.", 2)]
+# What buyers say on first calls, weighted so some themes recur across calls the way they do in real life. Each is
+# written a few ways, so filing them under themes has real work to do.
+REASONS = [(("Board wants clean usage revenue by next quarter.", "Their board wants usage revenue reported cleanly by next quarter.",
+             "Board is pushing for clean usage revenue numbers next quarter."), 5),
+           (("They close the books in 9 days and want it under 5.", "Close takes 9 days today; they want it under 5.",
+             "Want to get the monthly close from 9 days to under 5."), 4),
+           (("Need finance and product to agree on one usage number.", "Finance and product report different usage numbers; they need one.",
+             "Want one usage number that finance and product both trust."), 4),
+           (("Want invoices to match contracts without manual fixes.", "Want invoices to match what the contract says, with no manual fixes."), 3),
+           (("Audit flagged revenue recognition on usage contracts.", "Auditors flagged rev rec on the usage contracts.",
+             "Last audit raised revenue recognition issues on usage contracts."), 1),
+           (("Need to launch usage pricing for the API product in Q1.", "Launching usage pricing for the API product in Q1 and need billing ready.",
+             "Want usage-based pricing live for the API product by Q1."), 1),
+           (("Want one place for contract terms and invoices.",), 1),
+           (("Close team spends a week reconciling usage by hand.", "Their close team reconciles usage by hand for a week every month.",
+             "A week of every close goes to reconciling usage manually."), 1)]
 OBJECTIONS = [("Worried about migration effort and losing invoice history.", 5), ("Not sure about timing, a renewal is due in March.", 3),
               ("Too expensive was the first reaction; asked about a phased rollout.", 3),
               ("Concern about adding another tool for a small finance team.", 2),
               ("Worried the ERP sync will need engineering time.", 3), ("Not sure who owns billing after the reorg.", 1)]
-TOOLS = [("Currently on Chargewise, contract ends in June.", 4), ("Evaluating Meterline as well.", 3),
-         ("Billing runs on spreadsheets and Stripe invoices.", 3), ("Built an in-house billing script that one engineer maintains.", 2)]
+TOOLS = [(("Currently on Chargewise, contract ends in June.",), 4),
+         (("Evaluating Meterline as well.", "Also looking at Meterline.", "Meterline is on their shortlist too."), 1),
+         (("Billing runs on spreadsheets and Stripe invoices.",), 3), (("Built an in-house billing script that one engineer maintains.",), 2)]
 CONTEXT = ["On the call: the CFO and the controller.", "Next step: a sandbox with last month's usage data.",
            "Follow up with pricing for 40,000 invoices a month.", "They will bring the data team to the next call."]
+# A planted relationship, so the demo has a true pattern for play suggestions to find (README, "What is real and what
+# is simulated"): accounts that came in on these signals raise this reason (or name this competitor) on most first
+# calls, and everyone else rarely does. Nothing else in the notes depends on the signal.
+PLANTED = {"new_exec": REASONS[4][0], "hiring_function": REASONS[7][0], "pricing_change": REASONS[5][0],
+           "competitor_review": TOOLS[1][0]}
+PLANTED_SHARE = 0.8
 
 
-def call_notes(rng: random.Random) -> str:
+def call_notes(rng: random.Random, signal_type: str | None = None) -> str:
     def pick(pool, k):
-        return rng.choices([x for x, _ in pool], weights=[w for _, w in pool], k=k)
-    lines = [rng.choice(CONTEXT)] + pick(REASONS, rng.randint(1, 2)) + pick(OBJECTIONS, rng.randint(0, 2)) + pick(TOOLS, rng.randint(0, 1))
+        return [rng.choice(x) if isinstance(x, tuple) else x
+                for x in rng.choices([x for x, _ in pool], weights=[w for _, w in pool], k=k)]
+    lines = [rng.choice(CONTEXT)] + pick(REASONS, rng.randint(1, 2))
+    if signal_type in PLANTED and rng.random() < PLANTED_SHARE:
+        lines.append(rng.choice(PLANTED[signal_type]))
+    lines += pick(OBJECTIONS, rng.randint(0, 2)) + pick(TOOLS, rng.randint(0, 1))
     return "\n".join(dict.fromkeys(lines))
 
 
@@ -252,16 +274,19 @@ def _crm_deal(cur, rng: random.Random, at: datetime, account_id: int, need: floa
 
 
 def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
-    for m in db.all(cur, """select m.*, sa.need::float as need, p.email from meetings m join sim_accounts sa on sa.account_id = m.account_id
-                            left join people p on p.id = m.person_id
+    for m in db.all(cur, """select m.*, sa.need::float as need, p.email, s.type_key, coalesce(m.owner_id, a.owner_id) as writer
+                            from meetings m join sim_accounts sa on sa.account_id = m.account_id
+                            join accounts a on a.id = m.account_id left join people p on p.id = m.person_id
+                            left join account_plays ap on ap.id = m.account_play_id left join signals s on s.id = ap.trigger_signal_id
                             where m.status = 'booked' and m.starts_at < %s""", at):
         status = "held" if rng.random() < 0.84 else "no_show"
         pipeline.set_meeting_status(cur, m["id"], status)
         if status == "held":
-            notes = call_notes(rng)
-            nid = pipeline.record_call_notes(cur, m["id"], notes, m["owner_id"])
+            # What was said on the call has its own random stream, so the notes never shift the rest of the world.
+            notes = call_notes(random.Random(f"notes:{m['id']}"), m["type_key"])
+            nid = pipeline.record_call_notes(cur, m["id"], notes, m["writer"])
             if rng.random() < 0.9:
-                pipeline.learn_from(cur, nid, m["owner_id"])
+                pipeline.learn_from(cur, nid, m["writer"])
             if rng.random() < 0.22 + 0.5 * m["need"]:
                 db.run(cur, "insert into sim_events (at, kind, payload) values (%s, 'opportunity', %s)",
                        at + timedelta(days=rng.randint(2, 8)), J({"account_id": m["account_id"], "email": m["email"]}))

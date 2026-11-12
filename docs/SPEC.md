@@ -345,7 +345,7 @@ Design follows docs/DESIGN-CHECKLIST.md (the house rules, adapted from an earlie
 
 - One process in the demo: API, scheduler and worker. The worker claims jobs with `SKIP LOCKED`; the scheduler enqueues periodic jobs (ingest, decay rescoring, scheduled sends, SLA checks, reconcile, monitors) with dedupe keys so a double tick enqueues once.
 - Structured JSON logs with a request and job id. `/api/health` reports database, job backlog, dead jobs, stale sources, undelivered alerts, and monitor findings.
-- The demo clock: `make demo` seeds a world and runs 60 simulated days so every screen has history; the app's clock control advances days.
+- The demo clock: `make demo` seeds a world and runs 90 simulated days so every screen has history; the app's clock control advances days.
 
 ## 20. Stack and hosting
 

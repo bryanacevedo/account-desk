@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Avatar } from "../marks";
 import { SIGNAL_NAME, SignalIcon, SignalLabel } from "../signalIcons";
-import { ArrowSquareOut } from "@phosphor-icons/react";
+import { ArrowSquareOut, Lightbulb } from "@phosphor-icons/react";
 import {
   Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, n0, navigate, pct, usePath, useData,
   withParam, useBusy,
@@ -251,6 +251,7 @@ export function Plays() {
     <div className="page">
       <div className="head"><div><h1>Plays</h1><p className="sub">{live} live</p></div>
         {me?.user.role === "gtm" ? <button className="btn" onClick={() => openSheet("playedit", "new")}>New play</button> : null}</div>
+      {me && me.user.role !== "sdr" ? <Suggested /> : null}
       <div className="plist">
         <div className="prow is-head" aria-hidden="true"><span className="prow-sigs" /><span>Play, and who writes</span><span className="prow-n">Accounts</span><span className="prow-n">Meetings</span></div>
         {data.plays.map((p: any, i: number) => <PlayRow key={p.id} p={p} i={i} />)}
@@ -258,5 +259,38 @@ export function Plays() {
     </div>
   );
 }
+
+/** Plays the desk suggests from what buyers said on calls, once code finds a clear pattern. Manager and GTM only:
+ * the quotes behind them are private. */
+function Suggested() {
+  const { data } = useData<any>("/api/play-suggestions");
+  if (!data) return null;
+  const rows = data.suggestions;
+  return (
+    <Section title="Suggested from calls" icon={Lightbulb} count={rows.length}>
+      {rows.length ? (
+        <div className="ledger wrap-names">
+          {rows.map((x: any) => {
+            const e = x.evidence;
+            return (
+              <button key={x.id} className="row" style={{ gridTemplateColumns: SUG_COLS }} onClick={() => openSheet("suggestion", x.id)}>
+                <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{x.theme}</span>
+                  <span className="s">{x.draft.name}</span></div>
+                <span className="hide-sm"><SignalLabel type={x.segment} label={x.segment_label} /></span>
+                <span className="num" data-label="Came in on it"><span className="strong">{e.accounts} of {e.segment_accounts}</span> <span className="mute small">{pct(e.rate)}</span></span>
+                <span className="num mute" data-label="Elsewhere">{e.elsewhere} of {e.elsewhere_accounts} <span className="small">{pct(e.rate_elsewhere)}</span></span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <Empty title="No clear pattern in call notes yet">
+          <span className="mute"> A play is suggested when the same reason is heard at {data.rule.min_accounts} or more accounts that came in on one signal, from {data.rule.min_sdrs} or more SDRs, clearly more often than elsewhere.</span>
+        </Empty>
+      )}
+    </Section>
+  );
+}
+const SUG_COLS = "minmax(0,1.6fr) minmax(0,1.2fr) 120px 120px";
 
 export { cap };

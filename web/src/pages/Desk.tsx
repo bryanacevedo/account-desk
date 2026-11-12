@@ -568,6 +568,15 @@ export function Settings() {
           <div className="small mute">A starting point. Counsel to confirm.</div>
         </Section>
       </div>
+      <Section title="Plays suggested from calls">
+        <dl className="kv">
+          <dt>Heard at</dt><dd>{data.suggestion_rule.min_accounts} or more accounts that came in on one signal</dd>
+          <dt>Written by</dt><dd>{data.suggestion_rule.min_sdrs} or more different SDRs</dd>
+          <dt>Call notes from</dt><dd>The last {data.suggestion_rule.window_days} days</dd>
+          <dt>Clearly more often</dt><dd>Than at other accounts: a one-sided Fisher exact test at {data.suggestion_rule.alpha}, divided by the number of pairs compared</dd>
+          <dt>Set aside</dt><dd>Comes back when heard at {data.suggestion_rule.regrow} times as many accounts</dd>
+        </dl>
+      </Section>
       {me?.user.role === "manager" ? <Team /> : null}
       <IcpSection icp={data.icp} canEdit={canEdit} onDone={reload} />
       {me && me.user.role !== "sdr" ? <ImportBox /> : null}

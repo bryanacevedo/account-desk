@@ -1,4 +1,4 @@
-# The hosted demo: one container with Postgres inside it, holding a 60-day simulated desk built when the image is.
+# The hosted demo: one container with Postgres inside it, holding a 90-day simulated desk built when the image is.
 FROM node:26-slim AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./

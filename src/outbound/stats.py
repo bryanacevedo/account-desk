@@ -70,6 +70,19 @@ def lift_report(treated_k: int, treated_n: int, hold_k: int, hold_n: int, *, con
             "detectable_lift": assumed_lift, "confidence": conf}
 
 
+def fisher_greater(k: int, n_in: int, m: int, total: int) -> float:
+    """One-sided Fisher exact test: the chance of seeing k or more of the m accounts that heard something inside a
+    group of n_in, out of `total` accounts, if hearing it had nothing to do with the group (the hypergeometric upper
+    tail). The 2x2 table is [[k, n_in - k], [m - k, total - n_in - m + k]]. Exact integers, no dependency."""
+    if not (0 <= k <= m <= total and 0 <= n_in <= total) or k > n_in:
+        raise ValueError("not a 2x2 table")
+    top = min(m, n_in)
+    if k > top:
+        return 0.0
+    hits = sum(math.comb(m, x) * math.comb(total - m, n_in - x) for x in range(k, top + 1))
+    return hits / math.comb(total, n_in)
+
+
 def within_reach(lift: dict, room: int) -> dict:
     """Marks a comparison that cannot settle at this desk's size: the accounts it still needs (worked plus held back)
     are more than the accounts left that have never been offered it. Counting is intention to treat on the first

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
-from . import adapters, alerts, audit, db, jobs, plays
+from . import adapters, alerts, audit, db, jobs, plays, suggestions, themes  # noqa: F401 register the theme and pattern jobs
 from .db import J
 
 log = logging.getLogger("outbound.pipeline")
@@ -299,8 +299,9 @@ def crm_sync(cur, payload: dict) -> None:
 
 
 def record_call_notes(cur, meeting_id: int, text: str, user_id: int) -> int:
-    return db.val(cur, "insert into call_notes (meeting_id, text, marked_by) values (%s,%s,%s) returning id",
-                  meeting_id, text, user_id)
+    """The person saving the notes wrote them; who later marks them worth learning from may be someone else."""
+    return db.val(cur, "insert into call_notes (meeting_id, text, marked_by, written_by) values (%s,%s,%s,%s) returning id",
+                  meeting_id, text, user_id, user_id)
 
 
 def learn_from(cur, note_id: int, user_id: int) -> int:
@@ -318,4 +319,7 @@ def learn_from(cur, note_id: int, user_id: int) -> int:
                            values (%s,%s,%s,%s,%s,%s)""", note_id, item["kind"], item["text"], item["quote"],
                    n["play_id"], n["type_key"])
             kept += 1
+    # Filing under themes is a model call per learning: a background job, never part of this request.
+    if kept:
+        jobs.enqueue(cur, "file_learnings", {"call_note_id": note_id})
     return kept

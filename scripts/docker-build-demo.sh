@@ -13,5 +13,5 @@ listen_addresses = '127.0.0.1'
 CONF
 su postgres -c "$PGBIN/pg_ctl -D /data -l /tmp/pg.log -w start"
 su postgres -c "$PGBIN/createdb -h 127.0.0.1 -U postgres outbound"
-/app/.venv/bin/python -m outbound demo 60
+/app/.venv/bin/python -m outbound demo 90
 su postgres -c "$PGBIN/pg_ctl -D /data -m fast -w stop"

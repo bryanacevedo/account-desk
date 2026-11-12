@@ -238,3 +238,58 @@ def extract(p: dict) -> dict:
 def check_claims(p: dict) -> dict:
     """The stand-in trusts its own drafts, which only restate facts."""
     return {"sentences": [{"index": i, "supported": True, "why": ""} for i, _ in enumerate(p["sentences"])]}
+
+
+# The theme stand-in groups by meaning the cheap way: content words, a few synonyms, and how much two wordings share.
+_STOP = set("a an the and or of on in to for by with it its is are was were be been they their them we our us as at "
+            "from that this these those than then so but not no all any one more most very up out also still just "
+            "want wants need needs said says say".split())
+_SYN = {"auditors": "audit", "audited": "audit", "auditor": "audit", "rev": "revenue", "rec": "recognition",
+        "revrec": "revenue recognition", "recognised": "recognition", "recognized": "recognition",
+        "reconcile": "reconciling", "reconciliation": "reconciling", "reconciled": "reconciling", "reconciles": "reconciling", "manually": "hand",
+        "manual": "hand", "books": "close", "closing": "close", "contract": "contracts", "invoice": "invoices",
+        "boards": "board", "consumption": "usage", "metered": "usage"}
+
+
+def _words(text: str) -> set[str]:
+    out: set[str] = set()
+    for w in re.findall(r"[a-z]+", text.lower()):
+        for part in _SYN.get(w, w).split():
+            if part not in _STOP and len(part) > 2:
+                out.add(part.rstrip("s") if len(part) > 4 else part)
+    return out
+
+
+@sim("theme")
+def theme(p: dict) -> dict:
+    mine = _words(p["text"])
+    best, score = None, 0.0
+    for t in p["themes"]:
+        theirs = _words(t["label"])
+        if mine and theirs:
+            s = len(mine & theirs) / min(len(mine), len(theirs))
+            if s > score:
+                best, score = t, s
+    if best is not None and score >= 0.6:
+        return {"theme_id": best["id"], "new_label": None}
+    label = p["text"].strip().rstrip(".")
+    return {"theme_id": None, "new_label": label[:1].upper() + label[1:80]}
+
+
+def _short(text: str, n: int) -> str:
+    """Cut at a word, never inside one."""
+    return text if len(text) <= n else text[:n].rsplit(" ", 1)[0].rstrip(" ,:;")
+
+
+@sim("draft_play")
+def draft_play(p: dict) -> dict:
+    seg, idea = p["segment"], _lower_first(p["theme"]["label"]).rstrip(".")
+    return {
+        "name": _short(f"{seg['label']}: {idea}", 60),
+        "hypothesis": (f"Accounts that come in on {_lower_first(seg['label'])} keep raising the same need on first calls: "
+                       f"{idea}. {seg['because']}")[:400],
+        "trigger": {"any_of": [seg["key"]]},
+        "personas": [x["key"] for x in p["catalog"]["personas"]][:2],
+        "angle": (f"Teams in that position often find this: {idea}. Lead with how other finance teams handled it, "
+                  "and ask whether it is on their list" + (", without naming what we saw." if any("without naming" in f for f in p.get("failures", [])) else "."))[:400],
+    }

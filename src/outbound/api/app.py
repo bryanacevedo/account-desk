@@ -40,6 +40,8 @@ from .. import (  # noqa: F401
     sdr_steps,
     sending,
     signals,
+    suggestions,
+    themes,
     vendors,
     views,
 )
@@ -314,6 +316,43 @@ def ops(u: dict = Depends(current_user)) -> dict:
     need(u, "gtm", "manager")
     with db.tx() as cur:
         return views.health(cur)
+
+
+@app.get("/api/play-suggestions")
+def play_suggestions(u: dict = Depends(current_user)) -> dict:
+    """Plays suggested from call learnings that wait for a decision. Their quotes are private: manager and GTM only."""
+    need(u, "manager", "gtm")
+    with db.tx() as cur:
+        return {"suggestions": suggestions.open_list(cur), "rule": suggestions.RULE}
+
+
+@app.get("/api/play-suggestions/{suggestion_id}")
+def play_suggestion(suggestion_id: int, u: dict = Depends(current_user)) -> dict:
+    need(u, "manager", "gtm")
+    with db.tx() as cur:
+        s = suggestions.one(cur, suggestion_id)
+    if s is None:
+        raise HTTPException(404, "No such suggestion.")
+    return s
+
+
+class SuggestionDecision(BaseModel):
+    decision: Literal["not_now", "dismissed"]
+    reason: str | None = Field(None, max_length=300)
+
+
+@app.post("/api/play-suggestions/{suggestion_id}/decide")
+def decide_suggestion(suggestion_id: int, body: SuggestionDecision, u: dict = Depends(writer)) -> dict:
+    """Not now (it comes back if the pattern grows by half) or no (the theme is never suggested again)."""
+    need(u, "manager", "gtm")
+    with db.tx() as cur:
+        try:
+            suggestions.decide(cur, suggestion_id, decision=body.decision, reason=body.reason, user_id=u["id"])
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+    return {"ok": True}
 
 
 @app.get("/api/settings")
@@ -957,12 +996,20 @@ def create_play(body: play_editor.PlayIn, u: dict = Depends(writer)) -> dict:
         if not lia:
             raise HTTPException(422, "The desk has no legitimate-interest reference yet. Set it at init.")
         pid = db.val(cur, """insert into plays (key, name, hypothesis, trigger, personas, max_people, sequence, angle, autonomy,
-                                                status, holdout_pct, owner_id, created_by, urgent, latency_hours, lia_ref)
-                             values (%s,%s,%s,%s,%s,%s,%s,%s,'draft','draft',%s,%s,%s,%s,%s,%s) returning id""",
+                                                status, holdout_pct, owner_id, created_by, urgent, latency_hours, lia_ref,
+                                                suggested_from)
+                             values (%s,%s,%s,%s,%s,%s,%s,%s,'draft','draft',%s,%s,%s,%s,%s,%s,%s) returning id""",
                      key, body.name, body.hypothesis, db.J(body.trigger.model_dump()), body.personas, body.max_people,
                      db.J([s.model_dump() for s in body.sequence]), body.angle, body.holdout_pct, u["id"], u["id"],
-                     body.urgent, body.latency_hours, lia)
-        audit.log(cur, "person", "play_created", "play", pid, {"name": body.name}, actor_id=u["id"])
+                     body.urgent, body.latency_hours, lia, body.suggested_from)
+        if body.suggested_from is not None:
+            # Saved from a suggestion: its open suggestion becomes drafted with this play, in the same transaction.
+            try:
+                suggestions.drafted(cur, body.suggested_from, pid, u["id"])
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+        audit.log(cur, "person", "play_created", "play", pid, {"name": body.name, "suggested_from": body.suggested_from},
+                  actor_id=u["id"])
     return {"ok": True, "id": pid}
 
 

@@ -8,6 +8,7 @@
   init FILE          set up a real desk from a JSON file (see examples/desk.example.json)
   import KIND FILE   import accounts or people from a CSV file
   mcp                read-only MCP server on stdio (why an account is hot, what is waiting, how a play did)
+  themes backfill    file every learning not yet under a theme, then look for play suggestions
 """
 from __future__ import annotations
 
@@ -20,7 +21,8 @@ from datetime import datetime, timezone
 from . import db
 from .config import CONFIG
 
-DEMO_START = datetime(2026, 9, 12, 12, 0, tzinfo=timezone.utc)  # 60 days later is 2026-11-11
+# 90 days, so the 90-day window of call notes behind play suggestions is full. 90 days later is 2026-11-11.
+DEMO_START = datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
 
 
 def main(argv: list[str]) -> int:
@@ -46,17 +48,22 @@ def main(argv: list[str]) -> int:
         with db.tx() as cur:
             print(json.dumps(fn(cur, open(path, encoding="utf-8-sig").read()), indent=1))
     elif cmd == "demo":
-        from . import monitors, outreach, pipeline, replies, scheduler, scoring, sending  # noqa: F401 register handlers
+        from . import monitors, outreach, pipeline, replies, scheduler, scoring, sending, suggestions, themes  # noqa: F401 register handlers
         from .sim import runner
-        days = int(argv[2]) if len(argv) > 2 else 60
+        days = int(argv[2]) if len(argv) > 2 else 90
         t0 = time.time()
         runner.reset()
         info = runner.setup(start=DEMO_START)
         totals = runner.run(days)
+        # Learnings are filed as they arrive; the backfill catches any left over and looks for patterns once more.
+        totals["learnings_filed_after"] = themes.backfill()
         print(json.dumps({"world": info, "totals": totals, "seconds": round(time.time() - t0, 1)}))
         db.close()
+    elif cmd == "themes" and len(argv) > 2 and argv[2] == "backfill":
+        from . import pipeline, themes  # noqa: F401 register handlers
+        print(json.dumps({"filed": themes.backfill()}))
     elif cmd == "simulate":
-        from . import monitors, outreach, pipeline, replies, scheduler, scoring, sending  # noqa: F401
+        from . import monitors, outreach, pipeline, replies, scheduler, scoring, sending, suggestions, themes  # noqa: F401
         from .sim import runner
         print(runner.run(int(argv[2]) if len(argv) > 2 else 1, slow_last_days=0, idle_hours=0))
     elif cmd == "monitors":

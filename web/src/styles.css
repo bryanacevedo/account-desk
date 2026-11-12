@@ -527,6 +527,7 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .sheet.kind-task { --kind: #6B7A2F; --kind-soft: #F1F3E6; }
 .sheet.kind-meeting { --kind: #9A3F5E; --kind-soft: #F7EAEF; }
 .sheet.kind-play { --kind: #5E4D86; --kind-soft: #EFECF6; }
+.sheet.kind-suggestion { --kind: #8A3F86; --kind-soft: #F5EAF4; }
 .sheet::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--kind); opacity: 0.55; }
 .sheet-top { gap: 10px; }
 .sheet-kind { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--ink-2);
