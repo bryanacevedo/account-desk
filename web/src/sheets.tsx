@@ -1261,7 +1261,7 @@ export function PlaySheet({ id }: { id: number }) {
             <div key={i} className="row" style={{ gridTemplateColumns: "56px minmax(0,1fr) auto", minHeight: 36 }}>
               <span className="mute">Day {s.day}</span>
               <span>{STEP_NAME[`${s.channel}:${s.job}`] || cap(s.channel)}</span>
-              <span className="mute small">{s.by === "desk" ? "Desk sends" : "SDR does it"}</span>
+              <span className="mute small">{whoDoes(s, i, p.sequence, p.autonomy)}</span>
             </div>
           ))}
         </div>
@@ -1413,6 +1413,16 @@ function StageScale({ autonomy }: { autonomy: string }) {
       <span className="prow-of">Stage {stage + 1} of 4</span>
     </span>
   );
+}
+
+/** Who actually does a step, given the play's stage: a desk step is only "sent by the desk" once the play has earned it. */
+function whoDoes(step: any, i: number, seq: any[], autonomy: string): string {
+  if (step.by !== "desk") return "SDR does it";
+  const firstEmail = seq.findIndex((x) => x.by === "desk" && x.channel === "email") === i;
+  if (autonomy === "research") return "SDR writes it";
+  if (autonomy === "draft") return "Desk drafts, SDR approves";
+  if (autonomy === "supervised") return firstEmail ? "Desk drafts, SDR approves" : "Desk sends, SDR checks a sample";
+  return "Desk sends to tier B, SDR approves tier A";
 }
 
 export const STAGE: Record<string, string> = { research: "SDR writes everything", draft: "SDR approves every email", supervised: "SDR approves first emails only", autonomous: "Desk sends to tier B on its own" };
