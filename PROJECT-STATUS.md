@@ -10,7 +10,7 @@ Checked on 2026-11-11 by running them:
 
 - `pytest` on real Postgres 18: 223 tests, all passing on 2026-11-11 (branch with play suggestions), including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
 - `ruff check src tests`: clean. `tsc --noEmit` and `vite build`: clean.
-- `make demo`: 700 invented accounts, 90 simulated days (the 90-day window of call notes needs the full 90), about two minutes; opens on 2026-11-11. On the build measured for this branch every SDR had drafts to approve (2 to 4 each) and one suggestion was open; builds differ run to run.
+- `make demo`: 3,000 invented accounts, about 24,700 people, six SDRs (Jonas Weber and Grace Osei added after the first six users, so earlier ids and the film still match), 90 simulated days; 10 to 11 minutes on an idle laptop, 127 MB database; opens on 2026-11-11. Branch `worktree-agent-a547a3b8e499c9fb1` (2026-11-12, not merged or deployed): fixes every finding of the audit of the demo data against the desk's rules (see README "At production size" and "What is real and what is simulated"), and `python -m outbound coverage` counts every scenario the demo shows.
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Since then two fresh design reviews and checks at 375 wide (see below).
 
 ## At production size (measured 2026-11-11)

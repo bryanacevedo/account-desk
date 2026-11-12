@@ -128,6 +128,8 @@ Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts 
 
 At that size the monitors also found the real limit: four SDRs cannot approve first emails fast enough for 5,000 accounts, so 38 accepted accounts passed their play's time limit before a first email. The fix is people or autonomy, not code.
 
+The demo itself is now 3,000 accounts, about 24,700 people and six SDRs. Measured on 2026-11-12 on the same laptop: `python -m outbound demo 90` took 10 to 11 minutes when the machine was otherwise idle (17 while it ran the test suite too) and leaves a 127 MB database. With a pool of three connections, every API page the web app reads answered in 30 ms or less (median of five, 24 pages across the three roles), so no index was added. The SDRs were offered 872 accounts over the 90 days, 129 to 173 each (about 10 to 13 a week; the busiest week 18), and 1% expired unseen. Signal rates are half the old demo's per account, and each play's monthly phone lookups went from 60 to 150: at 60 the busiest plays ran out mid-month and their accounts all arrived on the 1st. This size has not been built or timed on Render's own builder yet.
+
 ### LinkedIn through HeyReach
 
 Set `LINKEDIN_TOOL_TOKEN` to a long random string, then in HeyReach add a webhook to `https://<your desk>/api/webhooks/linkedin/<token>` for "Connection request accepted" and "Message reply received". The desk finds the person by their LinkedIn profile; events for people it does not know are acknowledged and noted. HeyReach reports only the first reply in a conversation, so later messages are pasted on the person's page.
