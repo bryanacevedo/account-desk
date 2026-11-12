@@ -153,7 +153,7 @@ def _working(at: datetime, tzname: str) -> bool:
 # How often SDRs approve a draft without touching it, below the 0.92 of drafts they approve at all. A planted
 # difference (README, "What is real and what is simulated"): the new finance leader play's drafts need fewer edits, so it
 # is the play that earns autonomy, the way one play usually earns it first on a real desk.
-UNEDITED = {"new_finance_leader": 0.885}
+UNEDITED = {"new_finance_leader": 0.885}  # every other play: 0.72, so about 22% of approvals are edited
 
 
 def sdr_edit(body: str) -> str:
@@ -263,7 +263,7 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
                     if roll < 0.5:
                         outreach.reject(cur, m["id"], user_id=u["id"], reason="Did not pass the checks; skipping")
                     continue
-                if roll < UNEDITED.get(m["play"], 0.80):
+                if roll < UNEDITED.get(m["play"], 0.72):
                     outreach.approve(cur, m["id"], user_id=u["id"])
                 elif roll < 0.92:
                     outreach.approve(cur, m["id"], user_id=u["id"], body=sdr_edit(m["body"]))

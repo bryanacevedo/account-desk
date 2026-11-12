@@ -183,7 +183,7 @@ The world holds together the way a real list does: a company's name and product 
 
 Planted so the demo shows every scenario the app can show (`python -m outbound coverage` counts them, and a test fails if any is at zero):
 
-- SDRs edit fewer of the new finance leader play's drafts (about 4% of approvals against 13%), so it is the play that earns autonomy; on Monday mornings the simulated manager approves the next stage for any play whose checks all pass, the same rule the Plays page applies to a click. Demotions are the desk's own (a complaint, bounces or edits).
+- SDRs edit fewer of the new finance leader play's drafts (about 4% of approvals against 22% for the other plays), so it is the play that earns autonomy; on Monday mornings the simulated manager approves the next stage for any play whose checks all pass, the same rule the Plays page applies to a click. Demotions are the desk's own (a complaint, bounces or edits).
 - On Tuesdays the simulated GTM engineer turns the first open play suggestion into a draft play, and the manager sets the next one aside for now and says no to the one after (`SUGGESTION_ROUTINE` in `src/outbound/sim/runner.py`).
 - A few replies are a shared inbox's automatic acknowledgement or say nothing a label can use, one opt-out is in Portuguese, and some call notes give a reason not to buy or a line worth quoting.
 - Region rules: the demo's seller does not sell in Singapore (a business choice, set as `blocked`), and Australia has no rule, so nobody there is cold-emailed ("Email in Australia needs a region rule first").
