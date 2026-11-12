@@ -20,7 +20,7 @@
 </div>
 
 > [!NOTE]
-> **What is real and what is simulated.** The desk's own code is real and tested: scoring, plays, the contact gate and the database trigger behind every send, the copy checks, send windows, reply handling, the statistics, the monitors. Every vendor in the demo is simulated, and so is every buyer. The demo and the tests use a deterministic stand-in for the model; live Claude answers only the evals. The DNS check is live. The Google Postmaster Tools adapter is real code but has never called Google and needs the operator's credentials. The warm-up vendor is a simulated slot. No mail provider is connected, so a live desk cannot send email yet.
+> **What is real and what is simulated.** The desk's own code is real and tested: scoring, plays, the contact gate and the database trigger behind every send, the copy checks, send windows, reply handling, the statistics, the monitors. Every vendor in the demo is simulated, and so is every buyer. The demo and the tests use a deterministic stand-in for the model; live Claude answers the evals, and a desk run with `ANTHROPIC_LIVE` set. The DNS check is live. The Google Postmaster Tools adapter is real code but has never called Google and needs the operator's credentials. The warm-up vendor is a simulated slot. No mail provider is connected, so a live desk cannot send email yet.
 
 <div align="center">
 
@@ -86,7 +86,7 @@ Each play sits at one of four stages, named the same way everywhere in the app:
 | Supervised | SDR approves first emails and checks a sample of the rest |
 | Autonomous | Desk sends to tier B, SDR approves tier A |
 
-Each step up needs 50 approvals with 90% unedited, no complaint, bounces under 2%, a positive reply rate at the play's floor, and known complaint data for every sending domain with an active mailbox (data older than 7 days counts as unknown), and a manager approves it. A spam complaint, hard bounces over 3% of the play's last 200 sends, or SDRs editing more than 6 of the last 20 drafts moves a play back down a stage on its own.
+Leaving research needs no complaint and known complaint data for every sending domain with an active mailbox, then the manager's decision. Each later step up needs 50 approvals with 90% unedited, no complaint, bounces under 2%, a positive reply rate at the play's floor, and known complaint data for every sending domain with an active mailbox (data older than 7 days counts as unknown), and a manager approves it. For a play at the supervised or autonomous stage, a spam complaint, hard bounces over 3% of its last 200 sends (once it has at least 50), or SDRs editing more than 6 of its last 20 drafts moves it back down a stage on its own.
 
 ## What it does
 
@@ -133,7 +133,7 @@ How the simulation behaves:
 
 - The simulated world gives each company a hidden need; signals and replies are drawn from it, with some signal types linked to need strongly and some barely, so the results pages have something true to find. The simulated CRM opens and closes deals outbound had nothing to do with, so the held-back comparison measures what outbound adds.
 - The world holds together the way a real list does: a company's name and product fit its industry, it has one finance leader, and a new finance leader the news announces holds that title and starts that day, while the one they replaced leaves.
-- Simulated SDRs edited 275 of the 2,144 messages they approved in this build (13%; `UNEDITED` in `src/outbound/sim/runner.py`). On Monday mornings the simulated manager approves the next stage for any play at the draft stage or above whose checks all pass; leaving the research stage stays the manager's own call. Demotions are the desk's own.
+- Simulated SDRs edited 275 of the 1,814 emails they approved in this build (15%); they approved 330 LinkedIn notes as written. On Monday mornings the simulated manager approves the next stage for any play at the draft stage or above whose checks all pass; leaving the research stage stays the manager's own call. Demotions are the desk's own.
 - On Tuesdays, once a suggestion has waited two weeks, the simulated GTM engineer turns the first into a draft play, and the manager sets the next aside and says no to the one after (`SUGGESTION_ROUTINE` in `src/outbound/sim/runner.py`).
 - Region rules: the demo's seller does not sell in Singapore, and Australia has no rule, so nobody there is cold-emailed. Every sending domain reports no Postmaster data until it is 45 days old (decision 60).
 
@@ -145,7 +145,7 @@ Every task the model does has an eval: 315 cases in all, 241 of them written by 
 |---|---|---|
 | Labelling replies | 148 | 99% labelled as a careful person would (147), 95% exact; every stop request caught (13 of 13); every positive reply kept positive (53 of 53); no invented referral email; return dates 5 of 6 |
 | Drafting emails and LinkedIn notes | 50 | 88% pass the copy checks and the claim checker after one rewrite (44 of 50; 31 first time); the rest are held as Needs a rewrite, never sent on their own; none cites a private signal or a fact that does not exist; every instruction hidden in a fact ignored; the judge finds 84% (42 of 50) say nothing about the buyer the facts do not support; 1 mentions something its case forbids |
-| Account briefs | 20 | 100% faithful to their facts by the judge (20 of 20); every instruction hidden in a fact ignored |
+| Account briefs | 20 | 16 of 20 with no number or name the code finds unfaithful; 20 of 20 faithful to their facts by the judge; every instruction hidden in a fact ignored |
 | Suggested replies | 30 | 63% pass every check (19 of 30; tone is the usual miss); no invented number or placeholder; 1 in 30 judged to invent something |
 | Learnings from call notes | 20 | 87% of expected learnings found (40 of 46); every quote verbatim; 95% invent nothing |
 | Filing learnings under themes | 32 | 89% of pairs grouped as a person would; different ideas never merged, but the same idea is often split (58% of pairs that belong together kept together) |
@@ -256,6 +256,12 @@ Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/cata
 - **A play's floor**: the positive reply rate a play must keep to earn more autonomy.
 - **Held back**: accounts a play matched but deliberately never contacts, so results can be compared against them (the holdout in the code and the spec).
 - **Inbox test**: a test send to seed mailboxes at Gmail and Outlook that shows whether mail lands in the inbox or in spam.
+- **Account gate**: the code check that decides whether a matched account may be proposed (kill switch, the account's and its parent's lifecycle, tier X, the do-not-contact list, holds, a play already running).
+- **Contact gate**: the code check before any touch to a person (do-not-contact list, holds, a working and recently verified email, another sequence, the cooldown, an unanswered reply at the account, the country rule, consent or a recorded basis); a database trigger repeats the hard rules at send time.
+- **Account calendar**: the schedule that keeps colleagues at one account at least two business days apart.
+- **Learning**: one reason to buy, objection or competitor taken from a call note, with its verbatim quote.
+- **Theme**: a group of learnings that say the same thing in different words.
+- **Eval floor**: the lowest score an eval may return before the test suite fails (`evals/thresholds.json`).
 - **Catch-all**: a mail server that accepts every address, so a normal check cannot say whether one is real.
 
 ## Portfolio
