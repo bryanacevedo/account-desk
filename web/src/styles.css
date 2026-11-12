@@ -702,3 +702,6 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .thesis-body b { font-weight: 600; color: var(--ink); }
 .thesis-sig { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: -2px; }
 .thesis-sig .sig-icon { width: auto; height: auto; background: none; color: var(--mute); }
+
+/* Today's proposals: the play is named in ink, so the row reads as "this play, at this account". */
+.prop-play { color: var(--ink); font-weight: 500; }
