@@ -112,7 +112,8 @@ def test_promotion_is_refused_until_the_checks_pass(client):
     with db.tx() as cur:
         play = db.one(cur, "select id, autonomy from plays where autonomy = 'research' limit 1")
     if play:
-        r = client.post(f"/api/plays/{play['id']}", json={"autonomy": "draft", "reason": "test"},
+        # A stage cannot be skipped, however clean the record (the first stage itself has no drafts to judge).
+        r = client.post(f"/api/plays/{play['id']}", json={"autonomy": "supervised", "reason": "test"},
                         headers={"X-Acting-As": str(user("manager"))})
         assert r.status_code == 422
 
