@@ -51,6 +51,8 @@ Checked by running them (the date is on each line):
 
 ## Done since the first review (2026-11-11)
 
+- `CRM_DESK_OWNER_ROLE` (2026-11-12, shared world Phase 2): with CRM Desk as the CRM, Account Desk follows the account's owner by default, as before, or the SDR with `CRM_DESK_OWNER_ROLE=sdr`, for a CRM Desk that keeps the SDR beside the AE (the shared world). Two tests; the CRM Desk contract suite still passes 9 of 9.
+
 Counts in this list (tests, cases) are as of when each item was done, not today's.
 
 - Final-review fixes (2026-11-12, merged in 41042ab and 23346d5; decisions 51 to 60): compliance gates (ES and NL consent-only, the UK subscriber type in the gate and a send trigger, a legitimate-interest review date that blocks launch, call rules with a call window and a named do-not-call register, a daily retention purge that keeps opt-outs as hashes; migration 0028); security hardening (live mode refuses demo sign-in and the demo's sender details, the public demo is shared and blocks admin writes and moves of more than 24 hours, rate limits key on the nearest forwarded hop that is not a trusted proxy via `FORWARDED_ALLOW_IPS`, body caps, CSRF, webhook replay protection in migration 0029); a copy pass (one wording per stage, "positive reply", "proposed", "inbox test", no raw keys in alerts); complaint data older than 7 days counts as unknown for a promotion, and the always-silent demo domain backed out because it blocked every promotion; the drafting, brief and suggested-play evals re-recorded live with no case held out. README redesigned with figures from a fresh build.

@@ -113,6 +113,10 @@ class CrmDeskCrm:
                         loss_reason=r["loss_reason"], contact_email=r["contact_email"]) for r in rows[:limit]]
 
     def owners_changed(self, cur, since: str | None, limit: int) -> list[CrmOwner]:
-        j = self._ok(self._call("GET", "/changes/owners", params={"limit": limit, **({"since": since} if since else {})}))
+        # Which owner Account Desk follows: the account's owner (the default, as before), or, where the CRM keeps the SDR
+        # beside the AE (CRM Desk on the shared world), CRM_DESK_OWNER_ROLE=sdr. A CRM Desk without roles ignores it.
+        role = os.environ.get("CRM_DESK_OWNER_ROLE", "account").strip().lower()
+        params = {"limit": limit, **({"since": since} if since else {}), **({"role": role} if role != "account" else {})}
+        j = self._ok(self._call("GET", "/changes/owners", params=params))
         return [CrmOwner(account_domain=r["account_domain"], owner_email=r["owner_email"], updated_at=_when(r["updated_at"]),
                          change_id=r["change_id"]) for r in j["data"]]
