@@ -1255,6 +1255,7 @@ export function PlaySheet({ id }: { id: number }) {
           <Fig value={p.median_hours_to_first_touch ? `${Math.round(p.median_hours_to_first_touch)} h` : "None yet"} label="Signal to first email" sm />
           {p.pipeline_cents !== undefined ? <Fig value={money(p.pipeline_cents)} label="Pipeline sourced" sm /> : null}</>}
       </div>
+      {p.suggested_from && me && me.user.role !== "sdr" ? <PlayOrigin id={id} /> : null}
       {p.status === "draft" ? null : <Section title="Accounts">
         <div className="funnel">
           <Bar label="Proposed" value={f.proposed} of={f.proposed} />
@@ -1529,7 +1530,7 @@ export function SuggestionSheet({ id }: { id: number }) {
   const decide = (decision: "not_now" | "dismissed") => run(async () => {
     await api(`/api/play-suggestions/${id}/decide`, { method: "POST", body: { decision, reason: reason.trim() || null } });
     closeSheet();
-  }, decision === "not_now" ? "Set aside. It comes back when heard at 1.5 times as many accounts as when it was set aside." : "Dismissed. This theme is not suggested again.");
+  }, decision === "not_now" ? "Set aside. It comes back when heard at 1.5 times as many accounts as when it was set aside." : "This theme is not suggested again.");
   const makeDraft = () => {
     const u = new URL(window.location.href);
     u.searchParams.set("sheet", "playedit:new");
@@ -1550,39 +1551,36 @@ export function SuggestionSheet({ id }: { id: number }) {
     </div>
   ) : (
     <>
-      <button className="btn quiet" disabled={busy} onClick={() => setAsking("dismissed")}>Dismiss</button>
+      <button className="btn quiet" disabled={busy} onClick={() => setAsking("dismissed")}>Never suggest</button>
       <button className="btn line" disabled={busy} onClick={() => setAsking("not_now")}>Not now</button>
-      {role === "gtm" ? <button className="btn" disabled={busy} onClick={makeDraft}>Make it a draft play</button> : null}
+      {role === "gtm" ? <button className="btn lead" disabled={busy} onClick={makeDraft}>Make it a draft play</button> : null}
     </>
   )) : undefined;
-  const STATUS: Record<string, string> = { drafted: "Made into a draft play", not_now: "Set aside for now", dismissed: "Dismissed", lapsed: "No longer heard often enough" };
+  const STATUS: Record<string, string> = { not_now: "Set aside", dismissed: "Never suggested again", lapsed: "No longer heard often enough" };
   return (
     <Frame crumb="Suggested play" kind="suggestion" foot={foot}>
       <div style={{ display: "grid", gap: 6 }}>
         <div className="mute small">{s.kind === "competitor" ? "Competitor" : "Reason to buy"}</div>
         <h2 className="sheet-title">{s.theme || "Theme removed"}</h2>
       </div>
-      {!open ? <div className="notice"><Status kind="off">{STATUS[s.status] || cap(s.status)}</Status>
-        <span className="mute">{s.decided_by_name ? `${s.decided_by_name}, ` : ""}{day(s.decided_at)}{s.reason ? `: ${s.reason}` : ""}</span>
-        {s.play_id ? <button className="link" onClick={() => openSheet("play", s.play_id)}>Open the play</button> : null}</div> : null}
-      <Section title="How often it came up">
-        <div className="lift-pair">
-          <div><b>{e.accounts} of {e.segment_accounts}</b><span>accounts that came in on {s.segment_label}</span></div>
-          <div><b>{e.elsewhere} of {e.elsewhere_accounts}</b><span>other accounts with call notes</span></div>
-        </div>
-        <div className="mute small">From {e.sdrs} SDR{e.sdrs === 1 ? "" : "s"} in the last {e.window_days} days. Settings sets how often a theme must come up.</div>
-      </Section>
-      <Section title="What they said" count={s.quotes.length}>
-        <div className="ledger">
-          {s.quotes.map((q: any) => (
-            <button key={q.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr)" }} onClick={() => openSheet("meeting", q.meeting_id)}>
-              <Logo domain={q.primary_domain} name={q.company} />
-              <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>&ldquo;{q.quote}&rdquo;</span>
-                <span className="s">{q.company}{q.sdr ? `, ${q.sdr}` : ""}, {day(q.created_at)}</span></div>
-            </button>
-          ))}
-        </div>
-      </Section>
+      {!open ? <div className="notice decided"><b>{STATUS[s.status] || cap(s.status)}</b>
+        {s.reason ? <span>{s.reason}</span> : null}
+        <span className="mute">{s.decided_by_name ? `${s.decided_by_name}, ` : ""}{day(s.decided_at)}</span></div> : null}
+      <Heard e={e} segment={s.segment_label}>From {e.sdrs} {e.sdrs === 1 ? "SDR" : "SDRs"}, last {e.window_days} days</Heard>
+      <div className={`play-card${open ? " is-proposed" : ""}`}>
+        <Section title="The draft play">
+          <dl className="kv">
+            <dt>Name</dt><dd>{d.name}</dd>
+            <dt>Heard</dt><dd>{d.hypothesis}</dd>
+            <dt>Starts on</dt><dd style={{ display: "grid", gap: 6 }}>{d.trigger.any_of.map((k: string) => <SignalLabel key={k} type={k} label={s.draft_labels?.signals[k] || cap(k)} />)}</dd>
+            {already.length ? <><dt>Already live</dt><dd className="actions" style={{ flexWrap: "wrap" }}>{already.map((p: any) => (
+              <button key={p.id} className="btn line sm" onClick={() => openSheet("play", p.id)}>{p.name}</button>))}</dd></> : null}
+            <dt>Who</dt><dd>{d.personas.map((k: string) => s.draft_labels?.personas[k] || PERSONA[k] || k).join(", ")}</dd>
+            <dt>First touch</dt><dd>{d.angle}</dd>
+          </dl>
+        </Section>
+      </div>
+      <Section title="What they said" count={s.quotes.length}><Quotes quotes={s.quotes} /></Section>
       {s.objections.length ? (
         <Section title="Objections at these accounts">
           <div className="ledger">
@@ -1596,22 +1594,58 @@ export function SuggestionSheet({ id }: { id: number }) {
           </div>
         </Section>
       ) : null}
-      <Section title="The drafted play">
-        <dl className="kv">
-          <dt>Name</dt><dd>{d.name}</dd>
-          <dt>Heard</dt><dd>{d.hypothesis}</dd>
-          <dt>First touch</dt><dd>{d.angle}</dd>
-          <dt>Starts on</dt><dd style={{ display: "grid", gap: 6 }}>{d.trigger.any_of.map((k: string) => <SignalLabel key={k} type={k} label={s.draft_labels?.signals[k] || cap(k)} />)}</dd>
-          <dt>Who</dt><dd>{d.personas.map((k: string) => s.draft_labels?.personas[k] || PERSONA[k] || k).join(", ")}</dd>
-        </dl>
-        <div className="mute small">Saves as a draft. The SDR approves every email. A manager launches it.</div>
-      </Section>
-      {already.length ? (
-        <div className="notice">
-          <span>A live play already starts on this signal: {already.map((p: any, i: number) => (
-            <span key={p.id}>{i ? ", " : ""}<button className="link" onClick={() => openSheet("play", p.id)}>{p.name}</button></span>))}</span>
-        </div>
-      ) : null}
     </Frame>
+  );
+}
+
+/** How often a theme came up at accounts on one signal, against every other account with call notes. The second bar
+    is left out when there are no other accounts to compare with. */
+function Heard({ e, segment, children }: { e: any; segment: string; children: ReactNode }) {
+  const share = (a: number, b: number) => (b ? pct(a / b) : "");
+  return (
+    <div className="heard">
+      <Bar label={<b>{segment}</b>} value={e.accounts} of={e.segment_accounts} shown={`${e.accounts} of ${e.segment_accounts}`}
+        hint={share(e.accounts, e.segment_accounts)} />
+      {e.elsewhere_accounts > 0 ? <Bar label="Other accounts" value={e.elsewhere} of={e.elsewhere_accounts}
+        shown={`${e.elsewhere} of ${e.elsewhere_accounts}`} hint={share(e.elsewhere, e.elsewhere_accounts)} tone="soft" /> : null}
+      <div className="mute small">{children}</div>
+    </div>
+  );
+}
+
+/** A buyer's words from call notes, each opening its meeting: three, then the rest behind a button. */
+function Quotes({ quotes }: { quotes: any[] }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? quotes : quotes.slice(0, 3);
+  return (
+    <>
+      <div className="ledger">
+        {shown.map((q: any) => (
+          <button key={q.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr)" }} onClick={() => openSheet("meeting", q.meeting_id)}>
+            <Logo domain={q.primary_domain} name={q.company} />
+            <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}><span className="qmark" aria-hidden="true">&ldquo;</span>{q.quote}</span>
+              <span className="s">{q.company}{q.sdr ? `, ${q.sdr}` : ""}, {day(q.created_at)}</span></div>
+          </button>
+        ))}
+      </div>
+      {!all && quotes.length > 3 ? <div><button className="btn line sm" onClick={() => setAll(true)}>All {quotes.length} quotes</button></div> : null}
+    </>
+  );
+}
+
+/** On a play made from a suggestion: the evidence it was made on, so it stays with the play. Manager and GTM only. */
+function PlayOrigin({ id }: { id: number }) {
+  const s = useData<any>(`/api/plays/${id}/origin`).data?.suggestion;
+  const [quotes, setQuotes] = useState(false);
+  if (!s) return null;
+  const e = s.evidence;
+  return (
+    <Section title="Why this play exists">
+      <Heard e={e} segment={s.segment_label}>
+        Heard on calls by {e.sdrs} {e.sdrs === 1 ? "SDR" : "SDRs"}{s.decided_by_name ? `; made a play by ${s.decided_by_name}, ${day(s.decided_at)}` : ""}
+      </Heard>
+      {s.quotes.length ? (quotes ? <Quotes quotes={s.quotes} />
+        : <div><button className="btn line sm" onClick={() => setQuotes(true)}>{s.quotes.length} {s.quotes.length === 1 ? "quote" : "quotes"}</button></div>) : null}
+    </Section>
   );
 }

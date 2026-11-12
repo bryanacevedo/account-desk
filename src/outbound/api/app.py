@@ -493,6 +493,17 @@ def play_suggestion(suggestion_id: int, u: dict = Depends(current_user)) -> dict
     return s
 
 
+@app.get("/api/plays/{play_id}/origin")
+def play_origin(play_id: int, u: dict = Depends(current_user)) -> dict:
+    """The suggestion a play was made from (play_suggestions.play_id), with its evidence and quotes, so the reason for
+    the play stays with it. The quotes are private like the suggestion's: manager and GTM only."""
+    need(u, "manager", "gtm")
+    with db.tx() as cur:
+        sid = db.val(cur, "select id from play_suggestions where play_id = %s order by decided_at desc nulls last, id desc limit 1",
+                     play_id)
+        return {"suggestion": suggestions.one(cur, sid) if sid else None}
+
+
 class SuggestionDecision(BaseModel):
     decision: Literal["not_now", "dismissed"]
     reason: str | None = Field(None, max_length=300)

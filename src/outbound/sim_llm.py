@@ -302,6 +302,36 @@ def _short(text: str, n: int) -> str:
     return " ".join(words)
 
 
+# The stand-in's first touch is a question a person would write, never the theme pasted into a template.
+_ASKS = [
+    (("usage pricing",), "how they plan to bill for usage pricing once it launches"),
+    (("close",), "how long their month-end close takes and what slows it down"),
+    (("revenue recognition", "audit"), "how they recognise revenue on usage contracts today"),
+    (("usage revenue", "board"), "how they report usage revenue to their board today"),
+    (("usage number", "trust"), "where their usage numbers come from and whether finance and product agree on them"),
+    (("contract terms",), "where contract terms live today and how they reach the invoice"),
+    (("invoice",), "how often an invoice needs a manual fix before it goes out"),
+    (("reconcil",), "how their team reconciles usage at month end"),
+    (("spreadsheet",), "which parts of billing still run in spreadsheets"),
+]
+
+
+def _ask(label: str) -> str:
+    low = label.lower()
+    for keys, ask in _ASKS:
+        if any(k in low for k in keys):
+            return ask
+    return "how their finance team handles this today"
+
+
+def _tool(label: str) -> str:
+    """A competitor as a person would name it: their in-house system, spreadsheets, or the product's own name."""
+    first, _, rest = label.partition(" ")
+    if first.lower() in ("a", "an") and rest:
+        return "their " + rest[:1].lower() + rest[1:]
+    return label.lower() if label.lower() in ("spreadsheets", "excel sheets", "manual invoicing") else label
+
+
 @sim("draft_play")
 def draft_play(p: dict) -> dict:
     seg, label = p["segment"], p["theme"]["label"].rstrip(".")
@@ -309,10 +339,12 @@ def draft_play(p: dict) -> dict:
     where = _lower_first(seg["label"])
     if p["theme"]["kind"] == "competitor":
         hypothesis = f"Accounts that came in on {where} name {label} on first calls."
-        angle = f"Ask what they are comparing. Offer to walk through what to test, and leave {label} out of it"
+        tool = _tool(label)
+        angle = (f"Ask what they bill with today and, if it is {tool}, what it would take to move off it. "
+                 "Offer to walk through how other finance teams switched")
     else:
         hypothesis = f"Accounts that came in on {where} raise this on first calls: {_lower_first(label)}."
-        angle = f"Ask whether this is still true for them: {_lower_first(label)}. Say how other finance teams handled it"
+        angle = f"Ask {_ask(label)}. Say how other finance teams handled it"
     return {
         "name": _short(label, 80),
         "hypothesis": hypothesis[:400],
