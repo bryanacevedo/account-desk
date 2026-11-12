@@ -1,0 +1,32 @@
+{"case_id": "theme_01", "group": "rtb_close", "kind": "reason_to_buy", "text": "Month-end close takes them 12 days because usage has to be reconciled by hand."}
+{"case_id": "theme_02", "group": "rtb_close", "kind": "reason_to_buy", "text": "close is sloooow, controller says they cant close the books til day 10"}
+{"case_id": "theme_03", "group": "rtb_close", "kind": "reason_to_buy", "text": "Their finance team wants to shorten the monthly close; billing reconciliation is the bottleneck."}
+{"case_id": "theme_04", "group": "rtb_close", "kind": "reason_to_buy", "text": "El cierre de mes les toma casi dos semanas por la conciliacion manual del consumo."}
+{"case_id": "theme_05", "group": "rtb_close", "kind": "reason_to_buy", "text": "Priya said their CFO Tom Becker wants the close done in five days by Q2.", "trap": "pii_in_text", "label_must_not_contain": ["Priya", "Tom Becker"]}
+{"case_id": "theme_06", "group": "rtb_invoice", "kind": "reason_to_buy", "text": "Customers keep disputing invoices because usage numbers on them are wrong.", "note": "near miss with rtb_close: wrong invoices is not slow close"}
+{"case_id": "theme_07", "group": "rtb_invoice", "kind": "reason_to_buy", "text": "invoice errors, roughly 1 in 20 bills gets credited back"}
+{"case_id": "theme_08", "group": "rtb_invoice", "kind": "reason_to_buy", "text": "Die Rechnungen stimmen oft nicht, Kunden reklamieren die Verbrauchsmengen."}
+{"case_id": "theme_09", "group": "rtb_invoice", "kind": "reason_to_buy", "text": "Billing accuracy is the pain: wrong quantities on invoices are hurting renewals. Contact: dana.ruiz@northpeak.io", "trap": "pii_in_text", "label_must_not_contain": ["dana.ruiz@northpeak.io", "dana", "Ruiz"]}
+{"case_id": "theme_10", "group": "rtb_usage", "kind": "reason_to_buy", "text": "They are launching a usage-based tier next quarter and their billing system only does flat subscriptions."}
+{"case_id": "theme_11", "group": "rtb_usage", "kind": "reason_to_buy", "text": "moving from seats to pay per API call, current tool cant price that"}
+{"case_id": "theme_12", "group": "rtb_usage", "kind": "reason_to_buy", "text": "Need to support hybrid pricing (platform fee plus overages) for the new product line."}
+{"case_id": "theme_13", "group": "comp_meterline", "kind": "competitor", "text": "Meterline", "note": "same competitor in different forms; must map to one theme"}
+{"case_id": "theme_14", "group": "comp_meterline", "kind": "competitor", "text": "they use meter line today for metering, contract ends in March", "note": "same competitor in different forms; must map to one theme"}
+{"case_id": "theme_15", "group": "comp_meterline", "kind": "competitor", "text": "Currently on Meterline, unhappy with the reporting.", "note": "same competitor in different forms; must map to one theme"}
+{"case_id": "theme_16", "group": "comp_meterline", "kind": "competitor", "text": "Evaluating MeterLine alongside us.", "note": "same competitor in different forms; must map to one theme"}
+{"case_id": "theme_17", "group": "comp_chargewise", "kind": "competitor", "text": "They run billing on Chargewise."}
+{"case_id": "theme_18", "group": "comp_chargewise", "kind": "competitor", "text": "chargewise renewal coming up, shopping around"}
+{"case_id": "theme_19", "group": "comp_sheets", "kind": "competitor", "text": "Usage is tracked in Excel and pasted into QuickBooks invoices."}
+{"case_id": "theme_20", "group": "comp_sheets", "kind": "competitor", "text": "all in google sheets lol, one analyst owns it"}
+{"case_id": "theme_21", "group": "comp_inhouse", "kind": "competitor", "text": "Built their own billing engine in-house five years ago, two engineers maintain it."}
+{"case_id": "theme_22", "group": "comp_inhouse", "kind": "competitor", "text": "Homegrown system; engineering wants to stop owning it."}
+{"case_id": "theme_23", "group": "obj_impl", "kind": "objection", "text": "Worried the implementation will take months and pull engineers off roadmap."}
+{"case_id": "theme_24", "group": "obj_impl", "kind": "objection", "text": "rollout effort scares them, no eng bandwidth this half"}
+{"case_id": "theme_25", "group": "obj_impl", "kind": "objection", "text": "Marco Silva (VP Eng) pushed back that integrating usage feeds is too much lift.", "trap": "pii_in_text", "label_must_not_contain": ["Marco Silva", "Marco"]}
+{"case_id": "theme_26", "group": "obj_price", "kind": "objection", "text": "Price is too high compared with what they pay now.", "note": "near miss with rn_timing (no budget) which is a different kind and idea"}
+{"case_id": "theme_27", "group": "obj_price", "kind": "objection", "text": "pricing felt steep for their volume, asked for a discount", "note": "near miss with rn_timing (no budget) which is a different kind and idea"}
+{"case_id": "theme_28", "group": "rn_timing", "kind": "reason_not", "text": "Not a priority this year; budget is frozen until the reorg settles."}
+{"case_id": "theme_29", "group": "rn_timing", "kind": "reason_not", "text": "Lost: deal pushed to next fiscal year, no budget."}
+{"case_id": "theme_30", "group": "rn_timing", "kind": "reason_not", "text": "Sin presupuesto este ano, lo retoman en 2027."}
+{"case_id": "theme_31", "group": "rn_fit", "kind": "reason_not", "text": "Lost because they only invoice 30 customers a month; too small to need us."}
+{"case_id": "theme_32", "group": "rn_fit", "kind": "reason_not", "text": "volume too low, maybe a dozen invoices monthly, not a fit"}

@@ -77,7 +77,8 @@ def _load(name: str):
 
 
 def test_every_ai_task_has_recordings_for_its_current_prompt():
-    for task in ("classify", "draft", "draft_linkedin", "brief", "suggest_reply", "extract", "check_claims"):
+    for task in ("classify", "draft", "draft_linkedin", "brief", "suggest_reply", "extract", "check_claims", "theme",
+                 "draft_play"):
         rows = [json.loads(line) for line in (ROOT / f"evals/recordings/{task}.jsonl").read_text().splitlines() if line.strip()]
         assert rows, f"no recordings for {task}: run make evals-live"
         assert {r["prompt_hash"] for r in rows} == {llm.prompt_hash(task)}, f"{task} prompt changed: re-record the evals"
@@ -120,3 +121,26 @@ def test_drafts_and_briefs_hold_their_floors(database):
     for k, v in scores.items():
         if k in floors:
             assert v >= floors[k], (k, v)
+
+
+def test_theming_holds_its_floors(database):
+    run = _load("run_themes")
+    with db.tx() as cur:
+        rows = run.run(cur, run.load())
+        db.run(cur, "rollback")
+    _, scores = run.report(rows)
+    floors = _floors()
+    for k in ("themes_agreement", "themes_filed", "themes_no_names"):
+        assert scores[k] >= floors[k], (k, scores[k])
+
+
+def test_suggested_plays_hold_their_floors(database):
+    run = _load("run_draft_play")
+    with db.tx() as cur:
+        rows = [run.run_case(cur, c) for c in run.load()]
+        db.run(cur, "rollback")
+    _, scores = run.report(rows)
+    floors = _floors()
+    assert all(r["judge"] is not None for r in rows if r["draft"]), "a play was never judged: run it live"
+    for k in ("draft_play_pass", "draft_play_not_as_fact", "draft_play_catalog_only", "draft_play_no_names"):
+        assert scores[k] >= floors[k], (k, scores[k])

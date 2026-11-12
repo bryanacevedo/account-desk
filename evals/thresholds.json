@@ -12,5 +12,12 @@
   "suggest_no_invention": 0.9,
   "extract_recall": 0.8,
   "extract_verbatim": 0.95,
-  "extract_no_invention": 0.9
+  "extract_no_invention": 0.9,
+  "themes_agreement": 0.85,
+  "themes_filed": 0.95,
+  "themes_no_names": 1.0,
+  "draft_play_pass": 0.2,
+  "draft_play_not_as_fact": 0.7,
+  "draft_play_catalog_only": 1.0,
+  "draft_play_no_names": 1.0
 }
