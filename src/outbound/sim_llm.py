@@ -178,6 +178,9 @@ def classify(p: dict) -> dict:
     out = {"label": "other", "confidence": 0.55, "same_person": True, "return_date": None, "referral": None,
            "new_company": None, "instructs_system": bool(re.search(r"ignore (all|previous|your) instructions|mark (this|me) as",
                                                                    t)), "language": p.get("language_hint") or "en"}
+    if "this is an automated message" in t or "mailbox is not monitored" in t:
+        out.update(label="auto_reply", confidence=0.9)
+        return out
     m = re.search(r"(?:speak with|reach them at|talk to|runs our billing|owns this area)", t)
     if m:
         name = re.search(r"([A-Z][a-z]+ [A-Z][a-z]+)", p["cleaned"])
@@ -225,7 +228,12 @@ def extract(p: dict) -> dict:
         tool = next((name for key, name in (("chargewise", "Chargewise"), ("meterline", "Meterline"),
                                             ("spreadsheet", "Spreadsheets"), ("in-house", "An in-house system"))
                      if key in low), None)
-        if tool:
+        if low.startswith("in their words:"):
+            said = ln.split(":", 1)[1].strip().strip('"')
+            items.append({"kind": "quote", "text": said[:120], "quote": said})
+        elif any(w in low for w in ("no budget", "just renewed", "signed for two years")):
+            items.append({"kind": "reason_not", "text": _idea(ln)[:120], "quote": ln})
+        elif tool:
             items.append({"kind": "competitor", "text": tool, "quote": ln})
         elif any(w in low for w in ("worried", "concern", "too expensive", "timing", "not sure")):
             items.append({"kind": "objection", "text": ln[:120], "quote": ln})

@@ -222,10 +222,17 @@ def close_stale(cur, payload: dict) -> None:
                               select 1 from enrollments e where e.account_play_id = ap.id
                               and e.state in ('pending', 'active', 'paused'))"""):
         set_state(cur, r["id"], "stopped", reason="nothing_approved")
-    for r in db.all(cur, """select ap.id from account_plays ap where ap.state = 'active' and not exists (
+    # At the research stage the SDR writes the emails, so the play stays open for as long as the play's own sequence
+    # would have run (calendar days, a little over its business days), instead of closing the day the brief is done.
+    for r in db.all(cur, """select ap.id from account_plays ap join plays pl on pl.id = ap.play_id
+                              where ap.state = 'active' and not exists (
                               select 1 from enrollments e where e.account_play_id = ap.id
                               and e.state in ('pending', 'active', 'paused'))
-                              and not exists (select 1 from tasks t where t.account_play_id = ap.id and t.status = 'open')"""):
+                              and not exists (select 1 from tasks t where t.account_play_id = ap.id and t.status = 'open')
+                              and not exists (select 1 from enrollments e where e.account_play_id = ap.id
+                                and e.stop_reason = 'rep_writes'
+                                and e.created_at > app_now() - make_interval(days => ceil(1.4 * coalesce(
+                                  (select max((s->>'day')::int) from jsonb_array_elements(pl.sequence) s), 0))::int + 1))"""):
         set_state(cur, r["id"], "stopped", reason="sequence_finished")
     # CRM turned the account into a customer or an open opportunity elsewhere.
     for r in db.all(cur, """select ap.id, a.lifecycle from account_plays ap join accounts a on a.id = ap.account_id

@@ -42,6 +42,31 @@ def world(database):
     return totals
 
 
+@pytest.fixture(scope="session")
+def built_demo(database):
+    """The demo exactly as `python -m outbound demo` builds it, in a database of its own, shared by the tests that read a
+    whole demo. Slow (several minutes). DEMO_DATABASE_URL names one already built to read instead; it is never changed."""
+    import subprocess
+    import sys
+    from pathlib import Path
+    reuse = os.environ.get("DEMO_DATABASE_URL")
+    if reuse:
+        yield reuse
+        return
+    name = f"outbound_demo_{uuid.uuid4().hex[:8]}"
+    url = BASE.rsplit("/", 1)[0] + "/" + name
+    with psycopg.connect(_admin(BASE), autocommit=True) as c:
+        c.execute(f'create database "{name}"')
+    try:
+        root = Path(__file__).resolve().parents[1]
+        env = {**os.environ, "DATABASE_URL": url, "PYTHONPATH": str(root / "src")}
+        subprocess.run([sys.executable, "-m", "outbound", "demo"], cwd=root, env=env, check=True, capture_output=True)
+        yield url
+    finally:
+        with psycopg.connect(_admin(BASE), autocommit=True) as c:
+            c.execute(f'drop database if exists "{name}" with (force)')
+
+
 @pytest.fixture
 def cur(database):
     """A transaction that is rolled back after the test, so unit tests leave nothing behind."""

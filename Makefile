@@ -1,4 +1,4 @@
-.PHONY: setup db demo serve web dev test lint monitors docker evals evals-live
+.PHONY: setup db demo serve web dev test lint monitors coverage docker evals evals-live
 PY = PYTHONPATH=src .venv/bin/python
 
 setup:            ## install Python and web dependencies
@@ -8,7 +8,7 @@ setup:            ## install Python and web dependencies
 db:               ## start a private Postgres in .data/ (uses your installed Postgres 18)
 	./scripts/pg.sh start
 
-demo: db web      ## rebuild the demo: an invented company, 90 simulated days, then serve it
+demo: db web      ## rebuild the demo: an invented company, 3,000 accounts, six SDRs, 90 simulated days (about ten minutes), then serve it
 	$(PY) -m outbound demo 90
 	$(PY) -m outbound serve
 
@@ -42,3 +42,6 @@ monitors:         ## run every monitor once
 
 docker:           ## the same image the hosted demo runs
 	docker build -t account-desk . && docker run --rm -p 8800:8800 account-desk
+
+coverage:         ## count every scenario the built demo shows (exits 1 if any is at zero)
+	$(PY) -m outbound coverage

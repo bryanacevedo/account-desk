@@ -359,46 +359,31 @@ def test_saving_the_prefilled_editor_makes_a_draft_play_and_marks_the_suggestion
 
 # ---------------------------------------------------------------- the demo, honestly
 
-def test_the_demo_suggests_exactly_what_passes_the_rule(database):
+def test_the_demo_suggests_exactly_what_passes_the_rule(built_demo):
     """`make demo`'s own command, in a database of its own, with the thresholds untouched. Builds differ run to run, so
     which pattern opens varies and a build may open none (README says so). What must hold in every build: the planted
-    reason is visible in the notes, every open suggestion passes the rule, and every passing pattern not set aside has
-    one. Slow: the full 90-day demo, about two minutes."""
-    import subprocess
-    import sys
-    import uuid
-    from pathlib import Path
-
+    reason is visible in the notes, every open suggestion passes the rule, and every passing pattern has a suggestion
+    that is open or that a person decided (the demo's GTM and manager decide some, README). Slow: the full 90-day demo."""
     from psycopg.rows import dict_row
-    name = f"outbound_demo_{uuid.uuid4().hex[:8]}"
-    admin = database.rsplit("/", 1)[0] + "/postgres"
-    url = database.rsplit("/", 1)[0] + "/" + name
-    with psycopg.connect(admin, autocommit=True) as c:
-        c.execute(f'create database "{name}"')
-    try:
-        root = Path(__file__).resolve().parents[1]
-        env = {**os.environ, "DATABASE_URL": url, "PYTHONPATH": str(root / "src")}
-        subprocess.run([sys.executable, "-m", "outbound", "demo"], cwd=root, env=env, check=True, capture_output=True)
-        assert suggestions.RULE == {"min_accounts": 5, "min_sdrs": 2, "window_days": 90, "alpha": 0.05, "regrow": 1.5}
-        with psycopg.connect(url, row_factory=dict_row) as c:
-            opened = c.execute("select theme_id, segment_signal_type from play_suggestions where status = 'open'").fetchall()
-            rows = c.execute("""
-                select l.id, l.theme_id, t.kind as theme_kind, l.signal_type, m.account_id,
-                       case when u.role = 'sdr' then cn.written_by end as sdr
-                from learnings l join call_notes cn on cn.id = l.call_note_id join meetings m on m.id = cn.meeting_id
-                left join learning_themes t on t.id = l.theme_id left join users u on u.id = cn.written_by
-                where cn.created_at > app_now() - interval '90 days'""").fetchall()
-        pairs = suggestions.evaluate(rows)
-        for s in opened:
-            assert pairs[(s["theme_id"], s["segment_signal_type"])]["passes"]
-        passing = {e["theme_id"] for e in pairs.values() if e["passes"]}
-        assert passing == {s["theme_id"] for s in opened}
-        # The plant shows: in some planted segment, a theme is heard at half or more of its accounts.
-        planted = ("new_exec", "hiring_function", "pricing_change", "competitor_review")
-        assert any(e["segment"] in planted and e["segment_accounts"] >= 3 and e["rate"] >= 0.5 for e in pairs.values())
-    finally:
-        with psycopg.connect(admin, autocommit=True) as c:
-            c.execute(f'drop database if exists "{name}" with (force)')
+    assert suggestions.RULE == {"min_accounts": 5, "min_sdrs": 2, "window_days": 90, "alpha": 0.05, "regrow": 1.5}
+    with psycopg.connect(built_demo, row_factory=dict_row) as c:
+        opened = c.execute("select theme_id, segment_signal_type from play_suggestions where status = 'open'").fetchall()
+        decided = {r["theme_id"] for r in c.execute("""select theme_id from play_suggestions
+                                                       where status in ('drafted', 'not_now', 'dismissed')""").fetchall()}
+        rows = c.execute("""
+            select l.id, l.theme_id, t.kind as theme_kind, l.signal_type, m.account_id,
+                   case when u.role = 'sdr' then cn.written_by end as sdr
+            from learnings l join call_notes cn on cn.id = l.call_note_id join meetings m on m.id = cn.meeting_id
+            left join learning_themes t on t.id = l.theme_id left join users u on u.id = cn.written_by
+            where cn.created_at > app_now() - interval '90 days'""").fetchall()
+    pairs = suggestions.evaluate(rows)
+    for s in opened:
+        assert pairs[(s["theme_id"], s["segment_signal_type"])]["passes"]
+    passing = {e["theme_id"] for e in pairs.values() if e["passes"]}
+    assert {s["theme_id"] for s in opened} <= passing <= {s["theme_id"] for s in opened} | decided
+    # The plant shows: in some planted segment, a theme is heard at half or more of its accounts.
+    planted = ("new_exec", "hiring_function", "pricing_change", "competitor_review")
+    assert any(e["segment"] in planted and e["segment_accounts"] >= 3 and e["rate"] >= 0.5 for e in pairs.values())
 
 
 # ---------------------------------------------------------------- two at once

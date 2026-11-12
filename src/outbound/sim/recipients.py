@@ -41,7 +41,16 @@ REFERRAL = ["I'm not the right person, {ref_name} runs our billing. You can reac
             "Please speak with {ref_name} ({ref_title}) instead."]
 WRONG = ["I don't handle this, sorry.", "Wrong person, I'm in a different team now."]
 UNSUB = ["Please remove me from your list.", "Unsubscribe", "Stop emailing me.",
-         "Bitte keine weiteren E-Mails.", "Por favor, no me envíen más correos.", "Merci de ne plus me contacter."]
+         "Bitte keine weiteren E-Mails.", "Por favor, no me envíen más correos.", "Merci de ne plus me contacter.",
+         "Por favor, não quero receber mais e-mails."]
+# Kinds of reply other than interest, as cumulative shares of what is left: not now, not interested, a referral, the
+# wrong person, left the company, an automatic acknowledgement, a reply that says nothing usable, then an opt-out.
+OTHER_KINDS = [("not_now", 0.27), ("not_interested", 0.45), ("referral", 0.57), ("wrong_person", 0.65), ("left", 0.73),
+               ("auto", 0.78), ("other", 0.83)]
+# A shared inbox's automatic acknowledgement, and replies that say nothing a label can act on.
+AUTO = ["Thank you for your message. This is an automated message: this mailbox is not monitored. For billing questions "
+        "please write to billing@{domain}."]
+OTHER = ["Thanks for the note.", "Got it, thanks.", "Who gave you my email address?"]
 OOO = ["I'm out of the office until {date} with limited access to email. For urgent matters contact finance@{domain}.",
        "Automatic reply: I am on leave and will return on {date}.",
        "Abwesenheitsnotiz: Ich bin bis {date} nicht im Büro."]
@@ -73,7 +82,8 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
                     "where p.id = %s", person_id)
     rng = random.Random(f"{message['id']}:{person_id}")
     email_sent_to = (p["email"] or "").lower()
-    if sp["email_truth"] == "invalid" or (sp["true_email"] or "").lower() != email_sent_to:
+    gone = sp.get("left_at") is not None and sp["left_at"] <= at  # left the company: the address is closed
+    if gone or sp["email_truth"] == "invalid" or (sp["true_email"] or "").lower() != email_sent_to:
         _event(cur, at + timedelta(minutes=rng.randint(1, 20)), "bounce", message, person_id)
         return
     if sp["email_truth"] == "catch_all" and rng.random() < 0.3:
@@ -113,18 +123,13 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
     pos_share = 0.25 + 0.55 * need * (1.2 if p["is_champion"] else 1.0)
     if r < pos_share:
         kind = "positive"
-    elif r < pos_share + 0.16:
-        kind = "not_now"
-    elif r < pos_share + 0.30:
-        kind = "not_interested"
-    elif r < pos_share + 0.37:
-        kind = "referral"
-    elif r < pos_share + 0.42:
-        kind = "wrong_person"
-    elif r < pos_share + 0.47:
-        kind = "left"
     else:
-        kind = "unsubscribe"
+        # The rest share what is left in fixed proportions, so a very interested company still sends the odd opt-out.
+        u, kind = (r - pos_share) / (1 - pos_share), "unsubscribe"
+        for k, edge in OTHER_KINDS:
+            if u < edge:
+                kind = k
+                break
     sender_first = mailbox["display_name"].split()[0]
     if kind == "positive":
         pool = POSITIVE + (ES_POS if p["country"] == "ES" else []) + (DE_POS if p["country"] == "DE" else [])
@@ -136,7 +141,8 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
         text = _fresh(cur, rng, NOT_INTERESTED)
     elif kind == "referral":
         pool = db.all(cur, "select full_name, title, true_email from sim_hidden_people where account_id = %s "
-                           "and found_person_id is null order by id", p["account_id"])
+                           "and found_person_id is null and (role_started is null or role_started <= %s::date) "
+                           "and (left_at is null or left_at > %s) order by id", p["account_id"], at, at)
         colleague = rng.choice(pool) if pool else None  # the sim's own seeded choice, so a world can be replayed
         if colleague is None:
             kind, text = "wrong_person", rng.choice(WRONG)
@@ -152,8 +158,19 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
         kind = "left_company"
     elif kind == "wrong_person":
         text = rng.choice(WRONG)
+    elif kind == "auto":
+        text = rng.choice(AUTO).format(domain=p["primary_domain"])
+    elif kind == "other":
+        text = rng.choice(OTHER)
     else:
-        text = rng.choice(UNSUB)
+        # Mostly in English; otherwise in the language of where they work, or another they write in.
+        local = {"DE": "Bitte", "ES": "Por favor, no", "FR": "Merci", "BR": "Por favor, não"}.get(p["country"] or "")
+        if rng.random() < 0.6:
+            text = rng.choice(UNSUB[:3])
+        elif local and rng.random() < 0.7:
+            text = next(t for t in UNSUB if t.startswith(local))
+        else:
+            text = rng.choice(UNSUB[3:])
     sig = rng.choice(SIGS).format(name=p["full_name"], first=p["first_name"], title=p["title"], company=p["company"])
     body = text + sig + _quote(message["body"], mailbox["display_name"], at)
     delay = timedelta(hours=rng.uniform(1.5, 52))

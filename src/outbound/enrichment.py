@@ -95,6 +95,7 @@ def apply_person(cur, person_id: int, c: dict, vendor: str, *, refresh: bool = F
         "headline": c.get("headline") or p["headline"],
         "match_confidence": c.get("match_confidence") or p["match_confidence"],
         "timezone": p["timezone"] or c.get("timezone"),
+        "country": p["country"] or c.get("country"),
         "enriched_at": db.val(cur, "select app_now()"),
     }
     if refresh and c.get("title") and c["title"] != p["title"]:
@@ -102,18 +103,28 @@ def apply_person(cur, person_id: int, c: dict, vendor: str, *, refresh: bool = F
         source(cur, "person", person_id, "title", c["title"], vendor, conf)
     db.run(cur, "update people set " + ", ".join(f"{k} = %s" for k in updates) + " where id = %s",
            *updates.values(), person_id)
-    for f in ("departments", "role_started_at", "city"):
+    for f in ("departments", "role_started_at", "city", "country"):
         if c.get(f) and c.get(f) != p[f]:
             source(cur, "person", person_id, f, c.get(f), vendor, conf)
     _new_in_seat(cur, person_id)
 
 
+LEADER_TITLES = ("cfo", "chief financial", "vp finance", "vice president of finance", "head of finance", "finance director")
+
+
+def in_leader_seat(cur, title: str | None) -> bool:
+    """Whether a title is the finance leader's seat (CFO, VP Finance, Head of Finance): the seat the new finance
+    leader play is about. A controller or an accountant who started recently is not a new finance leader."""
+    patterns = set(LEADER_TITLES) | set(db.val(cur, "select title_patterns from personas where key = 'cfo'") or [])
+    t = (title or "").lower()
+    return any(x in t for x in patterns)
+
+
 def _new_in_seat(cur, person_id: int) -> None:
-    """Someone started a finance role in the last 90 days: the strongest single reason to talk to an account."""
+    """Someone took the finance leader's seat in the last 90 days: the strongest single reason to talk to an account."""
     p = db.one(cur, """select p.*, a.primary_domain from people p join accounts a on a.id = p.account_id
-                       where p.id = %s and p.role_started_at > (app_now() - interval '90 days')::date
-                       and p.departments && '{finance,accounting}'""", person_id)
-    if p is None or p["status"] != "active":
+                       where p.id = %s and p.role_started_at > (app_now() - interval '90 days')::date""", person_id)
+    if p is None or p["status"] != "active" or not in_leader_seat(cur, p["title"]):
         return
     from . import signals
     started = datetime.combine(p["role_started_at"], datetime.min.time(), tzinfo=db.val(cur, "select app_now()").tzinfo)
@@ -123,6 +134,27 @@ def _new_in_seat(cur, person_id: int) -> None:
         "observed_at": started, "strength": 0.8,  # when they started, so a seat taken 80 days ago reads as 80 days old
         "evidence": {"summary": f"A new {p['title'] or 'finance leader'} started on {p['role_started_at']:%d %b %Y}.",
                      "quote": "From people data: role start date"}}])
+
+
+def locate_person(cur, person_id: int) -> None:
+    """Ask the people-data vendor about someone the desk knows only by name (a referral): where they work from, their
+    time zone and what their role is. Paid once, like any other match; nothing is guessed when it finds nobody."""
+    p = db.one(cur, "select * from people where id = %s", person_id)
+    ad = adapters.get()
+    if p is None or p["country"] or ad.people is None:
+        return
+
+    def buy():
+        with spend.paid_call(cur, "people_search", "match", vendor="people_search", qty=1, purpose="locate person",
+                             account_id=p["account_id"]) as info:
+            c = ad.people.enrich(cur, p)
+            info["found"] = bool(c and c.country)
+            info["charged_qty"] = 1 if c and c.country else 0
+        return c
+
+    c = bought(cur, "person", f"{person_id}:locate", buy)
+    if c:
+        apply_person(cur, person_id, c, "people_search")
 
 
 # ---------------------------------------------------------------- companies
@@ -199,8 +231,11 @@ def _changes(cur, account: dict, before: dict, after: dict, *, since) -> None:
         raws.append({"type": "hiring_function", "external_id": f"roles:{account['id']}:{now:%Y-%m}",
                      "summary": f"Hiring for {len(after['open_roles'])} finance roles, including a {new_roles[0]['title']}.",
                      "strength": 0.65})
-    added = sorted(set(after.get("technologies") or []) - set(before.get("technologies") or []))
-    removed = sorted(set(before.get("technologies") or []) - set(after.get("technologies") or []))
+    # A tool we connect to arriving means the stack is being rebuilt; a billing tool we compete with arriving is not
+    # good news, and only one of those leaving is a reason to call ("Dropped a tool we replace").
+    competing = set(db.val(cur, "select value from settings where key = 'competing_tools'") or [])
+    added = sorted(set(after.get("technologies") or []) - set(before.get("technologies") or []) - competing)
+    removed = sorted((set(before.get("technologies") or []) - set(after.get("technologies") or [])) & competing)
     if added:
         raws.append({"type": "tech_added", "external_id": f"tech+:{account['id']}:{','.join(added)}",
                      "summary": f"Started using {', '.join(added)}.", "strength": 0.6})

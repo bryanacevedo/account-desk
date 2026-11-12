@@ -111,15 +111,34 @@ def test_call_notes_hold_their_floors(database):
         assert scores[k] >= floors[k], (k, scores[k])
 
 
+# Recorded live while a competitor review could still be cited. Since 2026-11-11 competitor reviews are private (the
+# desk acts on them and never names them), so these cases now give the model an input it never answered and replay
+# the stand-in instead. They stay out of the floors until `make evals-live` re-records them; then empty these.
+STALE_WRITING = {"d2_16"}
+
+
+def _stale_draft_play(c: dict) -> bool:
+    """A case whose catalog offered competitor reviews outside their own segment: the desk now leaves them out."""
+    return c["segment"]["key"] != "competitor_review" and any(
+        t["key"] == "competitor_review" for t in c["catalog"]["signal_types"])
+
+
 def test_drafts_and_briefs_hold_their_floors(database):
     run = _writing()
     with db.tx() as cur:
         drafts, briefs = run.run(cur)
         db.run(cur, "rollback")
+    assert STALE_WRITING <= {d["id"] for d in drafts}
+    every = len(drafts)
+    drafts = [d for d in drafts if d["id"] not in STALE_WRITING]
     scores = run.scores_of(drafts, briefs)
     floors = _floors()
     for k, v in scores.items():
-        if k in floors:
+        if k == "drafts_faithful" and STALE_WRITING:
+            # A rate over fewer cases moves when a stale one is dropped, so while any are stale the floor is held as a
+            # count: no more unfaithful drafts among the cases still measured than the floor allowed over all of them.
+            assert round((1 - v) * len(drafts)) <= round((1 - floors[k]) * every), (k, v)
+        elif k in floors:
             assert v >= floors[k], (k, v)
 
 
@@ -137,8 +156,9 @@ def test_theming_holds_its_floors(database):
 def test_suggested_plays_hold_their_floors(database):
     run = _load("run_draft_play")
     with db.tx() as cur:
-        rows = [run.run_case(cur, c) for c in run.load()]
+        rows = [run.run_case(cur, c) for c in run.load() if not _stale_draft_play(c)]
         db.run(cur, "rollback")
+    assert rows, "every suggested-play case is stale: run make evals-live"
     _, scores = run.report(rows)
     floors = _floors()
     assert all(r["judge"] is not None for r in rows if r["draft"]), "a play was never judged: run it live"

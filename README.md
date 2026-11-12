@@ -84,7 +84,7 @@ make setup
 make demo
 ```
 
-That builds an invented company with 700 accounts, simulates 90 days of signals, SDRs, buyers and vendors (about two minutes), and serves the desk at http://localhost:8800. Pick who you are acting as in the sidebar. "Move a day ahead" runs the world forward a day.
+That builds an invented company with 3,000 accounts and about 24,700 people (eight or so a company, with a real finance and revenue operations bench), six SDRs, a manager and GTM engineering, simulates 90 days of signals, SDRs, buyers and vendors (about ten minutes on a laptop), and serves the desk at http://localhost:8800. Pick who you are acting as in the sidebar. "Move a day ahead" runs the world forward a day. `make coverage` then counts every scenario the demo shows.
 
 ```bash
 make test
@@ -127,6 +127,8 @@ A read-only MCP server on stdio with five tools: find accounts, why an account i
 Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts simulated for 30 days in 71 seconds with no failed job, then 2 million signals loaded on top. Every page answered in under 50 ms except Signals (under 0.2 s); rescoring took 10 ms an account and 0.8 s per nightly batch of 500; every monitor ran in 50 ms or less. Two pages took 2.4 to 2.7 seconds before an index covering signal type and time, and a feed query that walks the status index instead of sorting every signal.
 
 At that size the monitors also found the real limit: four SDRs cannot approve first emails fast enough for 5,000 accounts, so 38 accepted accounts passed their play's time limit before a first email. The fix is people or autonomy, not code.
+
+The demo itself is now 3,000 accounts, about 24,700 people and six SDRs. Measured on 2026-11-12 on the same laptop: `python -m outbound demo 90` took 10 to 11 minutes when the machine was otherwise idle (17 while it ran the test suite too) and leaves a 127 MB database. With a pool of three connections, every API page the web app reads answered in 30 ms or less (median of five, 24 pages across the three roles), so no index was added. The SDRs were offered 872 accounts over the 90 days, 129 to 173 each (about 10 to 13 a week; the busiest week 18), and 1% expired unseen. Signal rates are half the old demo's per account, and each play's monthly phone lookups went from 60 to 150: at 60 the busiest plays ran out mid-month and their accounts all arrived on the 1st. This size has not been built or timed on Render's own builder yet.
 
 ### LinkedIn through HeyReach
 
@@ -179,6 +181,15 @@ than in the weeks before.
 
 **Simulated:** every other vendor (people search, email finder and verifier, phone finder, website research, the mail provider, deliverability telemetry and seed tests, blocklists, the CRM, Slack) and every buyer. The simulated CRM opens and closes deals, including deals and demo requests that outbound had nothing to do with, so the held-back comparison measures what outbound adds. The simulated world gives each company a hidden need; signals and replies are drawn from it, with some signal types linked to need strongly and some barely, so the results pages have something true to find. One relationship is planted for play suggestions (`PLANTED` in `src/outbound/sim/runner.py`): on 90% of first calls, accounts that came in on a new finance leader say an audit flagged revenue recognition, those hiring in finance operations say the close team reconciles usage by hand, those changing their pricing model say they are launching usage pricing, and those reviewing a competitor name Meterline. To keep the contrast clear, those four reasons were also made rarer everywhere else (their weight in the general pool went from 2, 2, 2 and 3 to 1). The suggestions come from that plant, found by the same rule a real desk uses. Builds differ run to run, so which pattern opens varies, and a build can open none: one build in six did at 80% of calls, none of eight has since the plant went to 90%.
 
+The world holds together the way a real list does: a company's name and product fit its industry, its billing tool is the one its stack, its own docs and any competitor signal name, it has one finance leader, and a new finance leader the news announces exists, holds that title and starts that day, while the one they replaced leaves (mail to them bounces after). Job changes come from past champions and from people the desk has been in touch with, the people a job-change feed is set to watch.
+
+Planted so the demo shows every scenario the app can show. `python -m outbound coverage` counts them and a test fails if one is at zero, except seventeen that rest on a handful of events in a 90-day build (a play earning its fourth stage, a pattern strong enough to suggest a play, an opt-out in one language), which a given build may not show; the table marks them (`BY_CHANCE` in `src/outbound/coverage.py`).
+
+- Simulated SDRs edit about one in six drafts they approve. On Monday mornings the simulated manager approves the next stage for any play at the draft stage or above whose checks all pass, the same rule the Plays page applies to a click; leaving the research stage stays the manager's own call, so the funded play stays there. Demotions are the desk's own (a complaint, bounces or edits).
+- On Tuesdays, once a suggestion has waited two weeks, the simulated GTM engineer turns the first into a draft play, and the manager sets the next aside for now and says no to the one after; one that comes back after a "not now" waits for a person (`SUGGESTION_ROUTINE` in `src/outbound/sim/runner.py`).
+- A past champion's play has a LinkedIn message step. A few replies are a shared inbox's automatic acknowledgement or say nothing a label can use, one opt-out is in Portuguese, and some call notes give a reason not to buy or a line worth quoting.
+- Region rules: the demo's seller does not sell in Singapore (a business choice, set as `blocked`), and Australia has no rule, so nobody there is cold-emailed ("Email in Australia needs a region rule first").
+
 **Not yet proven:**
 
 - Every AI task is measured on real Claude answers (`evals/`, 315 cases); the demo and tests use a deterministic stand-in. The cases are written to be realistic but none is a real buyer's reply.
@@ -188,7 +199,8 @@ than in the weeks before.
 - Cloudflare Access login has not been run against a real Access app, and contention was measured with one server process.
 - Prices on the cost page are demo assumptions until a manager enters real ones.
 - There is no login. "Acting as" is chosen from a menu in demo mode; `AUTH_MODE=header` reads identity from a verified Cloudflare Access token (no other proxy is supported yet). Live sending refuses to start in demo mode.
-- Region rules (which countries need a recorded legitimate interest or consent before a cold email) are a starting point. Counsel to confirm.
+- Region rules (which countries need a recorded legitimate interest or consent before a cold email) are a starting point. Counsel to confirm. A country with no rule, or a person whose country is not known, gets no cold email until one is added; the database refuses it too.
+- Competitor reviews became private signals on 2026-11-11 (the desk acts on them and never cites them). Fifteen recorded eval cases were answered before that and now show the model a different input: one writing case and fourteen suggested-play cases are held out of the floors until `make evals-live` re-records them (`STALE_WRITING` in `tests/test_evals.py`).
 - Profile photos in the demo are stock portraits from randomuser.me. In live use the photo URL comes from the enrichment vendor and is erased with the person.
 
 ## Words used here

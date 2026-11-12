@@ -103,6 +103,9 @@ def costs(cur) -> dict:
                "cap": caps.get(vendor) if vendor else None, "cap_unit": "cents" if key == "anthropic" else "credits"}
         if key == "anthropic":
             row["calls"] = ai_calls
+        if paid == "free" and slot:
+            row["calls"] = db.val(cur, """select count(*) from adapter_calls where adapter = %s and ok
+                                          and at >= date_trunc('month', app_now())""", slot)
         if key in subs:
             row["subscription"] = subs[key]
         row["suggest"] = SUGGEST.get(key)

@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 from datetime import datetime
 
-from . import db, jobs
+from . import db, gate, jobs
 from .db import J
 
 CONVERGENCE_STEP = 0.15
@@ -45,7 +45,7 @@ def _known(rule: dict, account: dict) -> bool:
 def fit(rules: dict, account: dict) -> dict:
     """Returns {score, tier, factors: [{key, matched, weight, contribution}], excluded: reason|None}."""
     if account.get("lifecycle") in ("customer", "open_opp", "competitor"):
-        return {"score": 0, "tier": "X", "factors": [], "excluded": f"Account is a {account['lifecycle'].replace('_', ' ')}"}
+        return {"score": 0, "tier": "X", "factors": [], "excluded": f"Account is {gate.lifecycle_phrase(account['lifecycle'])}"}
     for ex in rules.get("excludes", []):
         if _matches(ex, account):
             return {"score": 0, "tier": "X", "factors": [], "excluded": ex["reason"]}
