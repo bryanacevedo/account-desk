@@ -134,7 +134,7 @@ PLAYS = [
      "People who bought us before buy again at their next company, faster than anyone else.",
      {"any_of": ["champion_moved"], "fit_tiers": ["A", "B"], "min_priority": 0, "within_days": 30},
      ["controller", "cfo"], 2, SHORT,
-     "Open with the person's history with us, then why it applies to the new company.", "supervised", True, 24),
+     "Open with the person's history with us, then why it applies to the new company.", "draft", True, 24),
     ("new_finance_leader", "New finance leader, first 90 days",
      "A new CFO or VP Finance reviews the stack they inherited and has budget to change it.",
      {"any_of": ["new_exec"], "fit_tiers": ["A", "B"], "min_priority": 35, "within_days": 45},

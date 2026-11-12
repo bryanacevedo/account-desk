@@ -38,3 +38,10 @@ def test_a_first_stage_play_is_not_held_by_drafts_it_can_never_have(cur, scene):
     labels = {c["label"] for c in check["checks"]}
     assert "50 drafts approved by a person" not in labels and "Approved without edits" not in labels
     assert check["next"] == "draft"
+
+
+def test_no_shipped_play_starts_with_autonomy_it_has_not_earned():
+    """Autonomy is earned per play (DECISIONS 22): a new play starts with the SDR approving every email, or lower.
+    Found 2026-11-11: 'A past champion joined' shipped at stage 3 with no accounts."""
+    for p in catalog.PLAYS:
+        assert p[8] in ("research", "draft"), (p[0], p[8])
