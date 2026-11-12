@@ -1244,7 +1244,7 @@ export function PlaySheet({ id }: { id: number }) {
           <Bar label="Meeting" value={f.meetings} of={f.proposed} hint={pct(f.proposed ? f.meetings / f.proposed : 0)} tone="accent" />
         </div>
       </Section>}
-      {p.status === "draft" ? null : <><Section title="Is this play creating meetings?"><LiftBlock lift={lift} holdoutPct={p.holdout_pct} /></Section>
+      {p.status === "draft" ? null : <><div className="play-card is-proposed"><Section title="Is this play creating meetings?"><LiftBlock lift={lift} holdoutPct={p.holdout_pct} /></Section></div>
       <PlayAccounts id={id} /></>}
       <Section title="Trigger">
         <dl className="kv">
@@ -1423,6 +1423,13 @@ export function LiftBlock({ lift, holdoutPct = 20 }: { lift: any; holdoutPct?: n
   const t = lift.treated, h = lift.holdout;
   const share = Math.max(1, Math.round(100 / Math.max(1, holdoutPct)));
   const more = lift.still_needed?.holdout || 0;
+  if (!t.accounts && !h.accounts) return (
+    <div className="lift">
+      <p className="lift-why">1 in {share} accounts this play would work is held back and never contacted. If the worked
+        accounts book more meetings, the play is the reason.</p>
+      <Status kind="none">No accounts offered this play yet</Status>
+    </div>
+  );
   return (
     <div className="lift">
       <p className="lift-why">1 in {share} accounts this play would work is held back and never contacted. If the worked
