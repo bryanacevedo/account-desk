@@ -630,7 +630,8 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 /* A play's accounts: filters and search on one line, the list scrolls inside the sheet. */
 .pa-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
 .pa-tools .input { flex: 1; min-width: 160px; }
-.pa-list { max-height: 520px; overflow-y: auto; overscroll-behavior: contain; }
+.pa-list { max-height: 560px; overflow-y: auto; overscroll-behavior: contain; grid-auto-rows: max-content; align-content: start; }
+.pa-list > .row { min-height: 60px; }
 
 /* The account's play is the first thing the eye lands on: a card with a cobalt halo, strongest while it waits for a
    decision. The halo is two soft layers (a tight wash ring and a wide blurred glow), never a hard border. */
