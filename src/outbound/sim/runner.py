@@ -150,10 +150,9 @@ def _working(at: datetime, tzname: str) -> bool:
     return local.weekday() < 5 and 9 <= local.hour < 18
 
 
-# How often SDRs approve a draft without touching it, below the 0.92 of drafts they approve at all. A planted
-# difference (README, "What is real and what is simulated"): the new finance leader play's drafts need fewer edits, so it
-# is the play that earns autonomy, the way one play usually earns it first on a real desk.
-UNEDITED = {"new_finance_leader": 0.885}  # every other play: 0.72, so about 22% of approvals are edited
+# How often SDRs approve a draft without touching it, below the 0.92 of drafts they approve at all: the rest of those
+# they approve after an edit (a draft with no ask to rewrite, a break-up note, goes as it was).
+UNEDITED = 0.72
 
 
 def sdr_edit(body: str) -> str:
@@ -173,7 +172,8 @@ def manager_reviews_autonomy(cur, at: datetime) -> None:
     manager = db.one(cur, "select id from users where role = 'manager' and active order by id limit 1")
     if manager is None:
         return
-    for p in db.all(cur, "select * from plays where status = 'live' order by id"):
+    # Moving a play off the research stage is the manager's own judgement (DECISIONS 22), not a count, so it is left.
+    for p in db.all(cur, "select * from plays where status = 'live' and autonomy <> 'research' order by id"):
         check = views.promotion_check(cur, p)
         if not (check["ready"] and check["next"]):
             continue
@@ -185,8 +185,9 @@ def manager_reviews_autonomy(cur, at: datetime) -> None:
                   actor_id=manager["id"])
 
 
-# What the manager and GTM do with play suggestions, in the order they are opened: GTM makes the first a draft play,
-# the manager sets the next aside for now, and says no to the one after. A planted routine (README).
+# What the manager and GTM do with play suggestions, in the order they are opened, once one has waited two weeks: GTM
+# makes the first a draft play, the manager sets the next aside for now, and says no to the one after. One that comes
+# back after a "not now" waits for a person, as the desk asks. A planted routine (README).
 SUGGESTION_ROUTINE = ["draft", "not_now", "dismissed"]
 
 
@@ -202,7 +203,9 @@ def review_suggestions(at: datetime) -> None:
         manager = db.one(cur, "select id, role from users where role = 'manager' and active order by id limit 1")
         decided = db.val(cur, "select count(*) from play_suggestions where status in ('drafted', 'not_now', 'dismissed')")
         waiting = db.all(cur, """select id, theme_id from play_suggestions where status = 'open'
-                                 and created_at < %s - interval '3 days' order by created_at, id""", at)
+                                 and created_at < %s - interval '14 days' and not exists (select 1 from play_suggestions
+                                   x where x.theme_id = play_suggestions.theme_id and x.status = 'not_now')
+                                 order by created_at, id""", at)
     for s in waiting:
         if decided >= len(SUGGESTION_ROUTINE):
             return
@@ -263,7 +266,7 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
                     if roll < 0.5:
                         outreach.reject(cur, m["id"], user_id=u["id"], reason="Did not pass the checks; skipping")
                     continue
-                if roll < UNEDITED.get(m["play"], 0.72):
+                if roll < UNEDITED:
                     outreach.approve(cur, m["id"], user_id=u["id"])
                 elif roll < 0.92:
                     outreach.approve(cur, m["id"], user_id=u["id"], body=sdr_edit(m["body"]))

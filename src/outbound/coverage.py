@@ -34,7 +34,6 @@ GAP_KINDS = {
     "address does not work": "Email address does not work",
     "needs consent": "needs consent",
     "needs a region rule": "needs a region rule first",
-    "already in another sequence": "Already in another sequence",
 }
 TASK_KINDS = ["call", "linkedin_connect", "linkedin_message", "research", "reply", "referral", "review_reply"]
 LEARNING_KINDS = ["objection", "competitor", "reason_to_buy", "reason_not", "quote"]
@@ -72,11 +71,11 @@ def scenarios(cur) -> list[dict]:
     for t in db.all(cur, "select key from signal_types order by key"):
         add("Signal types (matched)", t["key"], types.get(t["key"], 0))
 
-    stages = {r["autonomy"] for r in db.all(cur, "select autonomy from plays")}
-    changes = db.all(cur, "select from_stage, to_stage from play_stage_changes")
+    changes = db.all(cur, "select play_id, from_stage, to_stage from play_stage_changes")
     for s in AUTONOMY:
-        add("Autonomy stages (plays that were at it)", s,
-            (1 if s in stages else 0) + sum(1 for c in changes if c["to_stage"] == s))
+        at = {r["id"] for r in db.all(cur, "select id from plays where autonomy = %s", s)}
+        at |= {c["play_id"] for c in changes if s in (c["from_stage"], c["to_stage"])}
+        add("Autonomy stages (plays that were at it)", s, len(at))
     add("Autonomy stages (plays that were at it)", "a promotion",
         sum(1 for c in changes if AUTONOMY.index(c["to_stage"]) > AUTONOMY.index(c["from_stage"])))
     add("Autonomy stages (plays that were at it)", "a demotion",

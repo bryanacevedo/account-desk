@@ -132,13 +132,17 @@ STANDARD = _seq((0, "email", "open", "desk"), (2, "linkedin_connect", "connect",
                 (7, "call", "call", "sdr"), (10, "email", "break_up", "desk"))
 SHORT = _seq((0, "email", "open", "desk"), (3, "email", "follow_up", "desk"), (6, "call", "call", "sdr"),
              (9, "email", "break_up", "desk"))
+# A past champion usually knows the SDR already: connect, then a short LinkedIn message before the follow-up.
+CHAMPION = _seq((0, "email", "open", "desk"), (1, "linkedin_connect", "connect", "sdr"),
+                (3, "linkedin_message", "message", "sdr"), (5, "email", "follow_up", "desk"), (8, "call", "call", "sdr"),
+                (10, "email", "break_up", "desk"))
 
 PLAYS = [
     # key, name, hypothesis, trigger, personas, max people, sequence, angle, autonomy, urgent, latency hours
     ("champion_moved", "A past champion joined",
      "People who bought us before buy again at their next company, faster than anyone else.",
      {"any_of": ["champion_moved"], "fit_tiers": ["A", "B"], "min_priority": 0, "within_days": 30},
-     ["controller", "cfo"], 2, SHORT,
+     ["controller", "cfo"], 2, CHAMPION,
      "Open with the person's history with us, then why it applies to the new company.", "draft", True, 24),
     ("new_finance_leader", "New finance leader, first 90 days",
      "A new CFO or VP Finance reviews the stack they inherited and has budget to change it.",

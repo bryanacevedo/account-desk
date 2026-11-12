@@ -121,17 +121,17 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
         kind = "positive"
     elif r < pos_share + 0.16:
         kind = "not_now"
-    elif r < pos_share + 0.30:
+    elif r < pos_share + 0.26:
         kind = "not_interested"
-    elif r < pos_share + 0.37:
+    elif r < pos_share + 0.33:
         kind = "referral"
-    elif r < pos_share + 0.42:
+    elif r < pos_share + 0.38:
         kind = "wrong_person"
-    elif r < pos_share + 0.47:
+    elif r < pos_share + 0.43:
         kind = "left"
-    elif r < pos_share + 0.50:
+    elif r < pos_share + 0.45:
         kind = "auto"
-    elif r < pos_share + 0.53:
+    elif r < pos_share + 0.47:
         kind = "other"
     else:
         kind = "unsubscribe"
