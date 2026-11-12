@@ -81,7 +81,7 @@ export function Flight() {
           navigate(u.pathname + (u.search || ""), true); }}>Clear</button> : null}
       </div>
       {shown.length ? (
-        <Section title={stage === "all" ? "Waiting on the team first, then by next step" : STAGES.find((x) => x[0] === stage)?.[1] || ""} count={shown.length}
+        <Section title={stage === "all" ? "Accounts in a play" : STAGES.find((x) => x[0] === stage)?.[1] || ""} count={shown.length}
           right={<span className="step-key" aria-label="How to read the steps">
             <span><i className="step sent" />Sent</span><span><i className="step next" />Next</span>
             <span><i className="step to-come" />To come</span><span><i className="step skipped" />Skipped or not happening</span></span>}>
@@ -121,7 +121,7 @@ function FlightRow({ p, team, cols, mine }: { p: any; team: boolean; cols: strin
 /** What happens next on this account, and who it is for. What waits on a person opens it. */
 function Next({ p, mine }: { p: any; mine: boolean }) {
   if (p.meeting && (p.state === "meeting" || p.meeting.status !== "booked")) {
-    const word = { booked: "Meeting", held: "Meeting held", no_show: "No show", cancelled: "Meeting cancelled" }[p.meeting.status as string] || "Meeting";
+    const word = { booked: "Meeting", held: "Held", no_show: "No show", cancelled: "Meeting cancelled" }[p.meeting.status as string] || "Meeting";
     return <button className="link-row cell-main" onClick={() => openSheet("meeting", p.meeting.id)}>
       <span className="t"><CalendarCheck size={14} style={{ verticalAlign: -2 }} aria-hidden="true" /> {word}</span>
       <span className="s">{dayTime(p.meeting.starts_at)}</span></button>;

@@ -21,6 +21,50 @@ Handler = Callable[[Any, dict], None]
 HANDLERS: dict[str, Handler] = {}
 WORKER_ID = f"{socket.gethostname()}:{os.getpid()}"
 
+# Each kind of job in words, for alerts and the Health page (served with /api/ops, so there is one list).
+JOB_NAMES = {
+    "send_due": "Sending scheduled emails", "send_provider": "Handing emails to the mail provider",
+    "send_one": "Sending an email", "reconcile_send": "Checking a send the provider did not confirm",
+    "due_steps": "Moving sequences to their next step", "draft_step": "Drafting emails",
+    "research": "Researching accounts", "rescore": "Rescoring an account", "rescore_all": "Nightly rescoring",
+    "rescore_batch": "Rescoring a batch of accounts", "classify_reply": "Reading replies",
+    "resume": "Resuming after an out-of-office", "resume_after_positive": "Resuming colleagues after a positive reply",
+    "sla_check": "Checking reply answer times", "crm_push": "Writing to the CRM", "crm_sync": "Reading the CRM",
+    "crm_retry_held": "Retrying CRM deals waiting for an account", "mailbox_health": "Checking mailbox health",
+    "telemetry": "Reading spam rates", "placement_tests": "Testing where mail lands", "dns_check": "Checking DNS records",
+    "monitors": "Running the checks", "ingest_source": "Collecting signals", "deliver_alert": "Sending alerts to Slack",
+    "expire_proposals": "Expiring old proposals", "close_stale_plays": "Closing plays that ran their course",
+    "autonomy_watch": "Checking plays for a stage change", "watch_reset": "Resetting first-batch watches",
+    "sweep_sending": "Settling stuck sends", "reverify": "Re-checking an email",
+    "enroll_referral": "Enrolling a referred person", "replace_person": "Finding a replacement",
+    "enrichment_refresh": "Refreshing people data", "check_patterns": "Looking for patterns in call notes",
+    "file_learnings": "Filing call learnings", "open_suggestion": "Suggesting a play",
+    "retention_purge": "Deleting prospects past the retention period",
+}
+# Paid vendors in words, as the web app names them.
+VENDOR_NAMES = {"people_search": "People search", "email_finder": "Email finder", "email_verifier": "Email verification",
+                "phone_finder": "Phone finder", "anthropic": "AI", "research": "Website research",
+                "email_resolver": "Email resolver", "company_data": "Company data"}
+
+
+def job_name(kind: str) -> str:
+    return JOB_NAMES.get(kind, kind.replace("_", " ").capitalize())
+
+
+def waiting_title(exc: Exception) -> str:
+    """Why work waits, in plain words: which vendor, and whether a cap or a missing vendor holds it."""
+    from . import spend
+    vendor = getattr(exc, "vendor", None)
+    if isinstance(exc, spend.PlayOverBudget):
+        play, _, vendor = str(exc).partition(": ")
+        return f"{VENDOR_NAMES.get(vendor, vendor.replace('_', ' ').capitalize())} work for {play} is waiting: " \
+               "the play's monthly cap is reached"
+    if isinstance(exc, spend.OverBudget):
+        vendor = str(exc)
+        return f"{VENDOR_NAMES.get(vendor, vendor.replace('_', ' ').capitalize())} work is waiting: monthly cap reached"
+    name = VENDOR_NAMES.get(vendor or "", (vendor or "Vendor").replace("_", " ").capitalize())
+    return f"{name} work is waiting: no vendor is connected for it"
+
 
 def handler(kind: str) -> Callable[[Handler], Handler]:
     def wrap(fn: Handler) -> Handler:
@@ -101,7 +145,7 @@ def run_ready(limit: int = 200) -> int:
                         from . import alerts
                         month = db.val(cur, "select to_char(app_now(), 'YYYY-MM')")
                         alerts.raise_alert(cur, kind="budget_wait", severity="warn", channel="#outbound-ops",
-                                           title=f"Work is waiting: {exc}",
+                                           title=waiting_title(exc),
                                            body="It runs again tomorrow, or as soon as the cap is raised or the vendor is set up.",
                                            dedup_key=f"budget_wait:{exc}:{month}")
                 ran += 1
@@ -119,7 +163,7 @@ def run_ready(limit: int = 200) -> int:
                                         "where id = %s", error[:2000], job["id"])
                             from . import alerts
                             alerts.raise_alert(cur, kind="job_dead", severity="warn", channel="#outbound-ops",
-                                               title=f"A {job['kind']} job stopped after {attempts} tries",
+                                               title=f"{job_name(job['kind'])} stopped after {attempts} tries",
                                                body=error[:500], object_kind="job", object_id=job["id"],
                                                dedup_key=f"job_dead:{job['id']}")
                         else:

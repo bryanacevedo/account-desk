@@ -6,7 +6,7 @@ import { SignalIcon, SignalLabel } from "./signalIcons";
 import { PlayEditor, PlayPreview } from "./PlayEditor";
 import {
   Bar, Empty, Seg, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTime, late, money, n0, navigate, pct,
-  toast, useBusy, useData, useNowIso, withParam, type Glyph,
+  safeUrl, toast, useBusy, useData, useNowIso, withParam, type Glyph,
 } from "./lib";
 
 // ---------------------------------------------------------------- the sheet frame
@@ -188,11 +188,11 @@ export function PersonSheet({ id }: { id: number }) {
       <Section title="How to reach them">
         <div className="ledger">
           <Reach label="Email" value={p.email ? <span title={p.email_found_by ? `Found by ${cap(p.email_found_by)}${p.email_confidence ? `, ${Math.round(p.email_confidence * 100)}% sure` : ""}` : undefined}>{p.email}</span> : null}
-            state={p.email ? (p.email_status === "valid" ? ["ok", "Verified"] : p.email_status === "invalid" ? ["stop", "Bounces"]
+            state={p.email ? (p.email_status === "valid" ? ["ok", "Verified"] : p.email_status === "invalid" ? ["stop", "Bounced"]
               : p.email_status === "catch_all" ? ["hold", "Cannot be confirmed"] : ["half", cap(p.email_status)]) : null} />
           <Reach label="Phone" value={p.phone ? <>{p.phone}{p.phone_type && p.phone_type !== "unknown" ? <span className="mute">, {p.phone_type}</span> : null}</> : null}
             state={p.phone ? (p.phone_dnc ? ["stop", "Do not call"] : p.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(p.phone_status)]) : null} />
-          <Reach label="LinkedIn" value={p.linkedin_url ? <a href={p.linkedin_url} target="_blank" rel="noreferrer noopener">Profile <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
+          <Reach label="LinkedIn" value={safeUrl(p.linkedin_url) ? <a href={safeUrl(p.linkedin_url)} target="_blank" rel="noreferrer noopener">Profile <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
             state={data.touches.some((x: any) => x.kind === "linkedin_accepted") ? ["ok", "Connected"] : data.touches.some((x: any) => x.kind === "linkedin_connect") ? ["wait", "Request sent"] : null} />
           {p.status !== "active" ? <Reach label="Status" value={cap(p.status)} /> : null}
           {p.role_started_at ? <Reach label="In role" value={`Since ${day(p.role_started_at)}`} /> : null}
@@ -311,7 +311,7 @@ export function TaskSheet({ id }: { id: number }) {
       {!open ? <div className="notice"><Status kind={t.status === "done" ? "ok" : "off"}>{t.note || cap(t.status)}</Status></div> : null}
       {linkedin ? (
         <Section title={t.kind === "linkedin_connect" ? "Connection note" : "Message"}
-          right={t.linkedin_url ? <a className="btn quiet sm" href={t.linkedin_url} target="_blank" rel="noreferrer noopener">Open profile <ArrowSquareOut size={12} /></a> : null}>
+          right={safeUrl(t.linkedin_url) ? <a className="btn quiet sm" href={safeUrl(t.linkedin_url)} target="_blank" rel="noreferrer noopener">Open profile <ArrowSquareOut size={12} /></a> : null}>
           {t.draft !== null ? (
             <>
               <textarea className="input" rows={t.kind === "linkedin_connect" ? 4 : 6} value={body} disabled={!open}
@@ -338,6 +338,7 @@ export function TaskSheet({ id }: { id: number }) {
               value={t.phone && !t.phone_dnc ? <a className="tap" href={`tel:${t.phone.replace(/[^+\d]/g, "")}`}>{t.phone}</a> : t.phone}
               state={t.phone ? (t.phone_dnc ? ["stop", "Do not call"] : t.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(t.phone_status)]) : null} /></div>
             {t.note ? <div className="small mute">{t.note}</div> : null}
+            {t.call_hours ? <div className="small mute">{t.dnc_register ? `Screened against ${t.dnc_register}. ` : ""}Calling hours: {t.call_hours} their time, weekdays.</div> : null}
           </Section>
           {t.why ? (
             <Section title="Why now">
@@ -361,12 +362,12 @@ export function TaskSheet({ id }: { id: number }) {
         </>
       ) : null}
       {t.sources?.length ? (
-        <Section title="What it rests on">
+        <Section title="Facts cited">
           <div className="ledger">
             {t.sources.map((f: any) => (
               <div key={f.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
                 <span style={{ whiteSpace: "normal" }}>{f.text}</span>
-                {f.url ? <a className="mute" href={f.url} target="_blank" rel="noreferrer noopener" aria-label="Source"><ArrowSquareOut size={14} /></a> : <span />}
+                {safeUrl(f.url) ? <a className="mute" href={safeUrl(f.url)} target="_blank" rel="noreferrer noopener" aria-label="Source"><ArrowSquareOut size={14} /></a> : <span />}
               </div>
             ))}
           </div>
@@ -462,7 +463,8 @@ function ColleaguesChoice({ replyId, count }: { replyId: number; count: number }
   const [done, setDone] = useState<string | null>(null);
   const act = (action: string) => run(async () => {
     const r = await api<any>(`/api/replies/${replyId}/colleagues`, { method: "POST", body: { action } });
-    setDone(r.colleagues ? (action === "stop" ? `Stopped ${r.colleagues}.` : `Resumed ${r.colleagues}.`) : "Nobody else was waiting.");
+    const who = `${r.colleagues} colleague${r.colleagues === 1 ? "" : "s"}`;
+    setDone(r.colleagues ? (action === "stop" ? `Stopped ${who}.` : `Resumed ${who}.`) : "Nobody else was waiting.");
   });
   return (
     <Section title="Their colleagues">
@@ -595,7 +597,7 @@ export function MeetingSheet({ id }: { id: number }) {
           <>
             <textarea className="input" rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What they said: why they would buy, what worries them, tools they use" aria-label="Call notes" />
             <div className="actions" style={{ justifyContent: "space-between", marginTop: 8 }}>
-              <label className="choice"><input type="checkbox" checked={learn} onChange={(e) => setLearn(e.target.checked)} />Learn from these notes</label>
+              <label className="choice"><input type="checkbox" checked={learn} onChange={(e) => setLearn(e.target.checked)} />Use these notes for play suggestions</label>
               {!open ? <button className="btn line sm" disabled={busy || !notes.trim()} onClick={() => save(m.status)}>Add notes</button> : null}
             </div>
           </>
@@ -667,7 +669,7 @@ function EraseBox({ personId, name }: { personId: number; name: string }) {
   if (me?.user.role !== "gtm") return null;
   return sure ? (
     <div className="notice">
-      <span style={{ flex: 1 }}>This deletes {name}, their emails, replies and notes, and keeps only a fingerprint so they are never added again. It cannot be undone.</span>
+      <span style={{ flex: 1 }}>This deletes {name}, their emails, replies and notes, and keeps only a scrambled copy of their address so they are never added again. It cannot be undone.</span>
       <button className="btn quiet sm" onClick={() => setSure(false)}>Cancel</button>
       <button className="btn ink sm" disabled={busy} onClick={() => run(async () => { await api(`/api/people/${personId}/erase`, { method: "POST" }); closeSheet(); }, "Erased.")}>Erase {name}</button>
     </div>
@@ -744,7 +746,7 @@ export function AccountSheet({ id }: { id: number }) {
       <div className="figs">
         <Fig value={s?.priority ?? 0} label="Priority" />
         <Fig value={s?.fit ?? a.fit_score ?? 0} label={`Fit, tier ${a.fit_tier}`} />
-        <Fig value={s?.intent ?? 0} label="Intent" />
+        <Fig value={s?.intent ?? 0} label="Signals" />
         <Fig value={a.owner || cur?.owner || "Unassigned"} label="Owner" sm />
       </div>
       <div className="tabs" role="tablist">
@@ -768,7 +770,7 @@ function WhyNow({ why }: { why: any }) {
       <div className="because">{why.because}</div>
       <div className="actions small mute" style={{ justifyContent: "space-between" }}>
         <span>{why.label}, {ago(why.observed_at)}</span>
-        {why.url ? <a className="src" href={why.url} target="_blank" rel="noreferrer noopener">Source <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
+        {safeUrl(why.url) ? <a className="src" href={safeUrl(why.url)} target="_blank" rel="noreferrer noopener">Source <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
       </div>
     </div>
   );
@@ -850,12 +852,12 @@ function AccountOverview({ d, decision }: { d: any; decision?: ReactNode }) {
           </Section>
         ) : null;
       })()}
-      <Section title="What moves the score">
+      <Section title="Signals raising priority">
         {d.contributions.length ? (
           <div className="bars">
             {grouped(d.contributions).slice(0, 7).map((c: any) => <Bar key={c.type} label={<SignalLabel type={c.type} label={c.label} />} value={c.value} of={max} shown={`+${Math.round(c.value)}`} hint="points" />)}
           </div>
-        ) : <Empty title="No recent signals">The score is fit alone.</Empty>}
+        ) : <Empty title="No recent signals">Priority is the fit score alone.</Empty>}
       </Section>
       <Section title="Fit">
         {d.account.fit_breakdown?.excluded ? <div className="mute">{d.account.fit_breakdown.excluded}</div> : (
@@ -936,7 +938,7 @@ export function SignalTimeline({ signals }: { signals: any[] }) {
           <SignalIcon type={s.type_key} />
           <div className="cell-main" style={{ whiteSpace: "normal" }}>
             <span className="t" style={{ whiteSpace: "normal" }}>{s.label}</span>
-            <span className="s" style={{ whiteSpace: "normal" }}>{s.evidence.summary}{s.evidence.url ? <> <a href={s.evidence.url} target="_blank" rel="noreferrer noopener" className="mute"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
+            <span className="s" style={{ whiteSpace: "normal" }}>{s.evidence.summary}{safeUrl(s.evidence.url) ? <> <a href={safeUrl(s.evidence.url)} target="_blank" rel="noreferrer noopener" className="mute"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
           </div>
         </li>
       ))}
@@ -979,7 +981,7 @@ function AccountOutreach({ d }: { d: any }) {
             {d.meetings.map((m: any) => (
               <button key={m.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => openSheet("meeting", m.id)}>
                 <div className="cell-main"><span className="t">{m.full_name || "Meeting"}</span><span className="s">{dayTime(m.starts_at)}</span></div>
-                <Status kind={m.status === "held" ? "ok" : m.status === "booked" ? "go" : "off"}>{({ held: "Happened", booked: "Booked", no_show: "No show", cancelled: "Cancelled" } as Record<string, string>)[m.status] || cap(m.status)}</Status>
+                <Status kind={m.status === "held" ? "ok" : m.status === "booked" ? "go" : "off"}>{({ held: "Held", booked: "Booked", no_show: "No show", cancelled: "Cancelled" } as Record<string, string>)[m.status] || cap(m.status)}</Status>
               </button>
             ))}
           </div>
@@ -1053,7 +1055,7 @@ export function MessageSheet({ id }: { id: number }) {
     )
   ) : m.status === "send_unknown" ? (
     <>
-      <span className="mute small" style={{ flex: 1 }}>The mail provider never said. Check the mailbox's sent folder.</span>
+      <span className="mute small" style={{ flex: 1 }}>The mail provider did not confirm whether it sent. Check the mailbox's sent folder.</span>
       <button className="btn line" disabled={busy} onClick={() => run(() => api(`/api/messages/${id}/outcome`, { method: "POST", body: { sent: false } }), "Recorded. It goes out again in their window.")}>It is not there</button>
       <button className="btn" disabled={busy} onClick={() => run(() => api(`/api/messages/${id}/outcome`, { method: "POST", body: { sent: true } }), "Recorded as sent.")}>It went out</button>
     </>
@@ -1094,13 +1096,13 @@ export function MessageSheet({ id }: { id: number }) {
           ) : <p style={{ whiteSpace: "pre-wrap" }}>{bodyOnly(m.body)}</p>}
         </MailPreview>
       )}
-      <Section title="What it rests on">
+      <Section title="Facts cited">
         {m.facts.length ? (
           <ul className="facts">
             {m.facts.map((f: any) => (
               <li key={f.id}><span className="id">{idOf.get(f.id)}</span>
                 <span>{f.text} <span className="mute small">{f.kind.startsWith("signal:") ? "Signal" : "Their website"}, {day(f.observed_at)}</span>
-                  {f.source_url ? <> <a href={f.source_url} target="_blank" rel="noreferrer noopener" className="mute"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
+                  {safeUrl(f.source_url) ? <> <a href={safeUrl(f.source_url)} target="_blank" rel="noreferrer noopener" className="mute"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
               </li>
             ))}
           </ul>
@@ -1257,7 +1259,7 @@ export function PlaySheet({ id }: { id: number }) {
         <div className="funnel">
           <Bar label="Proposed" value={f.proposed} of={f.proposed} />
           <Bar label="Accepted" value={f.accepted} of={f.proposed} hint={pct(f.proposed ? f.accepted / f.proposed : 0)} />
-          <Bar label="Emailed" value={f.contacted} of={f.proposed} hint={pct(f.proposed ? f.contacted / f.proposed : 0)} />
+          <Bar label="Contacted" value={f.contacted} of={f.proposed} hint={pct(f.proposed ? f.contacted / f.proposed : 0)} />
           <Bar label="Replied" value={f.replied} of={f.proposed} hint={pct(f.proposed ? f.replied / f.proposed : 0)} />
           <Bar label="Positive reply" value={f.positive} of={f.proposed} hint={pct(f.proposed ? f.positive / f.proposed : 0)} tone="accent" />
           <Bar label="Meeting" value={f.meetings} of={f.proposed} hint={pct(f.proposed ? f.meetings / f.proposed : 0)} tone="accent" />
@@ -1265,16 +1267,16 @@ export function PlaySheet({ id }: { id: number }) {
       </Section>}
       {p.status === "draft" ? null : <><div className="play-card is-proposed"><Section title="Is this play creating meetings?"><LiftBlock lift={lift} holdoutPct={p.holdout_pct} /></Section></div>
       <PlayAccounts id={id} /></>}
-      <Section title="Trigger">
+      <Section title="Which signals start it">
         <dl className="kv">
           <dt>Fit tiers</dt><dd>{p.trigger.fit_tiers.join(" and ")}</dd>
-          <dt>Priority from</dt><dd>{p.trigger.min_priority}</dd>
+          <dt>Minimum priority</dt><dd>{p.trigger.min_priority}</dd>
           <dt>Signal age</dt><dd>Within {p.trigger.within_days} days</dd>
           <dt>Who</dt><dd>{p.personas.map((x: string) => PERSONA[x] || x).join(", ")}, up to {p.max_people}</dd>
           <dt>Held back</dt><dd>{p.holdout_pct}% of matched accounts</dd>
         </dl>
       </Section>
-      <Section title="Steps">
+      <Section title="Sequence">
         <div className="ledger">
           {p.sequence.map((s: any, i: number) => (
             <div key={i} className="row" style={{ gridTemplateColumns: "56px minmax(0,1fr) auto", minHeight: 36 }}>
@@ -1446,7 +1448,8 @@ function whoDoes(step: any, i: number, seq: any[], autonomy: string): string {
   return "Desk sends to tier B, SDR approves tier A";
 }
 
-export const STAGE: Record<string, string> = { research: "SDR writes everything", draft: "SDR approves every email", supervised: "SDR approves first emails only", autonomous: "Desk sends to tier B on its own" };
+/** Each stage in one wording, the same as whoDoes says it step by step (and plays.py STAGE_WORDS in alerts). */
+export const STAGE: Record<string, string> = { research: "SDR writes everything", draft: "SDR approves every email", supervised: "SDR approves first emails and checks a sample of the rest", autonomous: "Desk sends to tier B, SDR approves tier A" };
 
 /** Does the play cause meetings? Accounts it worked against a random share it never contacted. Said in words a
  *  new hire can read: the two rates, then a verdict, or how much longer until there is one. */
@@ -1458,7 +1461,7 @@ export function LiftBlock({ lift, holdoutPct = 20 }: { lift: any; holdoutPct?: n
     <div className="lift">
       <p className="lift-why">1 in {share} accounts this play would work is held back and never contacted. If the worked
         accounts book more meetings, the play is the reason.</p>
-      <Status kind="none">No accounts offered this play yet</Status>
+      <Status kind="none">No accounts proposed for this play yet</Status>
     </div>
   );
   return (
@@ -1476,10 +1479,10 @@ export function LiftBlock({ lift, holdoutPct = 20 }: { lift: any; holdoutPct?: n
         </Status>
       ) : (
         <div className="lift-verdict">
-          <Status kind="wait" title="With this few accounts, a difference could be luck.">Too early to tell</Status>
+          <Status kind="wait" title="With this few accounts, a difference could be luck.">Too few to tell</Status>
           <span className="mute small">{lift.out_of_reach
-            ? `Settling it needs about ${n0(more * share)} more accounts offered this play, and only ${n0(lift.room)} in this desk have never been offered it. At this size the comparison cannot answer; it needs a larger list or a bigger difference.`
-            : `About ${n0(more * share)} more accounts offered this play, so ${n0(more)} more are held back.`}</span>
+            ? `Settling it needs about ${n0(more * share)} more accounts proposed for this play, and only ${n0(lift.room)} in this desk have never been proposed for it. At this size the comparison cannot answer; it needs a larger list or a bigger difference.`
+            : `About ${n0(more * share)} more accounts proposed for this play, so ${n0(more)} more are held back.`}</span>
         </div>
       )}
     </div>
@@ -1498,7 +1501,7 @@ export function Comparison({ rows }: { rows: [string, any][] }) {
           <span className="num" data-label="Held back">{pct(l.holdout.rate, 1)} <span className="mute small">{l.holdout.meetings} of {l.holdout.accounts}</span></span>
           <span className="num" data-label="Difference">{l.enough && l.difference !== null
             ? <>{l.difference >= 0 ? "+" : ""}{pct(l.difference, 1)} <span className="mute small">likely {pct(l.interval[0], 1)} to {pct(l.interval[1], 1)}</span></>
-            : <span className="mute small" title="With this few accounts, a difference could be luck.">Too early to tell</span>}</span>
+            : <span className="mute small" title="With this few accounts, a difference could be luck.">Too few to tell</span>}</span>
         </div>
       ))}
     </div>
@@ -1526,7 +1529,7 @@ export function SuggestionSheet({ id }: { id: number }) {
   const decide = (decision: "not_now" | "dismissed") => run(async () => {
     await api(`/api/play-suggestions/${id}/decide`, { method: "POST", body: { decision, reason: reason.trim() || null } });
     closeSheet();
-  }, decision === "not_now" ? "Set aside. It comes back if it is heard at half as many accounts again." : "Dismissed. This theme is not suggested again.");
+  }, decision === "not_now" ? "Set aside. It comes back when heard at 1.5 times as many accounts as when it was set aside." : "Dismissed. This theme is not suggested again.");
   const makeDraft = () => {
     const u = new URL(window.location.href);
     u.searchParams.set("sheet", "playedit:new");
@@ -1562,12 +1565,12 @@ export function SuggestionSheet({ id }: { id: number }) {
       {!open ? <div className="notice"><Status kind="off">{STATUS[s.status] || cap(s.status)}</Status>
         <span className="mute">{s.decided_by_name ? `${s.decided_by_name}, ` : ""}{day(s.decided_at)}{s.reason ? `: ${s.reason}` : ""}</span>
         {s.play_id ? <button className="link" onClick={() => openSheet("play", s.play_id)}>Open the play</button> : null}</div> : null}
-      <Section title="The pattern">
+      <Section title="How often it came up">
         <div className="lift-pair">
           <div><b>{e.accounts} of {e.segment_accounts}</b><span>accounts that came in on {s.segment_label}</span></div>
           <div><b>{e.elsewhere} of {e.elsewhere_accounts}</b><span>other accounts with call notes</span></div>
         </div>
-        <div className="mute small">From {e.sdrs} SDRs in the last {e.window_days} days. Clears the bar set in Settings.</div>
+        <div className="mute small">From {e.sdrs} SDR{e.sdrs === 1 ? "" : "s"} in the last {e.window_days} days. Settings sets how often a theme must come up.</div>
       </Section>
       <Section title="What they said" count={s.quotes.length}>
         <div className="ledger">
@@ -1601,7 +1604,7 @@ export function SuggestionSheet({ id }: { id: number }) {
           <dt>Starts on</dt><dd style={{ display: "grid", gap: 6 }}>{d.trigger.any_of.map((k: string) => <SignalLabel key={k} type={k} label={s.draft_labels?.signals[k] || cap(k)} />)}</dd>
           <dt>Who</dt><dd>{d.personas.map((k: string) => s.draft_labels?.personas[k] || PERSONA[k] || k).join(", ")}</dd>
         </dl>
-        <div className="mute small">Saves as a draft. The SDR approves every email. Another manager launches it.</div>
+        <div className="mute small">Saves as a draft. The SDR approves every email. A manager launches it.</div>
       </Section>
       {already.length ? (
         <div className="notice">

@@ -237,14 +237,19 @@ def classify_job(cur, payload: dict) -> None:
                 extracted["referral_email_dropped"] = True
             extracted["referral"] = ref
         if out["instructs_system"]:
-            db.run(cur, "update replies set needs_review = true, review_reason = 'The text tries to instruct the system' "
-                        "where id = %s", r["id"])
+            db.run(cur, "update replies set needs_review = true, review_reason = 'The reply contains instructions aimed "
+                        "at the desk' where id = %s", r["id"])
+        if label != "unsubscribe" and OPT_OUT.search(r["cleaned"]):
+            # A long reply that asks somewhere in it to stop hearing from us: a person reads it, so an opt-out is
+            # never lost to a label the model was sure of for the rest of the text.
+            db.run(cur, "update replies set needs_review = true, review_reason = coalesce(review_reason, "
+                        "'The reply may ask to stop hearing from us') where id = %s", r["id"])
     needs_review = conf < 0.7 or (not same_person and label not in NO_PERSON_NEEDED | {"bounce"})
     db.run(cur, """update replies set label = %s, confidence = %s, classified_by = %s, extracted = %s, same_person = %s,
                    hot = %s, needs_review = needs_review or %s,
                    review_reason = coalesce(review_reason, case when %s then %s end) where id = %s""",
            label, conf, by, J(extracted), same_person, label in HOT, needs_review, needs_review,
-           "Low confidence" if conf < 0.7 else "Written by someone else", r["id"])
+           "The desk is not sure what this reply means" if conf < 0.7 else "Written by someone else", r["id"])
     r = db.one(cur, "select * from replies where id = %s", r["id"])
     if r["needs_review"]:
         _review_task(cur, r)
@@ -340,6 +345,8 @@ def act(cur, r: dict) -> None:
         db.run(cur, "insert into suppressions (kind, value, reason, source) values ('email', %s, 'Unsubscribed by reply', 'reply')",
                (email or r["from_addr"]).lower())
         if pid:
+            from .privacy import suppress_other_channels
+            suppress_other_channels(cur, pid, reason="Unsubscribed by reply", source="reply")
             _stop_person(cur, pid, "unsubscribed")
         db.run(cur, """insert into crm_outbox (kind, payload, idempotency_key) values ('opt_out', %s, %s)
                        on conflict do nothing""", J({"email": email, "person_id": pid}), f"optout:{r['id']}")

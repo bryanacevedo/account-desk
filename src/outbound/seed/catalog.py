@@ -28,6 +28,10 @@ SETTINGS = {
     "linkedin_note_max_chars": 200,
     # Billing tools we replace. One arriving is not a reason to call; one leaving is ("Dropped a tool we replace").
     "competing_tools": ["Chargewise", "Meterline", "Chargebee", "Zuora"],
+    # Calling hours in the person's own time, Monday to Friday.
+    "call_window": ["09:00", "18:00"],
+    # A prospect with no reply and no activity for this many months is deleted; their opt-outs stay, hashed.
+    "retention_months": 12,
 }
 
 USERS = [
@@ -201,13 +205,24 @@ HOLIDAYS = [
 # A country not listed here gets no cold email at all until a manager adds its rule (gate.no_rule_message).
 REGION_RULES = [
     ("US", "allowed"), ("CA", "consent_required"), ("GB", "basis_required"), ("DE", "consent_required"),
-    ("FR", "basis_required"), ("NL", "basis_required"), ("ES", "basis_required"), ("IE", "basis_required"),
+    # Spain (LSSI art. 21) and the Netherlands (Telecommunicatiewet 11.7) ask for opt-in before commercial email, to
+    # businesses too. Counsel to confirm.
+    ("FR", "basis_required"), ("NL", "consent_required"), ("ES", "consent_required"), ("IE", "basis_required"),
     # Brazil's LGPD allows legitimate interest (art. 7 IX) with a recorded assessment (art. 10). Counsel to confirm.
     ("BR", "basis_required"),
     # Not a legal rule: the demo's seller does not sell in Singapore yet, so it does not email there. Australia has no
     # rule at all, so nobody there is cold-emailed until a manager adds one.
     ("SG", "blocked"),
 ]
+
+# Calls, per country: whether the SDRs call there, and the do-not-call register screened first. A country not listed
+# is not called. Germany needs presumed consent for a business call (UWG section 7) and the Netherlands keeps no
+# register for business lines, so neither is called by default. Counsel to confirm.
+CALL_RULES = {
+    "US": ("allowed", "National Do Not Call Registry"), "CA": ("allowed", "National Do Not Call List"),
+    "GB": ("allowed", "TPS and CTPS"), "FR": ("allowed", "Bloctel"), "ES": ("allowed", "Lista Robinson"),
+    "IE": ("allowed", "National Directory Database opt-out"), "BR": ("allowed", "Nao Me Perturbe"),
+}
 
 SENDING_DOMAINS = [
     # domain, registered days before start, mailboxes per (user index)
@@ -222,7 +237,7 @@ PLAY_CAP = {"people_search": 120, "email_finder": 120, "email_verifier": 240, "p
 # Flat fees, demo assumptions in the range public price lists show. A manager replaces them from real bills.
 SUBSCRIPTIONS = [
     ("mail", 700, "mailbox", "A mailbox seat at the mail provider"),
-    ("telemetry", 4900, "month", "Seed-test inbox placement"),
+    ("telemetry", 4900, "month", "Inbox placement tests"),
     ("warmup", 2900, "month", "Mailivery Starter: unlimited mailboxes, 200 warm-up emails a day shared"),
     ("linkedin", 7900, "sender", "One LinkedIn sender at HeyReach"),
     ("jobs_feed", 9900, "month", None), ("funding_feed", 4900, "month", None), ("people_moves", 14900, "month", None),

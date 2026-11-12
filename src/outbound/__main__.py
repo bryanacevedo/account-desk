@@ -76,8 +76,12 @@ def main(argv: list[str]) -> int:
             print(json.dumps(monitors.run_all(cur, {}), indent=2, default=str))
     elif cmd == "serve":
         import uvicorn
+
+        # Behind a proxy the client's address is the first X-Forwarded-For hop, trusted only from the proxies named in
+        # FORWARDED_ALLOW_IPS (default 127.0.0.1, never everyone).
         uvicorn.run("outbound.api.app:app", host=__import__("os").environ.get("HOST", "127.0.0.1"),
-                    port=int(__import__("os").environ.get("PORT", "8800")), log_level="info")
+                    port=int(__import__("os").environ.get("PORT", "8800")), log_level="info",
+                    proxy_headers=True, forwarded_allow_ips=CONFIG.forwarded_allow_ips)
     else:
         print(__doc__)
         return 2

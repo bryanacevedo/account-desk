@@ -54,7 +54,8 @@ def find_accounts(query: str, limit: int = 10) -> list[dict]:
         select a.id, a.name, a.primary_domain, a.fit_tier, a.lifecycle, s.priority, s.intent
         from accounts a left join account_scores s on s.account_id = a.id
         where a.name ilike %s or a.primary_domain ilike %s
-        order by s.priority desc nulls last limit %s""", f"%{query}%", f"%{query}%", max(1, min(limit, 50))))
+        order by s.priority desc nulls last limit %s""", views.like_pattern(query), views.like_pattern(query),
+        max(1, min(limit, 50))))
 
 
 @server.tool(annotations=READ_ONLY)

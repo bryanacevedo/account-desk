@@ -119,8 +119,9 @@ class PostmasterTelemetry:
         body = postmaster_stats_body(self.today())
         out = []
         for d in domains:
-            comp = self._get(token, "GET", f"{POSTMASTER}/domains/{d}/complianceStatus")
-            stats = self._get(token, "POST", f"{POSTMASTER}/domains/{d}/domainStats:query", body)
+            name = urllib.parse.quote(d, safe="")  # a domain is one path segment, whatever it contains
+            comp = self._get(token, "GET", f"{POSTMASTER}/domains/{name}/complianceStatus")
+            stats = self._get(token, "POST", f"{POSTMASTER}/domains/{name}/domainStats:query", body)
             out.append(postmaster_telemetry(d, comp, stats))
         return out
 
@@ -136,7 +137,9 @@ class Missing:
         self.name = f"missing:{vendor}"
 
     def _stop(self, *_a, **_k):
-        raise VendorMissing(f"no {self.vendor} configured")
+        exc = VendorMissing(f"no {self.vendor} configured")
+        exc.vendor = self.vendor
+        raise exc
 
     # people search, finder, verifier, phone, email channel, CRM writes: refuse
     search = find = verify = send = lookup = push = enrich = resolve = _stop

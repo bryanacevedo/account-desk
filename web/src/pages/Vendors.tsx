@@ -35,7 +35,7 @@ export function Vendors() {
       <div className="figs">
         <Fig value={usd(data.total_cents)} label={`This month so far, day ${data.day} of ${data.days}`} />
         <Fig value={usd(data.projected_cents)} label="At this pace, by month end" />
-        <Fig value={usd(data.last_month.cents)} label="Last month, with this month's flat fees" />
+        <Fig value={usd(data.last_month.cents)} label="Last month, flat fees at today's prices" />
       </div>
       <div className="figs">
         <Fig sm value={usd(data.metered_cents)} label="Data and AI, metered" />

@@ -132,6 +132,8 @@ The demo itself is now 3,000 accounts, about 24,700 people and six SDRs. Measure
 
 ### LinkedIn through HeyReach
 
+LinkedIn's User Agreement does not allow automating an account with a tool such as HeyReach; using one is the operator's own risk, including the loss of the SDRs' LinkedIn accounts.
+
 Set `LINKEDIN_TOOL_TOKEN` to a long random string, then in HeyReach add a webhook to `https://<your desk>/api/webhooks/linkedin/<token>` for "Connection request accepted" and "Message reply received". The desk finds the person by their LinkedIn profile; events for people it does not know are acknowledged and noted. HeyReach reports only the first reply in a conversation, so later messages are pasted on the person's page.
 
 ## The AI, measured

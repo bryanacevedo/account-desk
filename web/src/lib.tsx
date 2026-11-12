@@ -129,6 +129,11 @@ export function late(iso: string | null | undefined): string {
   return say(Math.round(s / 86400), "day");
 }
 export function useNowIso(): number { return NOW; }
+/** A link from data (a source, a profile) only when it is http or https; anything else is not made a link. */
+export function safeUrl(u: string | null | undefined): string | undefined {
+  const t = (u || "").trim();
+  return /^https?:\/\/[^\s/]+/i.test(t) ? t : undefined;
+}
 
 export function day(iso: string | null | undefined): string {
   if (!iso) return "";

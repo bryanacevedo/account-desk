@@ -86,3 +86,70 @@ def erase(cur, person_id: int, *, actor_id: int | None) -> dict:
     counts["themes_renamed"] = renamed
     audit.log(cur, "person", "erased", "person", person_id, {"counts": counts}, actor_id=actor_id)
     return {"ok": True, "counts": counts}
+
+
+def suppress_other_channels(cur, person_id: int, *, reason: str, source: str) -> None:
+    """An opt-out covers every channel: no call to their number and no LinkedIn note to their profile either."""
+    p = db.one(cur, "select phone, linkedin_url from people where id = %s", person_id)
+    if p is None:
+        return
+    if p["phone"]:
+        db.run(cur, "insert into suppressions (kind, value, reason, source) values ('phone', %s, %s, %s)",
+               p["phone"], reason, source)
+    if p["linkedin_url"]:
+        db.run(cur, "insert into suppressions (kind, value, reason, source) values ('linkedin_hash', %s, %s, %s)",
+               linkedin_hash(p["linkedin_url"]), reason, source)
+
+
+def phone_hash(phone: str) -> str:
+    """The same number however it is written: digits only."""
+    return hashlib.sha256(re.sub(r"\D", "", phone).encode()).hexdigest()
+
+
+def purge_stale(cur, *, months: int | None = None, batch: int = 500) -> dict:
+    """Retention: a prospect who never replied and has had no activity for `months` (setting retention_months,
+    default 12) is deleted. An opt-out they gave outlives the record as hashes of their email, phone and LinkedIn
+    profile, so they are never contacted or added again. CRM records, customers, champions, and anyone in a
+    sequence, a meeting, an open task or a deal stay."""
+    if months is None:
+        v = db.val(cur, "select value from settings where key = 'retention_months'")
+        months = int(v) if v is not None else 12
+    rows = db.all(cur, """
+        select p.id, p.email, p.phone, p.linkedin_url from people p left join accounts a on a.id = p.account_id
+         where p.created_at < app_now() - make_interval(months => %s)
+           and p.source <> 'crm' and not p.is_champion and coalesce(a.lifecycle, 'prospect') = 'prospect'
+           and not exists (select 1 from replies r where r.person_id = p.id)
+           and not exists (select 1 from touches t where t.person_id = p.id and t.at > app_now() - make_interval(months => %s))
+           and not exists (select 1 from meetings m where m.person_id = p.id)
+           and not exists (select 1 from enrollments e where e.person_id = p.id and e.state in ('pending', 'active', 'paused'))
+           and not exists (select 1 from tasks k where k.person_id = p.id and k.status = 'open')
+           and not exists (select 1 from opportunities o where p.email is not null and o.contact_email = p.email)
+         order by p.id limit %s""", months, months, batch)
+    kept = 0
+    for p in rows:
+        email, phone = (p["email"] or "").lower(), p["phone"] or ""
+        opted_out = db.val(cur, """select exists (select 1 from suppressions where (expires_at is null or expires_at > app_now())
+                                     and ((kind = 'person' and value = %s) or (kind = 'email' and %s <> '' and value = %s)
+                                          or (kind = 'phone' and %s <> '' and value = %s)))""",
+                           str(p["id"]), email, email, phone, phone)
+        if opted_out:
+            kept += 1
+            if email:
+                db.run(cur, "insert into suppressions (kind, value, reason, source) values ('email_hash', "
+                            "encode(sha256(convert_to(%s, 'UTF8')), 'hex'), 'Opted out; record purged', 'retention')", email)
+            if phone:
+                db.run(cur, "insert into suppressions (kind, value, reason, source) values ('phone_hash', %s, "
+                            "'Opted out; record purged', 'retention')", phone_hash(phone))
+            if p["linkedin_url"]:
+                db.run(cur, "insert into suppressions (kind, value, reason, source) values ('linkedin_hash', %s, "
+                            "'Opted out; record purged', 'retention')", linkedin_hash(p["linkedin_url"]))
+        db.run(cur, """delete from suppressions where (kind = 'person' and value = %s)
+                       or (kind = 'email' and %s <> '' and value = %s) or (kind = 'phone' and %s <> '' and value = %s)""",
+               str(p["id"]), email, email, phone, phone)
+        if email:
+            db.run(cur, "update crm_outbox set payload = payload - 'email' where payload->>'email' = %s", email)
+        db.run(cur, "delete from people where id = %s", p["id"])
+    if rows:
+        audit.log(cur, "desk", "retention_purge", "people", None,
+                  {"deleted": len(rows), "opt_outs_kept_as_hashes": kept, "months": months})
+    return {"deleted": len(rows), "opt_outs_kept": kept}

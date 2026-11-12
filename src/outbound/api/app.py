@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
+import re
 import threading
 import time
 import uuid
@@ -49,8 +51,32 @@ from ..config import CONFIG
 
 log = logging.getLogger("outbound.api")
 WEB = Path(__file__).resolve().parents[3] / "web" / "dist"
+# The LinkedIn tool's token travels in the URL path; it never reaches a log line.
+TOKEN_PATH = re.compile(r"(/api/webhooks/linkedin/)[^/?\s\"]+")
+
+
+def redact_path(path: str) -> str:
+    return TOKEN_PATH.sub(r"\1[redacted]", path)
+
+
+class _RedactAccessLog(logging.Filter):
+    """uvicorn's access log prints the full path; this takes the LinkedIn tool's token out of it."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(redact_path(a) if isinstance(a, str) else a for a in record.args)
+        elif isinstance(record.msg, str):
+            record.msg = redact_path(record.msg)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_RedactAccessLog())
+
+
 @asynccontextmanager
 async def lifespan(_app):
+    # However the app is started (python -m outbound serve, or uvicorn outbound.api.app:app directly), the unsafe
+    # settings are refused before anything is served.
+    CONFIG.validate()
     # The code and the schema ship together: a desk that starts on an older database brings it up to date first,
     # instead of serving pages that call functions the database does not have yet.
     applied = db.migrate()
@@ -68,14 +94,87 @@ app = FastAPI(title="Account Desk", docs_url="/api/docs", openapi_url="/api/open
 
 # ---------------------------------------------------------------- cross-cutting
 
+BODY_MAX = 1_000_000          # bytes, any request
+IMPORT_BODY_MAX = 6_000_000   # bytes, a CSV import (its text is up to 5 MB, sent as JSON)
+
+
+class BodyLimit:
+    """Refuses a body over the limit: by its declared Content-Length before reading anything, and by counting the
+    bytes as they stream in, so a request that lies about its length or sends none is cut off too."""
+
+    def __init__(self, app_):
+        self.app = app_
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        limit = IMPORT_BODY_MAX if scope["path"].startswith("/api/import/") else BODY_MAX
+        declared = dict(scope.get("headers") or []).get(b"content-length")
+        if declared is not None:
+            try:
+                too_big = int(declared) > limit
+            except ValueError:
+                too_big = True
+            if too_big:
+                return await JSONResponse({"detail": "The request is too large."}, status_code=413)(scope, receive, send)
+        seen = 0
+
+        async def capped():
+            nonlocal seen
+            msg = await receive()
+            if msg["type"] == "http.request":
+                seen += len(msg.get("body") or b"")
+                if seen > limit:
+                    raise HTTPException(413, "The request is too large.")
+            return msg
+
+        await self.app(scope, capped, send)
+
+
+app.add_middleware(BodyLimit)
+
+# Requests from outside the desk's own pages: webhooks (signed) and the one-click unsubscribe (tokened) come from
+# other servers and mail clients, so the same-origin and JSON checks do not apply to them.
+_OUTSIDE = ("/api/webhooks/", "/u/")
+
+
+def _same_origin(request: Request) -> str | None:
+    """Why a state-changing request from the browser is refused, or None. Browsers send Origin and Sec-Fetch-Site;
+    a request that names another site in either is a cross-site form or script, never the desk's own pages."""
+    site = request.headers.get("sec-fetch-site")
+    if site is not None and site not in ("same-origin", "none"):
+        return "Requests from other sites are not accepted."
+    origin = request.headers.get("origin")
+    if origin is not None:
+        from urllib.parse import urlsplit
+        got = urlsplit(origin).netloc.lower()
+        ours = {request.headers.get("host", "").lower(), urlsplit(CONFIG.public_url).netloc.lower()}
+        if not got or got not in ours:
+            return "Requests from other sites are not accepted."
+    return None
+
+
+def _guard(request: Request) -> JSONResponse | None:
+    if request.method in ("GET", "HEAD", "OPTIONS") or request.url.path.startswith(_OUTSIDE):
+        return None
+    why = _same_origin(request)
+    if why:
+        return JSONResponse({"detail": why}, status_code=403)
+    has_body = request.headers.get("content-length", "0") not in ("", "0") or "transfer-encoding" in request.headers
+    ctype = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if request.url.path.startswith("/api/") and has_body and ctype != "application/json":
+        return JSONResponse({"detail": "Send JSON (Content-Type: application/json)."}, status_code=415)
+    return None
+
+
 @app.middleware("http")
 async def headers_and_errors(request: Request, call_next):
     rid = uuid.uuid4().hex[:12]
     started = time.perf_counter()
     try:
-        response = await call_next(request)
+        response = _guard(request) or await call_next(request)
     except Exception:
-        log.exception("request %s %s failed (%s)", request.method, request.url.path, rid)
+        log.exception("request %s %s failed (%s)", request.method, redact_path(request.url.path), rid)
         response = JSONResponse({"error": "Something went wrong on our side.", "request_id": rid}, status_code=500)
     response.headers["X-Request-Id"] = rid
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -87,24 +186,59 @@ async def headers_and_errors(request: Request, call_next):
     ms = (time.perf_counter() - started) * 1000
     if request.url.path.startswith("/api/"):
         log.info('{"rid":"%s","method":"%s","path":"%s","status":%s,"ms":%.0f}', rid, request.method,
-                 request.url.path, response.status_code, ms)
+                 redact_path(request.url.path), response.status_code, ms)
     return response
 
 
 _hits: dict[str, deque] = defaultdict(deque)
 _hits_lock = threading.Lock()
+_hits_calls = 0
 
 
-def rate_limit(request: Request, limit: int = 120, window: float = 60.0) -> None:
-    """Writes per client per minute. In memory: enough for one instance; a shared deployment uses the proxy's."""
-    key = request.client.host if request.client else "?"
+def _trusted_proxy(host: str) -> bool:
+    for item in CONFIG.forwarded_allow_ips.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            if ipaddress.ip_address(host) in ipaddress.ip_network(item, strict=False):
+                return True
+        except ValueError:
+            if host == item:
+                return True
+    return False
+
+
+def client_ip(request: Request) -> str:
+    """Who is asking: behind a trusted proxy, the first X-Forwarded-For hop (the client as the proxy saw it);
+    otherwise the address the connection came from. A client cannot pick its own key by sending the header."""
+    peer = request.client.host if request.client else "?"
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded and _trusted_proxy(peer):
+        first = forwarded.split(",")[0].strip()
+        if first:
+            return first
+    return peer
+
+
+def rate_limit(request: Request, limit: int = 120, window: float = 60.0, bucket: str = "write",
+               message: str = "Too many changes in a minute. Try again shortly.") -> None:
+    """Requests per client per minute, per kind of request. In memory: enough for one instance; a shared
+    deployment uses the proxy's."""
+    global _hits_calls
+    key = f"{bucket}:{client_ip(request)}"
     now = time.monotonic()
     with _hits_lock:
+        _hits_calls += 1
+        if _hits_calls % 500 == 0:
+            # Clients that went quiet leave nothing behind.
+            for k in [k for k, q in _hits.items() if not q or now - q[-1] > window]:
+                del _hits[k]
         q = _hits[key]
         while q and now - q[0] > window:
             q.popleft()
         if len(q) >= limit:
-            raise HTTPException(429, "Too many changes in a minute. Try again shortly.")
+            raise HTTPException(429, message)
         q.append(now)
 
 
@@ -159,6 +293,15 @@ def writer(request: Request, u: dict = Depends(current_user)) -> dict:
             and not CONFIG.public_demo:
         raise HTTPException(403, "This desk needs its write key for changes.")
     return u
+
+
+PUBLIC_DEMO_MESSAGE = "Not available in the public demo."
+
+
+def not_in_public_demo() -> None:
+    """The public demo is one desk shared by everyone who visits: what would change it for all of them is refused."""
+    if CONFIG.public_demo:
+        raise HTTPException(403, PUBLIC_DEMO_MESSAGE)
 
 
 def bad_request(exc: Exception) -> HTTPException:
@@ -217,9 +360,21 @@ def in_flight(mine: bool | None = None, u: dict = Depends(current_user)) -> dict
         return views.in_flight(cur, u, mine=(u["role"] == "sdr") if mine is None else mine)
 
 
+def search_limit(request: Request, q: str | None = None) -> None:
+    """A search reads every account: searches have their own, smaller allowance."""
+    if q:
+        rate_limit(request, limit=60, bucket="search", message="Too many searches in a minute. Try again shortly.")
+
+
+def preview_limit(request: Request) -> None:
+    """A preview matches a play against every account: previews have their own, smaller allowance."""
+    rate_limit(request, limit=30, bucket="preview", message="Too many previews in a minute. Try again shortly.")
+
+
 @app.get("/api/accounts")
 def accounts(view: Literal["priority", "in_play", "rising", "all"] = "priority", q: str | None = None,
-             owner: int | None = None, page: int = Query(1, ge=1, le=10_000), u: dict = Depends(current_user)) -> dict:
+             owner: int | None = None, page: int = Query(1, ge=1, le=10_000), _limit: None = Depends(search_limit),
+             u: dict = Depends(current_user)) -> dict:
     per = 100
     with db.tx() as cur:
         rows = views.accounts(cur, q=(q or "")[:80] or None, view=view, owner=owner, limit=per, offset=(page - 1) * per)
@@ -343,7 +498,8 @@ class SuggestionDecision(BaseModel):
 
 @app.post("/api/play-suggestions/{suggestion_id}/decide")
 def decide_suggestion(suggestion_id: int, body: SuggestionDecision, u: dict = Depends(writer)) -> dict:
-    """Not now (it comes back if the pattern grows by half) or no (the theme is never suggested again)."""
+    """Not now (it comes back when heard at 1.5 times as many accounts as when it was set aside) or no (the
+    theme is never suggested again)."""
     need(u, "manager", "gtm")
     with db.tx() as cur:
         try:
@@ -553,6 +709,7 @@ class CalendarBooking(BaseModel):
 
 @app.post("/api/webhooks/meeting")
 async def webhook_meeting(request: Request) -> dict:
+    signature_headers(request)
     raw = await request.body()
     verify_signature(request, raw)
     b = CalendarBooking.model_validate_json(raw)
@@ -584,6 +741,7 @@ class ImportFile(BaseModel):
 @app.post("/api/import/{kind}")
 def import_rows(kind: Literal["accounts", "people"], body: ImportFile, u: dict = Depends(writer)) -> dict:
     """Bring your own accounts and people. Rows the desk refuses come back with the reason."""
+    not_in_public_demo()
     need(u, "manager", "gtm")
     from .. import setup_desk
     with db.tx() as cur:
@@ -805,6 +963,7 @@ class IcpRules(BaseModel):
 def publish_icp(body: IcpRules, u: dict = Depends(writer)) -> dict:
     """GTM publishes a new version of the ideal customer profile. Every account is rescored against it; the old
     version stays, so a score can always be traced to the rules it was computed with."""
+    not_in_public_demo()
     need(u, "gtm")
     if not (0 < body.tiers["B"] < body.tiers["A"] <= 100):
         raise HTTPException(422, "Tier A needs a higher score than tier B, both between 1 and 100.")
@@ -851,6 +1010,7 @@ class NewUser(BaseModel):
 
 @app.post("/api/users")
 def add_user(body: NewUser, u: dict = Depends(writer)) -> dict:
+    not_in_public_demo()
     need(u, "manager")
     from .. import admin
     return {"ok": True, "id": _admin(admin.add_user, **body.model_dump(), by=u["id"])}
@@ -867,6 +1027,7 @@ class UserChange(BaseModel):
 
 @app.patch("/api/users/{uid}")
 def change_user(uid: int, body: UserChange, u: dict = Depends(writer)) -> dict:
+    not_in_public_demo()
     need(u, "manager")
     from .. import admin
     if body.deactivate:
@@ -922,6 +1083,9 @@ class PlayChange(BaseModel):
     # The monthly cap the manager sets at launch (SPEC 22.16): credits per vendor, and AI in cents.
     monthly_cap: dict[Literal["people_search", "email_finder", "email_verifier", "phone_finder", "anthropic_cents"],
                       int] | None = None
+    # The legitimate-interest assessment the play rests on: a link or document reference, and its next review date.
+    lia_ref: str | None = Field(None, min_length=3, max_length=300)
+    lia_review_due: date | None = None
 
 
 @app.post("/api/plays/{play_id}")
@@ -931,7 +1095,15 @@ def change_play(play_id: int, body: PlayChange, u: dict = Depends(writer)) -> di
         p = db.one(cur, "select * from plays where id = %s for update", play_id)
         if p is None:
             raise HTTPException(404, "No such play.")
+        if body.lia_ref is not None or body.lia_review_due is not None:
+            db.run(cur, "update plays set lia_ref = coalesce(%s, lia_ref), lia_review_due = coalesce(%s, lia_review_due) "
+                        "where id = %s", body.lia_ref, body.lia_review_due, play_id)
+            p = db.one(cur, "select * from plays where id = %s", play_id)
         if body.status:
+            if body.status == "live":
+                problem = plays.lia_problem(cur, p)
+                if problem:
+                    raise HTTPException(422, problem)
             if body.status == "live" and u["role"] != "manager":
                 raise HTTPException(403, "A manager launches plays.")
             if body.status == "live" and p["created_by"] == u["id"]:
@@ -959,7 +1131,7 @@ def change_play(play_id: int, body: PlayChange, u: dict = Depends(writer)) -> di
             db.run(cur, "update plays set autonomy = %s where id = %s", body.autonomy, play_id)
             db.run(cur, "insert into play_stage_changes (play_id, from_stage, to_stage, reason, decided_by) "
                         "values (%s,%s,%s,%s,%s)", play_id, p["autonomy"], body.autonomy, body.reason, u["id"])
-        audit.log(cur, "person", "play_changed", "play", play_id, body.model_dump(), actor_id=u["id"])
+        audit.log(cur, "person", "play_changed", "play", play_id, body.model_dump(mode="json"), actor_id=u["id"])
     return {"ok": True}
 
 
@@ -971,7 +1143,8 @@ def _play_in(cur, body: play_editor.PlayIn) -> None:
 
 
 @app.post("/api/play-preview")
-def play_preview(body: play_editor.PlayIn, u: dict = Depends(current_user)) -> dict:
+def play_preview(body: play_editor.PlayIn, _limit: None = Depends(preview_limit),
+                 u: dict = Depends(current_user)) -> dict:
     """What a play, saved or not, would match today and cost a month."""
     with db.tx() as cur:
         _play_in(cur, body)
@@ -994,14 +1167,15 @@ def create_play(body: play_editor.PlayIn, u: dict = Depends(writer)) -> dict:
         lia = db.val(cur, "select value #>> '{}' from settings where key = 'lia_ref'") or db.val(
             cur, "select lia_ref from plays where lia_ref is not null order by id desc limit 1")
         if not lia:
-            raise HTTPException(422, "The desk has no legitimate-interest reference yet. Set it at init.")
+            raise HTTPException(422, "The desk has no legitimate-interest reference yet. Set it when the desk is set up.")
+        review = db.val(cur, "select (value #>> '{}')::date from settings where key = 'lia_review_due'")
         pid = db.val(cur, """insert into plays (key, name, hypothesis, trigger, personas, max_people, sequence, angle, autonomy,
                                                 status, holdout_pct, owner_id, created_by, urgent, latency_hours, lia_ref,
-                                                suggested_from)
-                             values (%s,%s,%s,%s,%s,%s,%s,%s,'draft','draft',%s,%s,%s,%s,%s,%s,%s) returning id""",
+                                                lia_review_due, suggested_from)
+                             values (%s,%s,%s,%s,%s,%s,%s,%s,'draft','draft',%s,%s,%s,%s,%s,%s,%s,%s) returning id""",
                      key, body.name, body.hypothesis, db.J(body.trigger.model_dump()), body.personas, body.max_people,
                      db.J([s.model_dump() for s in body.sequence]), body.angle, body.holdout_pct, u["id"], u["id"],
-                     body.urgent, body.latency_hours, lia, body.suggested_from)
+                     body.urgent, body.latency_hours, lia, review, body.suggested_from)
         if body.suggested_from is not None:
             # Saved from a suggestion: its open suggestion becomes drafted with this play, in the same transaction.
             try:
@@ -1076,6 +1250,7 @@ class KillSwitch(BaseModel):
 
 @app.post("/api/kill-switch")
 def kill_switch(body: KillSwitch, u: dict = Depends(writer)) -> dict:
+    not_in_public_demo()
     need(u, "gtm", "manager")
     with db.tx() as cur:
         db.run(cur, "insert into settings (key, value, updated_by) values ('kill_switch', %s, %s) "
@@ -1107,6 +1282,7 @@ def set_signal_type(key: str, body: SignalWeight, u: dict = Depends(writer)) -> 
 
 @app.post("/api/people/{person_id}/erase")
 def erase(person_id: int, u: dict = Depends(writer)) -> dict:
+    not_in_public_demo()
     need(u, "gtm")
     from .. import privacy
     with db.tx() as cur:
@@ -1118,27 +1294,59 @@ class Advance(BaseModel):
     hours: int = Field(ge=1, le=24 * 14)
 
 
+_sim_lock = threading.Lock()
+_sim_last = 0.0
+SIM_COOLDOWN_SECONDS = 10
+
+
 @app.post("/api/sim/advance")
 def sim_advance(body: Advance, u: dict = Depends(writer)) -> dict:
-    """Demo only: move the simulated clock forward and let the world and the desk work."""
+    """Demo only: move the simulated clock forward and let the world and the desk work. One move at a time; in the
+    public demo at most a day per move, with a short pause between moves, since every visitor shares the clock."""
+    global _sim_last
     with db.tx() as cur:
         if not db.val(cur, "select enabled from sim_clock"):
             raise HTTPException(404, "Not a simulated desk.")
-    from ..sim import runner
-    totals = runner.run_hours(body.hours)
-    return {"ok": True, **totals}
+    hours = min(body.hours, 24) if CONFIG.public_demo else body.hours
+    if not _sim_lock.acquire(blocking=False):
+        raise HTTPException(409, "The demo is already moving forward. Try again in a moment.")
+    try:
+        if CONFIG.public_demo and time.monotonic() - _sim_last < SIM_COOLDOWN_SECONDS:
+            raise HTTPException(409, "The demo just moved forward. Try again in a few seconds.")
+        from ..sim import runner
+        totals = runner.run_hours(hours)
+        _sim_last = time.monotonic()
+    finally:
+        _sim_lock.release()
+    return {"ok": True, "hours": hours, **totals}
 
 
 # ---------------------------------------------------------------- webhooks (signed)
 
-def verify_signature(request: Request, raw: bytes) -> None:
+def signature_headers(request: Request) -> None:
+    """Checked before the body is read: an unsigned or stale request costs nothing to refuse."""
     ts = request.headers.get("X-Signature-Timestamp", "")
-    sig = request.headers.get("X-Signature", "")
+    if not request.headers.get("X-Signature"):
+        raise HTTPException(401, "Missing signature.")
     if not ts.isdigit() or abs(time.time() - int(ts)) > 300:
         raise HTTPException(401, "Stale or missing timestamp.")
+
+
+def verify_signature(request: Request, raw: bytes) -> None:
+    signature_headers(request)
+    ts = request.headers.get("X-Signature-Timestamp", "")
+    sig = request.headers.get("X-Signature", "")
     expected = hmac.new(CONFIG.webhook_secret.encode(), ts.encode() + b"." + raw, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, sig):
         raise HTTPException(401, "Bad signature.")
+    # Replay: the same signed request is accepted once while its timestamp is still valid.
+    digest = hashlib.sha256(sig.encode()).hexdigest()
+    with db.tx() as cur:
+        db.run(cur, "delete from webhook_signatures where seen_at < now() - interval '10 minutes'")
+        fresh = db.val(cur, "insert into webhook_signatures (digest) values (%s) on conflict do nothing returning digest",
+                       digest)
+    if fresh is None:
+        raise HTTPException(409, "This request was already received.")
 
 
 class InboundReply(BaseModel):
@@ -1153,6 +1361,7 @@ class InboundReply(BaseModel):
 
 @app.post("/api/webhooks/reply")
 async def webhook_reply(request: Request) -> dict:
+    signature_headers(request)
     raw = await request.body()
     verify_signature(request, raw)
     body = InboundReply.model_validate_json(raw)
@@ -1194,11 +1403,16 @@ async def webhook_linkedin(token: str, request: Request) -> dict:
 
 @app.post("/api/webhooks/signal")
 async def webhook_signal(request: Request) -> dict:
+    signature_headers(request)
     raw = await request.body()
     verify_signature(request, raw)
     body = InboundSignal.model_validate_json(raw)
     if not isinstance(body.evidence.get("summary"), str) or not (body.evidence.get("url") or body.evidence.get("quote")):
         raise HTTPException(422, "Evidence needs a summary and a url or quote.")
+    if body.evidence.get("url") and not signals.http_url(body.evidence["url"]):
+        raise HTTPException(422, "Evidence url must start with http:// or https://.")
+    if body.person and body.person.get("linkedin_url") and not signals.http_url(body.person["linkedin_url"]):
+        raise HTTPException(422, "linkedin_url must start with http:// or https://.")
     with db.tx() as cur:
         counts = signals.ingest(cur, "webhook", [body.model_dump()])
     return {"ok": True, **counts}
@@ -1245,10 +1459,13 @@ def unsubscribe_page(person_id: int, token: str) -> str:
 def unsubscribe(person_id: int, token: str) -> str:
     _check_token(person_id, token)
     with db.tx() as cur:
-        email = db.val(cur, "select email from people where id = %s", person_id)
+        who = db.one(cur, "select email, phone, linkedin_url from people where id = %s", person_id) or {}
+        email = who.get("email")
         if email:
             db.run(cur, "insert into suppressions (kind, value, reason, source) values ('email', %s, 'One-click unsubscribe', 'link')",
                    email)
+        from ..privacy import suppress_other_channels
+        suppress_other_channels(cur, person_id, reason="One-click unsubscribe", source="link")
         db.run(cur, "insert into suppressions (kind, value, reason, source) values ('person', %s, 'One-click unsubscribe', 'link')",
                str(person_id))
         for e in db.all(cur, "select id from enrollments where person_id = %s and state in ('pending','active','paused')", person_id):

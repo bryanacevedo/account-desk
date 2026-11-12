@@ -17,6 +17,7 @@ from . import (
     jobs,
     llm,
     plays,
+    signals,
     sim_llm,  # noqa: F401  registers the stand-in model tasks
     spend,
     timeutil,
@@ -26,7 +27,15 @@ from .db import J
 
 log = logging.getLogger("outbound.outreach")
 SENIORITY_RANK = {"c_suite": 4, "vp": 3, "director": 2, "manager": 1, "ic": 0}
-EU_UK = {"GB", "DE", "FR", "NL", "ES", "IE", "IT", "BE", "SE", "DK", "PL", "AT", "PT", "FI"}
+# Where a first email carries a privacy notice: the EU and EEA (GDPR art. 14), the UK, Switzerland and Brazil (LGPD).
+# Every EU member state is listed, so a new country is covered before anyone remembers to add it.
+NOTICE_COUNTRIES = {"GB", "DE", "FR", "NL", "ES", "IE", "IT", "BE", "SE", "DK", "PL", "AT", "PT", "FI", "LU", "GR", "CZ",
+                    "SK", "SI", "HR", "HU", "RO", "BG", "EE", "LV", "LT", "CY", "MT", "NO", "IS", "LI", "CH", "BR"}
+# Where a person's details came from, in the notice's words. Anything not listed reads as public business sources.
+DATA_SOURCES = {"people_search": "a business contact database", "import": "our own business records",
+                "crm": "our own business records", "referral": "a colleague's suggestion",
+                "people_moves": "public news of your new role", "news_feed": "public company news",
+                "events": "an event you registered for", "product": "your sign-up to our product"}
 OUR_NAMES = [CONFIG.sender_company]
 # Signals the desk acts on but never mentions to the buyer: they came from tracking, not from anything the
 # company published. Citing them reads as surveillance.
@@ -49,7 +58,8 @@ def _research_facts(cur, account: dict) -> None:
                         account["id"], "page:" + pg.kind, pg.text)
         if not exists:
             db.run(cur, """insert into facts (account_id, kind, text, source, source_url, observed_at)
-                           values (%s,%s,%s,'research',%s,app_now())""", account["id"], "page:" + pg.kind, pg.text, pg.url)
+                           values (%s,%s,%s,'research',%s,app_now())""", account["id"], "page:" + pg.kind, pg.text,
+                   signals.http_url(pg.url))
     db.run(cur, """insert into research_cache (domain, kind, content, fetched_at) values (%s, 'pages', %s, app_now())
                    on conflict (domain, kind) do update set content = excluded.content, fetched_at = excluded.fetched_at""",
            account["primary_domain"], J([pg.__dict__ for pg in pages]))
@@ -317,7 +327,9 @@ def check_claims(cur, out: dict, facts: dict[int, str], company: str, account_id
 
 def _record_basis(cur, person: dict, play: dict) -> str | None:
     rule = db.val(cur, "select rule from region_rules where country = %s", person["country"])
-    if rule == "basis_required" and play.get("lia_ref"):
+    # Legitimate interest rests on a current assessment: one past its review date records no new basis.
+    if rule == "basis_required" and play.get("lia_ref") and play.get("lia_review_due") is not None \
+            and not db.val(cur, "select %s::date < app_now()::date", play["lia_review_due"]):
         db.run(cur, """insert into contact_basis (person_id, basis, recorded_by) values (%s, %s, null)
                        on conflict (person_id) do nothing""", person["id"], f"legitimate_interest:{play['lia_ref']}")
     return rule
@@ -365,10 +377,12 @@ def build_committee(cur, ap: dict, play: dict, account: dict, *, exclude: frozen
                 if c.match_confidence == "low":
                     continue  # the vendor is not sure this is the right person
                 pid = db.val(cur, """insert into people (account_id, full_name, first_name, last_name, title, seniority,
-                                                         linkedin_url, linkedin_key, country, timezone, source, photo_url)
-                                     values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'people_search',%s) returning id""",
+                                                         linkedin_url, linkedin_key, country, timezone, source, photo_url,
+                                                         source_origin)
+                                     values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'people_search',%s,%s) returning id""",
                              account["id"], c.full_name, c.first_name, c.last_name, c.title, c.seniority, c.linkedin_url,
-                             linkedin_key(c.linkedin_url), c.country, c.timezone, c.photo_url)
+                             linkedin_key(c.linkedin_url), c.country, c.timezone, c.photo_url,
+                             getattr(ad.people, "name", None) or "people_search")
                 ad.people.saved(cur, c, pid)
                 apply_person(cur, pid, {k: getattr(c, k) for k in ("departments", "role_started_at", "city", "headline",
                                                                     "match_confidence", "timezone", "title")}, "people_search")
@@ -492,9 +506,9 @@ def pick_mailbox(cur, owner_id: int, account_play_id: int) -> int | None:
 def footer_for(person: dict, message_id_hint: str) -> str:
     token = unsubscribe_token(person["id"])
     url = f"{CONFIG.public_url}/u/{person['id']}-{token[:12]}"
-    privacy = CONFIG.privacy_url if (person.get("country") or "") in EU_UK else None
+    privacy = CONFIG.privacy_url if (person.get("country") or "").upper() in NOTICE_COUNTRIES else None
     return copy_gate.footer(company=CONFIG.sender_company, address=CONFIG.sender_address, unsubscribe_url=url,
-                            privacy_url=privacy)
+                            privacy_url=privacy, data_source=DATA_SOURCES.get(person.get("source") or ""))
 
 
 _unsub_secret: str | None = None

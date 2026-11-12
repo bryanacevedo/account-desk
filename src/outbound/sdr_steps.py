@@ -41,9 +41,17 @@ def make_task(cur, e: dict, step: dict, now) -> int | None:
     channel = "call" if kind == "call" else "linkedin"
     reasons = [r for r in gate.person_reasons(cur, e["person_id"], channel, account_play_id=e["account_play_id"],
                                               enrollment_id=e["id"]) if r.permanent and r.code != "cooldown"]
-    p = db.one(cur, "select full_name, phone, phone_status, linkedin_url from people where id = %s", e["person_id"])
+    p = db.one(cur, "select full_name, phone, phone_status, linkedin_url, country, timezone from people where id = %s",
+               e["person_id"])
     if channel == "call" and (not p["phone"] or p["phone_status"] == "invalid"):
         reasons.append(gate.Reason("no_phone", True, "No working phone number"))
+    due, register = now, None
+    if channel == "call" and not reasons:
+        # Calls wait for calling hours in the person's own time, and the task names the register screened.
+        due = gate.next_call_time(cur, p, now)
+        if due is None:
+            reasons.append(gate.Reason("no_call_hours", True, "No calling hours in their time zone in the next ten days"))
+        register = db.val(cur, "select dnc_register from region_rules where country = %s", p["country"])
     if channel == "linkedin" and not p["linkedin_url"]:
         reasons.append(gate.Reason("no_linkedin", True, "No LinkedIn profile on record"))
     if reasons:
@@ -55,9 +63,10 @@ def make_task(cur, e: dict, step: dict, now) -> int | None:
     title = {"linkedin_connect": f"Connect with {p['full_name']} on LinkedIn",
              "linkedin_message": f"Message {p['full_name']} on LinkedIn",
              "call": f"Call {p['full_name']}" + (f" ({p['phone']})" if p["phone"] else "")}[kind]
-    return db.val(cur, """insert into tasks (account_play_id, person_id, message_id, kind, title, due_at, owner_id)
-                          values (%s,%s,%s,%s,%s,%s,%s) returning id""",
-                  e["account_play_id"], e["person_id"], message_id, kind, title, now, e["owner_id"])
+    return db.val(cur, """insert into tasks (account_play_id, person_id, message_id, kind, title, due_at, owner_id,
+                                             dnc_register)
+                          values (%s,%s,%s,%s,%s,%s,%s,%s) returning id""",
+                  e["account_play_id"], e["person_id"], message_id, kind, title, due, e["owner_id"], register)
 
 
 def linkedin_edit_problems(cur, m: dict, text: str) -> list[str]:
@@ -131,7 +140,7 @@ def complete(cur, task_id: int, *, user: dict, outcome: str, text: str | None = 
     elif t["kind"] == "call" and outcome != "skipped":
         # Someone who opted out, asked for no calls or was erased is not called, whatever the task list says.
         blocked = [r for r in gate.person_reasons(cur, t["person_id"], "call") if r.permanent and r.code in
-                   ("suppressed", "person_left", "person_unreachable")]
+                   ("suppressed", "person_left", "person_unreachable", "phone_dnc", "no_call_rule", "call_blocked")]
         if blocked:
             db.run(cur, "update tasks set status = 'skipped', done_at = app_now(), note = %s where id = %s",
                    f"Not called: {blocked[0].message}", task_id)

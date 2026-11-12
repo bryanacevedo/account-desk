@@ -34,6 +34,24 @@ class BadTransition(Exception):
     pass
 
 
+def lia_problem(cur, play: dict) -> str | None:
+    """Why a play that relies on legitimate interest may not launch, or None. It relies on it when it sends email and
+    any country's rule asks for a recorded basis: those people are contacted on the play's assessment."""
+    if not any(s.get("channel") == "email" for s in play["sequence"]):
+        return None
+    if not db.val(cur, "select exists (select 1 from region_rules where rule = 'basis_required')"):
+        return None
+    if not play.get("lia_ref"):
+        return "Record the legitimate-interest assessment's reference before launching this play."
+    due = play.get("lia_review_due")
+    if due is None:
+        return "Record when the legitimate-interest assessment is next reviewed before launching this play."
+    if db.val(cur, "select %s::date < app_now()::date", due):
+        return (f"The legitimate-interest assessment was due for review on {due:%d %b %Y}. Review it and record the "
+                "next review date before launching this play.")
+    return None
+
+
 def holdout_draw(play_key: str, account_id: int, pct: int) -> bool:
     """Deterministic: the same play and account always land in the same group."""
     h = int(hashlib.sha256(f"{play_key}:{account_id}".encode()).hexdigest()[:8], 16)
@@ -247,6 +265,10 @@ def cooldown_for(reason: str) -> timedelta:
 
 
 DEMOTE = {"autonomous": "supervised", "supervised": "draft", "draft": "draft", "research": "research"}
+# Each stage in the words the web app uses (web/src/sheets.tsx STAGE), so an alert never shows a raw key.
+STAGE_WORDS = {"research": "SDR writes everything", "draft": "SDR approves every email",
+               "supervised": "SDR approves first emails and checks a sample of the rest",
+               "autonomous": "Desk sends to tier B, SDR approves tier A"}
 
 
 @jobs.handler("autonomy_watch")
@@ -285,5 +307,6 @@ def autonomy_watch(cur, payload: dict) -> None:
             db.run(cur, "insert into play_stage_changes (play_id, from_stage, to_stage, reason) values (%s,%s,%s,%s)",
                    p["id"], p["autonomy"], to, why)
             alerts.raise_alert(cur, kind="demoted", severity="warn", channel="#outbound-ops",
-                               title=f"{p['name']} moved back to {to}", body=why, object_kind="play", object_id=p["id"],
+                               title=f"{p['name']} moved back a stage: {STAGE_WORDS[to]}", body=why,
+                               object_kind="play", object_id=p["id"],
                                dedup_key=f"demote:{p['id']}:{p['autonomy']}")

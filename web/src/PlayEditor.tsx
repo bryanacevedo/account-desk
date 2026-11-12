@@ -35,6 +35,7 @@ export function PlayEditor({ id, fromSuggestion = null }: { id: number | null; f
   // From a suggestion: its drafted fields over the defaults for a new play; every other field stays the default.
   const suggestion = useData<any>(!id && fromSuggestion ? `/api/play-suggestions/${fromSuggestion}` : null).data;
   const settings = useData<any>("/api/settings").data;
+  const urgentDays = Number(settings?.settings?.urgent_proposal_ttl_days ?? 1);
   const me = useData<any>("/api/me").data;
   const [d, setD] = useState<Draft | null>(id || fromSuggestion ? null : BLANK);
   const [pv, setPv] = useState<any>(null);
@@ -94,7 +95,7 @@ export function PlayEditor({ id, fromSuggestion = null }: { id: number | null; f
       {suggestion && d.suggested_from ? (
         <div className="notice"><span className="mute">Drafted from a suggestion. Edit anything before you save.</span></div>
       ) : null}
-      <Section title="The idea">
+      <Section title="Name and angle">
         <label className="field"><span>Name</span><input className="input" value={d.name} maxLength={80} onChange={(e) => set({ name: e.target.value })} placeholder="New finance leader, first 90 days" /></label>
         <label className="field"><span>When this happens, these people need us, because</span>
           <textarea className="input" rows={3} value={d.hypothesis} maxLength={400} onChange={(e) => set({ hypothesis: e.target.value })} /></label>
@@ -113,7 +114,7 @@ export function PlayEditor({ id, fromSuggestion = null }: { id: number | null; f
         </div>
         <div className="form-row">
           <label className="field"><span>Signal no older than, days</span><input className="input num" inputMode="numeric" value={d.trigger.within_days} onChange={(e) => setTrigger({ within_days: Number(e.target.value) || 0 })} /></label>
-          <label className="field"><span>Priority from</span><input className="input num" inputMode="numeric" value={d.trigger.min_priority} onChange={(e) => setTrigger({ min_priority: Number(e.target.value) || 0 })} /></label>
+          <label className="field"><span>Minimum priority</span><input className="input num" inputMode="numeric" value={d.trigger.min_priority} onChange={(e) => setTrigger({ min_priority: Number(e.target.value) || 0 })} /></label>
           <div className="field"><span>Fit</span>
             <div className="actions">
               {["A", "B"].map((t) => (
@@ -138,7 +139,7 @@ export function PlayEditor({ id, fromSuggestion = null }: { id: number | null; f
           <label className="field"><span>Held back, not contacted, %</span><input className="input num" inputMode="numeric" value={d.holdout_pct} onChange={(e) => set({ holdout_pct: Number(e.target.value) || 0 })} /></label>
           <label className="field"><span>First email within, hours</span><input className="input num" inputMode="numeric" value={d.latency_hours} onChange={(e) => set({ latency_hours: Number(e.target.value) || 4 })} /></label>
         </div>
-        <label className="choice"><input type="checkbox" checked={d.urgent} onChange={(e) => set({ urgent: e.target.checked })} />Decide within a day</label>
+        <label className="choice"><input type="checkbox" checked={d.urgent} onChange={(e) => set({ urgent: e.target.checked })} />Urgent: proposal expires after {urgentDays} business day{urgentDays === 1 ? "" : "s"}</label>
       </Section>
 
       <Section title="Sequence">
@@ -153,7 +154,7 @@ export function PlayEditor({ id, fromSuggestion = null }: { id: number | null; f
               }}>
                 {STEP_KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
-              <span className="mute small">{s.by === "desk" ? "Desk sends" : "SDR does it"}</span>
+              <span className="mute small">{s.by === "desk" ? "Desk drafts, SDR approves" : "SDR does it"}</span>
               <button className="iconbtn" aria-label="Remove step" onClick={() => set({ sequence: d.sequence.filter((_, j) => j !== i) })}><Trash size={16} /></button>
             </div>
           ))}

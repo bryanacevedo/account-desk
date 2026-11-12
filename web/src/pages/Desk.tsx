@@ -170,7 +170,7 @@ function AddSending({ domains, onDone }: { domains: any[]; onDone: () => void })
       <button className="btn quiet sm" onClick={() => setOpen("")}>Cancel</button>
       <button className="btn sm" disabled={busy || !f.address || !f.user_id || !f.warmup_started} onClick={() => run(async () => {
         await api("/api/mailboxes", { method: "POST", body: { address: f.address, user_id: Number(f.user_id), provider: f.provider, warmup_started: f.warmup_started } }); done();
-      }, "Added. A seed test runs now.")}>Add mailbox</button>
+      }, "Added. An inbox test runs now.")}>Add mailbox</button>
     </div>
   );
 }
@@ -192,13 +192,13 @@ export function Results() {
       <div className="figs">
         <Fig value={data.opportunities.sourced} label="Opportunities sourced" />
         {me?.money ? <Fig value={money(data.opportunities.sourced_cents)} label="Pipeline sourced" /> : null}
-        <Fig value={data.sla.median_hours ? `${data.sla.median_hours.toFixed(1)} h` : "None yet"} label="Median time to answer a hot reply" />
+        <Fig value={data.sla.median_hours ? `${data.sla.median_hours.toFixed(1)} h` : "None yet"} label="Typical time to answer a positive reply" />
 
       </div>
       <div>
         <Section title="From signal to meeting">
           <div className="funnel">
-            <Bar label="Offered to an SDR" value={f.proposed} of={of} />
+            <Bar label="Proposed to an SDR" value={f.proposed} of={of} />
             <Bar label="Accepted" value={f.accepted} of={of} hint={pct(f.accepted / of)} />
             <Bar label="Contacted" value={f.contacted} of={of} hint={pct(f.contacted / of)} />
             <Bar label="Replied" value={f.replied} of={of} hint={pct(f.replied / of)} />
@@ -216,7 +216,7 @@ export function Results() {
       <Section title="By channel, last 90 days">
         {data.channels.length ? (
           <div className="ledger">
-            <div className="row head" style={{ gridTemplateColumns: C_COLS }}><span>Channel</span><span className="num">People reached</span><span className="num">Responded</span><span className="num hide-sm">Meeting within 60 days</span></div>
+            <div className="row head" style={{ gridTemplateColumns: C_COLS }}><span>Channel</span><span className="num">People reached</span><span className="num">Replied</span><span className="num hide-sm">Meeting within 60 days</span></div>
             {data.channels.map((c: any) => {
               const answered = c.channel === "linkedin" ? c.accepted : c.channel === "call" ? c.spoke : c.replied;
               const word = c.channel === "linkedin" ? "accepted" : c.channel === "call" ? "spoke" : "replied";
@@ -345,7 +345,7 @@ export function Ops() {
           {data.jobs.length ? (
             <div className="ledger">{data.jobs.map((j: any) => (
               <div key={j.kind + j.status} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 100px 60px" }}>
-                <span>{JOB[j.kind] || cap(j.kind.replace(/_/g, " "))}</span><Status kind={j.status === "dead" ? "stop" : j.status === "queued" ? "half" : "go"}>{JOB_STATUS[j.status] || cap(j.status)}</Status><span className="num">{j.n}</span>
+                <span>{j.name}</span><Status kind={j.status === "dead" ? "stop" : j.status === "queued" ? "half" : "go"}>{JOB_STATUS[j.status] || cap(j.status)}</Status><span className="num">{j.n}</span>
               </div>))}
             </div>
           ) : <Empty title="Nothing waiting" />}
@@ -514,7 +514,7 @@ function ImportBox() {
     });
   };
   return (
-    <Section title="Bring your data" right={<span className="mute small">CSV. Accounts first, then people.</span>}>
+    <Section title="Import CSV" right={<span className="mute small">CSV. Accounts first, then people.</span>}>
       <div className="actions" style={{ flexWrap: "wrap" }}>
         <select className="select" style={{ width: 160 }} value={kind} onChange={(e) => setKind(e.target.value as any)} aria-label="What to import">
           <option value="accounts">Accounts</option><option value="people">People</option>
@@ -552,7 +552,7 @@ export function Settings() {
       <div className="head"><div><h1>Settings</h1></div></div>
       <Section title="Signals and their weight">
         <div className="ledger">
-          <div className="row head" style={{ gridTemplateColumns: W_COLS }}><span>Signal</span><span className="num">Weight</span><span className="num">Counts half after, days</span><span>On</span></div>
+          <div className="row head" style={{ gridTemplateColumns: W_COLS }}><span>Signal</span><span className="num">Priority points</span><span className="num">Counts half after, days</span><span>On</span></div>
           {data.signal_types.map((t: any) => <WeightRow key={t.key} t={t} canEdit={canEdit} />)}
         </div>
       </Section>
@@ -560,12 +560,12 @@ export function Settings() {
         <Section title="Limits">
           <dl className="kv">
             <dt>People per account</dt><dd>{s.account_max_active} at once, {s.account_max_active_wide} for tier A</dd>
-            <dt>Rest after an email</dt><dd>{s.person_cooldown_days} days before another play</dd>
+            <dt>Gap before another play</dt><dd>{s.person_cooldown_days} days</dd>
             <dt>After any reply</dt><dd>Account waits {s.account_reply_pause_hours} hours for an answer</dd>
             <dt>Re-check an email older than</dt><dd>{s.verify_max_age_days} days</dd>
             <dt>Send hours</dt><dd>{s.send_window.map((w: string[]) => w.join(" to ")).join(", ")}, their time</dd>
-            <dt>Per mailbox</dt><dd>Up to {s.mailbox_max_daily} a day, ramped</dd>
-            <dt>Hot reply answer</dt><dd>Within {s.sla_business_hours} business hours</dd>
+            <dt>Per mailbox</dt><dd>Up to {s.mailbox_max_daily} a day once warmed up</dd>
+            <dt>Positive reply answer</dt><dd>Within {s.sla_business_hours} business hours</dd>
             <dt>Proposal open for</dt><dd>{s.proposal_ttl_days} business days, {s.urgent_proposal_ttl_days} for urgent plays</dd>
           </dl>
         </Section>
@@ -586,8 +586,8 @@ export function Settings() {
           <dt>Heard at</dt><dd>{data.suggestion_rule.min_accounts} or more accounts that came in on one signal</dd>
           <dt>Written by</dt><dd>{data.suggestion_rule.min_sdrs} or more different SDRs</dd>
           <dt>Call notes from</dt><dd>The last {data.suggestion_rule.window_days} days</dd>
-          <dt>Gap needed</dt><dd>Heard far more often than at other accounts, and unlikely to be chance</dd>
-          <dt>Set aside</dt><dd>Comes back when heard at {data.suggestion_rule.regrow} times as many accounts</dd>
+          <dt>Gap needed</dt><dd>Heard far more often than elsewhere</dd>
+          <dt>Set aside</dt><dd>Comes back when heard at {data.suggestion_rule.regrow} times as many accounts as when it was set aside</dd>
         </dl>
       </Section>
       {me?.user.role === "manager" ? <Team /> : null}
@@ -600,7 +600,7 @@ export function Settings() {
             {data.suppressions.slice(0, 20).map((x: any) => (
               <div key={x.id} className="row" style={{ gridTemplateColumns: "100px minmax(0,1fr) minmax(0,1fr) 90px 70px", minHeight: 36 }}>
                 <span className="mute">{cap(x.kind === "email_hash" ? "erased" : x.kind)}</span>
-                <span className="clip">{x.kind === "email_hash" ? "Address kept only as a fingerprint" : x.value}</span>
+                <span className="clip">{x.kind === "email_hash" ? "Address kept only as a scrambled copy" : x.value}</span>
                 <span className="mute clip">{x.reason}</span>
                 <span className="num mute small">{day(x.created_at)}</span>
                 {me?.user.role === "manager" && String(x.source).startsWith("person:") ? <LiftButton id={x.id} onDone={reload} /> : <span />}
@@ -612,18 +612,7 @@ export function Settings() {
     </div>
   );
 }
-const JOB: Record<string, string> = {
-  send_due: "Sending scheduled emails", send_provider: "Handing emails to the mail provider", due_steps: "Moving sequences to their next step",
-  draft_step: "Drafting emails", research: "Researching accounts", rescore: "Rescoring an account", rescore_all: "Nightly rescoring",
-  rescore_batch: "Rescoring a batch of accounts", classify_reply: "Reading replies", resume: "Resuming after an out-of-office",
-  resume_after_positive: "Resuming colleagues after a positive reply", sla_check: "Checking reply answer times",
-  crm_push: "Writing to the CRM", crm_sync: "Reading the CRM", mailbox_health: "Checking mailbox health",
-  telemetry: "Reading spam rates", placement_tests: "Testing where mail lands", dns_check: "Checking DNS records",
-  monitors: "Running the checks", ingest_source: "Collecting signals", deliver_alert: "Sending alerts to Slack",
-  expire_proposals: "Expiring old proposals", close_stale_plays: "Closing plays that ran their course",
-  autonomy_watch: "Watching autonomy", watch_reset: "Resetting first-batch watches", sweep_sending: "Settling stuck sends",
-  reverify: "Re-checking an email", enroll_referral: "Enrolling a referred person", replace_person: "Finding a replacement",
-};
+// Job names come with each job from /api/ops (src/outbound/jobs.py JOB_NAMES), the same words the alerts use.
 const JOB_STATUS: Record<string, string> = { queued: "Waiting", running: "Running", failed: "Will retry", dead: "Gave up" };
 
 const W_COLS = "minmax(0,1.6fr) 90px 120px 60px";
@@ -637,7 +626,7 @@ function WeightRow({ t, canEdit }: { t: any; canEdit: boolean }) {
   return (
     <div className="row" style={{ gridTemplateColumns: W_COLS }}>
       <div className="cell-main" title={t.because}><span className="t"><SignalLabel type={t.key} label={t.label} /></span></div>
-      {canEdit ? <input className="input num" style={{ width: 80, justifySelf: "end" }} value={w} onChange={(e) => setW(e.target.value)} onBlur={() => dirty && save()} aria-label={`Weight for ${t.label}`} inputMode="decimal" /> : <span className="num" data-label="Weight">{Number(t.weight)}</span>}
+      {canEdit ? <input className="input num" style={{ width: 80, justifySelf: "end" }} value={w} onChange={(e) => setW(e.target.value)} onBlur={() => dirty && save()} aria-label={`Priority points for ${t.label}`} inputMode="decimal" /> : <span className="num" data-label="Priority points">{Number(t.weight)}</span>}
       {canEdit ? <input className="input num" style={{ width: 80, justifySelf: "end" }} value={h} onChange={(e) => setH(e.target.value)} onBlur={() => dirty && save()} aria-label={`Half-life for ${t.label}`} inputMode="decimal" /> : <span className="num" data-label="Counts half after">{Number(t.half_life_days)}</span>}
       <input type="checkbox" checked={t.enabled} disabled={!canEdit || busy} onChange={(e) => save(e.target.checked)} aria-label={`${t.label} on`} style={{ width: 18, height: 18, accentColor: "var(--accent)" }} />
     </div>

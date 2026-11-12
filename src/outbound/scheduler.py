@@ -10,7 +10,7 @@ PERIODIC = {  # kind: minutes
     "send_due": 10, "due_steps": 15, "expire_proposals": 60, "close_stale_plays": 360, "rescore_all": 1440,
     "sla_check": 30, "crm_push": 10, "mailbox_health": 360, "telemetry": 1440, "monitors": 360, "crm_sync": 360,
     "watch_reset": 1440, "sweep_sending": 15, "autonomy_watch": 360, "placement_tests": 10080, "dns_check": 1440,
-    "enrichment_refresh": 1440, "check_patterns": 1440,
+    "enrichment_refresh": 1440, "check_patterns": 1440, "retention_purge": 1440,
 }
 
 
@@ -50,6 +50,12 @@ def ingest_source(cur, payload: dict) -> None:
     from .adapters import sources
     raws = sources.fetch(cur, payload["source"])
     signals.ingest(cur, payload["source"], raws)
+
+
+@jobs.handler("retention_purge")
+def retention_purge(cur, payload: dict) -> None:
+    from . import privacy
+    privacy.purge_stale(cur)
 
 
 @jobs.handler("watch_reset")
