@@ -1228,10 +1228,9 @@ export function PlaySheet({ id }: { id: number }) {
           <span className="thesis-mark" aria-hidden="true"><i /><i /><i /><i /></span>
           <div className="thesis-body">
             <p className="thesis-lead">{p.hypothesis}</p>
-            <p>So when a company that fits our profile shows {p.trigger.any_of.length === 1 ? "this signal, " : "one of these signals, "}<b>{(() => {
-              const n = p.trigger.any_of.map((k: string) => (signalNames[k] || cap(k)).toLowerCase());
-              return n.length > 1 ? `${n.slice(0, -1).join(", ")} or ${n[n.length - 1]}` : n[0];
-            })()}</b>, I bring it to its SDR. {(() => {
+            <p>So when a company that fits our profile shows {p.trigger.any_of.length === 1 ? "this signal, " : "one of these signals, "}{p.trigger.any_of.map((k: string, n: number, all: string[]) => (
+              <span key={k}><b className="thesis-sig"><SignalIcon type={k} size={15} />{signalNames[k] || cap(k)}</b>{n < all.length - 2 ? ", " : n === all.length - 2 ? " or " : ""}</span>
+            ))}, I bring it to its SDR. {(() => {
               const has = (c: string) => p.sequence.some((x: any) => x.channel.startsWith(c));
               const ch = [has("email") ? "email" : null, has("linkedin") ? "LinkedIn message" : null, has("call") ? "call" : null].filter(Boolean) as string[];
               return `Every ${ch.length > 1 ? `${ch.slice(0, -1).join(", ")} and ${ch[ch.length - 1]}` : ch[0] || "message"} starts from one idea.`;
