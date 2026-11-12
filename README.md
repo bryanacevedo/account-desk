@@ -10,7 +10,7 @@ It is built for a small team that would rather write to 40 companies at the righ
 
 [![Watch the walkthrough (2:01)](docs/video/poster.jpg)](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4)
 
-**[Watch the walkthrough (2:01)](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4)**: one account, Ridgeway Software, from a new VP Finance on 13 October to two deals, then the held-back test that says it is too early to tell. Every figure in it is read from the demo.
+**[Watch the walkthrough (2:01)](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4)**: one account, Ridgeway Software, from a new VP Finance on 13 October to two deals, then the held-back test that says it is too early to tell. It was filmed on the demo as it stood on 11 November 2026, and every figure in it was read from that database. The demo is rebuilt from its simulation on each deploy, so the live accounts have moved on since.
 
 **[Try the live demo](https://account-desk-x4ko.onrender.com).** Pick who you are acting as in the sidebar (an SDR, the sales manager, or GTM engineering). The company, its accounts, people and vendors are all invented, and every vendor is simulated. If it has been idle, Render takes up to a minute to wake it; after that pages answer in under a second. Read "What is real and what is simulated" before trusting any number in it.
 
