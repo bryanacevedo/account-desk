@@ -239,7 +239,7 @@ PLAY_CAP = {"people_search": 120, "email_finder": 120, "email_verifier": 240, "p
 # Flat fees, demo assumptions in the range public price lists show. A manager replaces them from real bills.
 SUBSCRIPTIONS = [
     ("mail", 700, "mailbox", "A mailbox seat at the mail provider"),
-    ("telemetry", 4900, "month", "Seed-test inbox placement"),
+    ("telemetry", 4900, "month", "Inbox placement tests"),
     ("warmup", 2900, "month", "Mailivery Starter: unlimited mailboxes, 200 warm-up emails a day shared"),
     ("linkedin", 7900, "sender", "One LinkedIn sender at HeyReach"),
     ("jobs_feed", 9900, "month", None), ("funding_feed", 4900, "month", None), ("people_moves", 14900, "month", None),

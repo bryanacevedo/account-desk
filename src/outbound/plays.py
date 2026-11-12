@@ -265,6 +265,10 @@ def cooldown_for(reason: str) -> timedelta:
 
 
 DEMOTE = {"autonomous": "supervised", "supervised": "draft", "draft": "draft", "research": "research"}
+# Each stage in the words the web app uses (web/src/sheets.tsx STAGE), so an alert never shows a raw key.
+STAGE_WORDS = {"research": "SDR writes everything", "draft": "SDR approves every email",
+               "supervised": "SDR approves first emails and checks a sample of the rest",
+               "autonomous": "Desk sends to tier B, SDR approves tier A"}
 
 
 @jobs.handler("autonomy_watch")
@@ -303,5 +307,6 @@ def autonomy_watch(cur, payload: dict) -> None:
             db.run(cur, "insert into play_stage_changes (play_id, from_stage, to_stage, reason) values (%s,%s,%s,%s)",
                    p["id"], p["autonomy"], to, why)
             alerts.raise_alert(cur, kind="demoted", severity="warn", channel="#outbound-ops",
-                               title=f"{p['name']} moved back to {to}", body=why, object_kind="play", object_id=p["id"],
+                               title=f"{p['name']} moved back a stage: {STAGE_WORDS[to]}", body=why,
+                               object_kind="play", object_id=p["id"],
                                dedup_key=f"demote:{p['id']}:{p['autonomy']}")

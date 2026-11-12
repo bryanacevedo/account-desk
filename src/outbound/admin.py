@@ -31,7 +31,7 @@ def change_user(cur, uid: int, *, by: int, name: str | None = None, role: str | 
     if role and role != u["role"] and u["role"] == "manager" and _managers(cur) <= 1:
         raise AdminError("The desk needs at least one manager, who launches plays.")
     if role and role != "sdr" and u["role"] == "sdr" and _open_work(cur, uid):
-        raise AdminError("They still own accounts or open plays as an SDR. Hand those over first, by deactivating with a successor or reassigning in the CRM.")
+        raise AdminError("They still own accounts or open plays as an SDR. Remove them from the desk and hand their work to an SDR.")
     db.run(cur, """update users set name = coalesce(%s, name), role = coalesce(%s, role), timezone = coalesce(%s, timezone),
                    slack_id = coalesce(%s, slack_id) where id = %s""", name, role, timezone, slack_id, uid)
     audit.log(cur, "person", "user_changed", "user", uid, {"role": role, "name": name}, actor_id=by)

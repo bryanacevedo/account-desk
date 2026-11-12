@@ -249,7 +249,7 @@ def classify_job(cur, payload: dict) -> None:
                    hot = %s, needs_review = needs_review or %s,
                    review_reason = coalesce(review_reason, case when %s then %s end) where id = %s""",
            label, conf, by, J(extracted), same_person, label in HOT, needs_review, needs_review,
-           "Low confidence" if conf < 0.7 else "Written by someone else", r["id"])
+           "The desk is not sure what this reply means" if conf < 0.7 else "Written by someone else", r["id"])
     r = db.one(cur, "select * from replies where id = %s", r["id"])
     if r["needs_review"]:
         _review_task(cur, r)

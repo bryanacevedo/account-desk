@@ -198,7 +198,7 @@ function Types({ rows }: { rows: any[] }) {
             <span className="num" data-label="Plays started">{r.treated}</span><span className="num" data-label="Held back">{r.holdout}</span>
             <div>{!r.starts_plays ? <span className="faint" title="No live play starts on this signal. It raises an account's priority, but its own effect is not measured.">Not measured: no play starts on it</span>
               : !r.treated ? <span className="faint">No plays yet</span>
-              : !r.lift?.enough ? <span title={`${pct(r.meeting_rate)} with a play met, against ${pct(r.lift?.holdout?.rate)} held back. ${r.lift?.still_needed?.holdout ? `${r.lift.still_needed.holdout} more held-back accounts` : `${r.lift?.still_needed?.treated} more accounts with a play`} are needed to tell.${r.lift?.out_of_reach ? ` That is more than the ${r.lift.room} accounts in this desk never offered one, so at this size it cannot be told.` : ""}`}>
+              : !r.lift?.enough ? <span title={`${pct(r.meeting_rate)} with a play met, against ${pct(r.lift?.holdout?.rate)} held back. ${r.lift?.still_needed?.holdout ? `${r.lift.still_needed.holdout} more held-back accounts` : `${r.lift?.still_needed?.treated} more accounts with a play`} are needed to tell.${r.lift?.out_of_reach ? ` That is more than the ${r.lift.room} accounts in this desk never proposed a play, so at this size it cannot be told.` : ""}`}>
                   <Status kind="wait">Too few to tell</Status></span>
               : <Bar label="" value={r.meeting_rate || 0} of={max} shown={pct(r.meeting_rate)}
                   hint={`vs ${pct(r.lift.holdout.rate)} held back, ${r.lift.difference >= 0 ? "+" : ""}${pct(r.lift.difference)} (${pct(r.lift.interval[0])} to ${pct(r.lift.interval[1])})`} />}</div>
@@ -235,7 +235,7 @@ function PlayRow({ p, i }: { p: any; i: number }) {
           <span className="prow-of">{stage + 1} of 4</span>
         </span>
       </span>
-      <span className="prow-n"><span className="sr-only">Accounts </span>{n0(f.proposed)}</span>
+      <span className="prow-n"><span className="sr-only">Proposed </span>{n0(f.proposed)}</span>
       <span className={`prow-n is-hero${f.meetings ? "" : " is-zero"}`}><span className="sr-only">Meetings </span>{n0(f.meetings)}</span>
     </button>
   );
@@ -253,7 +253,7 @@ export function Plays() {
         {me?.user.role === "gtm" ? <button className="btn" onClick={() => openSheet("playedit", "new")}>New play</button> : null}</div>
       {me && me.user.role !== "sdr" ? <Suggested /> : null}
       <div className="plist">
-        <div className="prow is-head" aria-hidden="true"><span className="prow-sigs" /><span>Play, and who writes</span><span className="prow-n">Accounts</span><span className="prow-n">Meetings</span></div>
+        <div className="prow is-head" aria-hidden="true"><span className="prow-sigs" /><span>Play, and who writes</span><span className="prow-n">Proposed</span><span className="prow-n">Meetings</span></div>
         {data.plays.map((p: any, i: number) => <PlayRow key={p.id} p={p} i={i} />)}
       </div>
     </div>
@@ -275,7 +275,7 @@ function Suggested() {
             return (
               <button key={x.id} className="row" style={{ gridTemplateColumns: SUG_COLS }} onClick={() => openSheet("suggestion", x.id)}>
                 <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{x.theme}</span>
-                  <span className="s">From {e.sdrs} SDRs</span></div>
+                  <span className="s">From {e.sdrs} SDR{e.sdrs === 1 ? "" : "s"}</span></div>
                 <span data-label="Signal"><SignalLabel type={x.segment} label={x.segment_label} /></span>
                 <span className="num" data-label="On this signal"><span className="strong">{e.accounts} of {e.segment_accounts}</span></span>
                 <span className="num mute" data-label="Other accounts">{e.elsewhere} of {e.elsewhere_accounts}</span>
@@ -285,7 +285,7 @@ function Suggested() {
         </div>
       ) : (
         <Empty title="Nothing suggested from calls right now">
-          <span className="mute"> The bar is in Settings.</span>
+          <span className="mute"> Settings sets how often a theme must come up.</span>
         </Empty>
       )}
     </Section>

@@ -91,7 +91,7 @@ def _blocked(cur, theme_id: int, segment: str, accounts: int) -> str | None:
                           where theme_id = %s and status = 'not_now' order by decided_at desc limit 1""", theme_id)
     if last and (segment != last["segment_signal_type"]
                  or accounts < math.ceil(RULE["regrow"] * (last["accounts_at_decision"] or 0))):
-        return "set aside, and not grown by half in its segment"
+        return "set aside, and not yet heard at 1.5 times as many accounts as when it was set aside"
     return None
 
 

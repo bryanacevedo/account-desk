@@ -137,7 +137,9 @@ class Missing:
         self.name = f"missing:{vendor}"
 
     def _stop(self, *_a, **_k):
-        raise VendorMissing(f"no {self.vendor} configured")
+        exc = VendorMissing(f"no {self.vendor} configured")
+        exc.vendor = self.vendor
+        raise exc
 
     # people search, finder, verifier, phone, email channel, CRM writes: refuse
     search = find = verify = send = lookup = push = enrich = resolve = _stop

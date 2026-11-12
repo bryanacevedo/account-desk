@@ -17,11 +17,11 @@ MONITORS: dict[str, dict] = {
                   and m.sent_at > app_now() - interval '2 days'""",  # a LinkedIn step is done by hand, whenever the SDR does it
         "python": "window"},
     "hot_reply_unalerted": {
-        "title": "Hot replies with no alert",
+        "title": "Positive replies with no alert",
         "sql": """select r.id from replies r where r.hot and r.received_at < app_now() - interval '15 minutes'
                   and not exists (select 1 from alerts a where a.object_kind = 'reply' and a.object_id = r.id)"""},
     "sla_unescalated": {
-        "title": "Hot replies past their answer time and not escalated",
+        "title": "Positive replies past their answer time and not escalated",
         "sql": """select id from replies where hot and handled_at is null and sla_due_at < app_now() - interval '1 hour'
                   and escalated_at is null"""},
     "crm_outbox_stuck": {
@@ -85,7 +85,7 @@ MONITORS: dict[str, dict] = {
                   and (t.direction = 'in' or t.kind = 'call_connected') and t.kind <> 'linkedin_accepted'
                   and m.sent_at > t.at"""},
     "placement_unknown": {
-        "title": "Mailboxes with no seed test in 10 days",
+        "title": "Mailboxes with no inbox test in 10 days",
         "sql": """select mb.id from mailboxes mb where mb.status = 'active' and not exists (select 1 from placement_tests t
                   where t.mailbox_id = mb.id and t.at > app_now() - interval '10 days')"""},
     "postmaster_failing": {
@@ -158,7 +158,7 @@ def latest(cur) -> list[dict]:
     rows = db.all(cur, """select distinct on (monitor) monitor, at, ok, found, sample, error from monitor_runs
                           order by monitor, at desc""")
     titles = {k: v["title"] for k, v in MONITORS.items()}
-    titles["monitors_ran"] = "Every monitor ran in the last cycle"
+    titles["monitors_ran"] = "Every check ran in the last cycle"
     for r in rows:
         r["title"] = titles.get(r["monitor"], r["monitor"])
     return rows

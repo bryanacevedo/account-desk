@@ -32,7 +32,7 @@ export function Today() {
         <div><h1>Today</h1><div className="sub">{weekday(data.now)}</div></div>
       </div>
       <div className="figs">
-        <Fig value={data.replies.length} label={overdue ? `Replies, ${overdue} past due` : "Replies to answer"} />
+        <Fig value={data.replies.length} label={overdue ? `Replies, ${overdue} overdue` : "Replies to answer"} />
         <Fig value={data.proposals.length} label="Plays to decide" />
         <Fig value={data.approvals.length} label="Emails to approve" onClick={() => navigate("/approvals")} />
         <Fig value={data.tasks.length} label="Calls and LinkedIn" />
@@ -68,7 +68,7 @@ export function Today() {
               <div key={p.id} className={`row prop-row${leaving === p.id ? " is-leaving" : ""}`} style={{ gridTemplateColumns: "28px minmax(0,1.1fr) minmax(0,2fr) 52px auto", animationDelay: `${i * 60}ms` }}>
                 <Logo domain={p.primary_domain} name={p.name} />
                 <button className="cell-main" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }} onClick={() => openSheet("account", p.account_id)}>
-                  <span className="t prop-play">{p.play}</span><span className="s">at <span className="prop-acct">{p.name}</span>{p.urgent ? ", decide today" : ""}{me?.user.role !== "sdr" && p.owner ? `, ${p.owner}` : ""}</span><span className="s only-sm">{p.why_now.summary}</span>
+                  <span className="t prop-play">{p.play}</span><span className="s">at <span className="prop-acct">{p.name}</span>{p.urgent ? ", urgent" : ""}{me?.user.role !== "sdr" && p.owner ? `, ${p.owner}` : ""}</span><span className="s only-sm">{p.why_now.summary}</span>
                 </button>
                 <div className="cell-main hide-sm"><span className="t" style={{ fontWeight: 450 }}>{p.why_now.summary}</span><span className="s"><SignalLabel type={p.why_now.type} label={ago(p.why_now.observed_at)} /></span></div>
                 <span className="num hide-sm"><span className="mute small">Priority </span>{p.priority}</span>
@@ -188,7 +188,7 @@ export function Accounts() {
                 <span className="num hide-sm" style={{ color: a.week_change > 0 ? "var(--ink)" : "var(--faint)" }}>{a.week_change > 0 ? `+${a.week_change}` : a.week_change < 0 ? a.week_change : ""}</span>
                 <span className="hide-sm">{st ? <Status kind={st[0]}>{st[1]}</Status>
                   : a.last_state === "held_out" && a.hold_until ? <span className="mute">Held back</span>
-                  : a.hold_until ? <span className="mute" title="Not offered again until then: someone asked us to come back later, or a play just ended here.">Not offered until {day(a.hold_until)}</span>
+                  : a.hold_until ? <span className="mute" title="Not proposed again until then: someone asked us to come back later, or a play just ended here.">Not proposed until {day(a.hold_until)}</span>
                   : <span className="faint">Not in a play</span>}</span>
                 <span className="clip mute hide-sm">{a.owner || "Unassigned"}</span>
               </button>

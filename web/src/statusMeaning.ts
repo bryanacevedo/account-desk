@@ -38,7 +38,7 @@ export const STATUS_MEANING: Record<string, string> = {
   "Draft rejected": "The SDR rejected the draft for them, so their steps stopped.",
   "Colleague's meeting": "A colleague at their company booked the meeting, so the desk stopped writing to them too.",
   "Simulated": "This demo stands in for the vendor. Nothing real is called and the prices are assumed.",
-  "Not connected": "Not set up. Work that needs it waits, or is skipped for optional vendors.",
+  "Not connected": "Not set up. Work that needs it waits, or is skipped for optional vendors, and the team is told.",
   "Webhook": "Sends events to the desk as they happen.",
   "Connected": "A real account is connected and the desk uses it.",
   "Too few to tell": "Not enough accounts in each group yet to say whether this makes a difference.",
@@ -58,7 +58,7 @@ export const STATUS_MEANING: Record<string, string> = {
   "Not delivered": "It did not arrive. See the reason on the email.",
   "Failed": "Something went wrong sending it. It was not sent.",
   "Rejected": "The SDR rejected the draft. It will not send.",
-  "Needs a rewrite": "A copy check failed: a claim without a source, too long, or a banned phrase.",
+  "Needs a rewrite": "A copy check failed. The reason is on the email.",
   "Outcome unknown": "The desk does not know if it went out, so it does not send it again.",
   // Replies
   "Interested": "They want to hear more.",

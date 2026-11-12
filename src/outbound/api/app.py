@@ -498,7 +498,8 @@ class SuggestionDecision(BaseModel):
 
 @app.post("/api/play-suggestions/{suggestion_id}/decide")
 def decide_suggestion(suggestion_id: int, body: SuggestionDecision, u: dict = Depends(writer)) -> dict:
-    """Not now (it comes back if the pattern grows by half) or no (the theme is never suggested again)."""
+    """Not now (it comes back when heard at 1.5 times as many accounts as when it was set aside) or no (the
+    theme is never suggested again)."""
     need(u, "manager", "gtm")
     with db.tx() as cur:
         try:

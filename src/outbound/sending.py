@@ -254,8 +254,12 @@ def record_delivery_event(cur, message_id: int, event: str, detail: dict | None 
             db.run(cur, "update play_step_watch set paused = true, paused_reason = %s where template_key = %s",
                    f"{w['hard_bounces']} hard bounces, {w['complaints']} complaints in the first {w['sends']} sends",
                    m["template_key"])
+            step = db.one(cur, """select pl.name as play, email_no(e.id, %s) as n from enrollments e
+                                  join account_plays ap on ap.id = e.account_play_id join plays pl on pl.id = ap.play_id
+                                  where e.id = %s""", m["step_index"], m["enrollment_id"])
             alerts.raise_alert(cur, kind="watch_paused", severity="urgent", channel="#outbound-ops",
-                               title=f"Paused {m['template_key']} in its first batch",
+                               title=f"Paused email {step['n']} of {step['play']} in its first batch" if step
+                               else "Paused an email step in its first batch",
                                body="Bounces or a complaint in the first sends. Check the data source before resuming.",
                                dedup_key=f"watch:{m['template_key']}")
     if event == "complaint":
@@ -294,7 +298,7 @@ def mailbox_health(cur, payload: dict) -> None:
         alerts.raise_alert(cur, kind="reply_drop", severity="warn", channel="#outbound-ops",
                            title=f"{d['address']} replies at under half its peers' rate",
                            body=f"{d['replied']} replies to {d['sent']} emails in 30 days; its peers' rate predicts "
-                                f"{d['expected']}. It may be landing in spam. A seed test will check.",
+                                f"{d['expected']}. It may be landing in spam. An inbox test will check.",
                            object_kind="mailbox", object_id=d["id"], dedup_key=f"replydrop:{d['id']}:{week}")
         if not db.val(cur, "select exists (select 1 from placement_tests where mailbox_id = %s "
                            "and at > app_now() - interval '3 days')", d["id"]):
@@ -329,7 +333,7 @@ def placement_tests(cur, payload: dict) -> None:
         elif rate < hold:
             alerts.raise_alert(cur, kind="placement_hold", severity="warn", channel="#outbound-ops",
                                title=f"{mb['address']} {rate:.0%} inbox at {where}",
-                               body="Held at 10 a day until a seed test comes back healthy. Check its content and volume.",
+                               body="Held at 10 a day until an inbox test comes back healthy. Check its content and volume.",
                                object_kind="mailbox", object_id=mb["id"], dedup_key=f"placehold:{mb['id']}:{today}")
 
 

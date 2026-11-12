@@ -625,7 +625,9 @@ def results(cur, *, money: bool) -> dict:
 # ---------------------------------------------------------------- health and settings
 
 def health(cur) -> dict:
-    jobs = db.all(cur, "select kind, status, count(*) as n from jobs where status in ('queued','running','failed','dead') group by 1,2 order by 1")
+    from .jobs import job_name
+    jobs = [{**j, "name": job_name(j["kind"])} for j in db.all(
+        cur, "select kind, status, count(*) as n from jobs where status in ('queued','running','failed','dead') group by 1,2 order by 1")]
     outbox = db.all(cur, "select status, count(*) as n from crm_outbox group by status")
     alerts = db.all(cur, "select id, at, kind, severity, channel, title, body, delivered_at, delivery_error from alerts order by at desc limit 40")
     budgets = db.all(cur, """select b.vendor, b.monthly_cap_cents as cap, coalesce((select sum(case when b.vendor = 'anthropic'

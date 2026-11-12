@@ -534,3 +534,30 @@ def test_the_launch_gate_is_wired_into_the_api(client):
         with db.tx() as cur:
             db.run(cur, "update plays set status = 'live', lia_review_due = %s where id = %s", pl["lia_review_due"], pl["id"])
 
+
+
+# ---------------------------------------------------------------- copy that comes from code
+
+def test_alerts_name_jobs_and_waits_in_words():
+    from outbound import jobs, spend
+    from outbound.adapters import VendorMissing
+    assert jobs.job_name("autonomy_watch") == "Checking plays for a stage change"
+    assert jobs.waiting_title(spend.OverBudget("phone_finder")) == "Phone finder work is waiting: monthly cap reached"
+    assert jobs.waiting_title(spend.PlayOverBudget("Raised a round: email_finder")) == (
+        "Email finder work for Raised a round is waiting: the play's monthly cap is reached")
+    missing = VendorMissing("no people_search configured")
+    missing.vendor = "people_search"
+    assert jobs.waiting_title(missing) == "People search work is waiting: no vendor is connected for it"
+
+
+def test_a_demotion_alert_names_the_stage_in_words():
+    assert plays.STAGE_WORDS["supervised"] == "SDR approves first emails and checks a sample of the rest"
+    assert set(plays.STAGE_WORDS) == set(views.STAGES)
+
+
+def test_review_reasons_are_plain():
+    import inspect
+    import re
+    src = re.sub(r"[\"']\s+[\"']", "", inspect.getsource(replies.classify_job))  # strings split across lines
+    assert "The desk is not sure what this reply means" in src
+    assert "The reply contains instructions aimed at the desk" in src
