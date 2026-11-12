@@ -463,7 +463,8 @@ def promotion_check(cur, play: dict) -> dict:
                                 join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
                                 where ap.play_id = %s and d.event = 'complaint'""", play["id"]) or 0
     unknown = db.val(cur, """select count(*) from sending_domains d where exists (select 1 from mailboxes mb where mb.domain = d.domain
-                             and mb.status = 'active') and d.spam_rate is null""") or 0
+                             and mb.status = 'active') and (d.spam_rate is null or d.spam_rate_at is null
+                             or d.spam_rate_at < app_now() - interval '7 days')""") or 0
     positives = db.val(cur, """select count(*) from replies r join messages m on m.id = r.message_id join enrollments e on e.id = m.enrollment_id
                                join account_plays ap on ap.id = e.account_play_id where ap.play_id = %s and r.hot""", play["id"]) or 0
     checks = [

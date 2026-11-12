@@ -124,7 +124,7 @@ def in_leader_seat(cur, title: str | None) -> bool:
 
 def _new_in_seat(cur, person_id: int) -> None:
     """Someone took the finance leader's seat in the last 90 days: the strongest single reason to talk to an account."""
-    p = db.one(cur, """select p.*, a.primary_domain from people p join accounts a on a.id = p.account_id
+    p = db.one(cur, """select p.*, a.primary_domain, a.name as company from people p join accounts a on a.id = p.account_id
                        where p.id = %s and p.role_started_at > (app_now() - interval '90 days')::date""", person_id)
     if p is None or p["status"] != "active" or not in_leader_seat(cur, p["title"]):
         return
@@ -134,7 +134,9 @@ def _new_in_seat(cur, person_id: int) -> None:
         "type": "new_exec", "external_id": f"seat:{person_id}:{p['role_started_at']}", "domain": p["primary_domain"],
         "account_id": p["account_id"], "person": {"full_name": p["full_name"], "linkedin_url": p["linkedin_url"]},
         "observed_at": started, "strength": 0.8,  # when they started, so a seat taken 80 days ago reads as 80 days old
-        "evidence": {"summary": f"A new {p['title'] or 'finance leader'} started on {p['role_started_at']:%d %b %Y}.",
+        # A whole clause with its own subject, so a draft can say "Saw that {company} appointed ..." as written.
+        "evidence": {"summary": f"{p['company']} appointed {p['full_name']} as {p['title'] or 'finance leader'} on "
+                                f"{p['role_started_at']:%d %b %Y}.",
                      "quote": "From people data: role start date"}}])
 
 

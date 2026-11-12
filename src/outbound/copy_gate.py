@@ -35,6 +35,7 @@ LIMITS = {"open": (40, 120), "follow_up": (15, 90), "bump": (10, 60), "break_up"
           # LinkedIn: a connect note is a line or two; a message reads like a short email without the frame.
           "connect": (6, 45), "message": (15, 90)}
 PREFIXES = re.compile(r"^(dr|mr|mrs|ms|mx|prof)\.?\s+", re.I)
+THAT_CAPITAL = re.compile(r"(?<=\w )that (A|An|The|This|These|Those|It|Its|Our|Your|Their|They|We|He|She|His|Her)\b")
 
 
 @dataclass
@@ -148,6 +149,11 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
             if tok in allowed or tok in STOPWORDS_CAPS or tok in source or tok.startswith("I'"):
                 continue
             fail("unsourced_name", f"\"{tok}\" is not the person, their company, or in a cited fact")
+        # A sentence pasted in whole after "that" keeps its capital ("Saw that A new VP Finance started"). A name may
+        # follow "that" ("Saw that Brightwave Apps hired"), so only a capitalised article or pronoun fails.
+        bad_clause = THAT_CAPITAL.search(s["text"])
+        if bad_clause:
+            fail("broken_clause", f"A capital letter after \"that\" mid-sentence: \"{bad_clause.group(0)}\"")
     low = (subject + " " + text).lower()
     for b in BANNED:
         if b in low:

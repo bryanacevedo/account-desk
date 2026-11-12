@@ -67,6 +67,8 @@ def clause(company: str, text: str) -> str:
     first, _, rest = t.partition(" ")
     if first in VERBS:
         return f"{company} {first.lower()} {rest}".strip()
+    if first in ("A", "An", "The"):
+        return t[0].lower() + t[1:]  # "A new controller started" reads "that a new controller started"
     return t  # it already names its subject (the company, or a person); keep it whole
 
 
