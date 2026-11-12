@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Avatar } from "../marks";
 import { SIGNAL_NAME, SignalIcon, SignalLabel } from "../signalIcons";
-import { ArrowSquareOut } from "@phosphor-icons/react";
+import { ArrowSquareOut, Clock } from "@phosphor-icons/react";
 import {
   Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, n0, navigate, pct, usePath, useData,
   withParam, useBusy,
@@ -214,25 +214,29 @@ const T_COLS = "minmax(200px,1.8fr) 60px 56px 96px 80px minmax(160px,1.1fr)";
 
 const STAGES = ["research", "draft", "supervised", "autonomous"];
 
-/** A play as one quiet row: what starts it, its name and the bet it makes, how much it has earned, what it produced. */
-function PlayRow({ p }: { p: any }) {
+/** A play as one quiet row: what starts it, its name and the bet it makes, how far it has earned its way, what it produced.
+ *  The one accent on the page is the last stage each play has earned. */
+function PlayRow({ p, i }: { p: any; i: number }) {
   const f = p.funnel, stage = Math.max(0, STAGES.indexOf(p.autonomy));
   const meta = p.status === "live" ? (p.urgent ? "Decide within a day" : null) : p.status === "draft" ? "Draft, waiting for a manager" : cap(p.status);
   return (
     <button className={`prow${p.status !== "live" ? " is-off" : ""}`} onClick={() => openSheet("play", p.id)}>
       <span className="prow-sigs">{(p.trigger?.any_of || []).slice(0, 3).map((t: string) => (
-        <span key={t} title={SIGNAL_NAME[t] || t}><SignalIcon type={t} size={14} /><span className="sr-only">{SIGNAL_NAME[t] || t}</span></span>
+        <span key={t} title={SIGNAL_NAME[t] || t}><SignalIcon type={t} size={16} /><span className="sr-only">{SIGNAL_NAME[t] || t}, </span></span>
       ))}</span>
       <span className="prow-main">
-        <span className="prow-name">{p.name}{meta ? <span className="prow-meta">{meta}</span> : null}</span>
+        <span className="prow-name">{p.name}{meta ? <span className="prow-meta">{p.urgent ? <Clock size={12} weight="bold" aria-hidden="true" /> : null}{meta}</span> : null}</span>
         <span className="prow-hyp">{p.hypothesis}</span>
+        <span className="prow-stage">
+          <span className="prow-stage-t">{STAGE[p.autonomy]}</span>
+          <span className="prow-meter" aria-hidden="true">{STAGES.map((x, k) => (
+            <i key={x} className={k < stage ? "on" : k === stage ? "on is-now" : ""} style={{ animationDelay: `${i * 60 + k * 70}ms` }} />
+          ))}</span>
+          <span className="prow-of">{stage + 1} of 4</span>
+        </span>
       </span>
-      <span className="prow-stage hide-sm" title={STAGE[p.autonomy]}>
-        <span className="prow-meter">{STAGES.map((x, k) => <i key={x} className={k <= stage ? "on" : ""} />)}</span>
-        <span className="prow-stage-t">{STAGE[p.autonomy]}</span>
-      </span>
-      <span className="prow-n" data-label="Accounts">{n0(f.proposed)}</span>
-      <span className="prow-n is-hero" data-label="Meetings">{n0(f.meetings)}</span>
+      <span className="prow-n"><span className="sr-only">Accounts </span>{n0(f.proposed)}</span>
+      <span className={`prow-n is-hero${f.meetings ? "" : " is-zero"}`}><span className="sr-only">Meetings </span>{n0(f.meetings)}</span>
     </button>
   );
 }
@@ -248,8 +252,8 @@ export function Plays() {
       <div className="head"><div><h1>Plays</h1><p className="sub">{live} live. Each play is a bet: a signal, who to reach, what to say.</p></div>
         {me?.user.role === "gtm" ? <button className="btn" onClick={() => openSheet("playedit", "new")}>New play</button> : null}</div>
       <div className="plist">
-        <div className="prow is-head"><span className="prow-sigs" /><span>Play</span><span className="hide-sm">Who writes</span><span className="prow-n">Accounts</span><span className="prow-n">Meetings</span></div>
-        {data.plays.map((p: any) => <PlayRow key={p.id} p={p} />)}
+        <div className="prow is-head" aria-hidden="true"><span className="prow-sigs" /><span>Play, and who writes</span><span className="prow-n">Accounts</span><span className="prow-n">Meetings</span></div>
+        {data.plays.map((p: any, i: number) => <PlayRow key={p.id} p={p} i={i} />)}
       </div>
     </div>
   );
