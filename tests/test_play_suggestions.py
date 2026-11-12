@@ -357,13 +357,66 @@ def test_saving_the_prefilled_editor_makes_a_draft_play_and_marks_the_suggestion
     assert again.status_code == 409
 
 
+def test_open_suggestions_are_counted_for_those_who_decide_them(client, open_suggestion):
+    """The blue number on Plays, the way Approvals has one: open suggestions, for manager and GTM; never for an SDR."""
+    with db.tx() as cur:
+        n = db.val(cur, "select count(*) from play_suggestions where status = 'open'")
+    assert n >= 1
+    for role in ("gtm", "manager"):
+        assert client.get("/api/me", headers=_as(role)).json()["counts"]["suggested"] == n
+    assert client.get("/api/me", headers=_as("sdr")).json()["counts"]["suggested"] == 0
+
+
+def test_the_list_shows_open_and_set_aside_and_never_one_that_became_a_play(client, world):
+    """Open ones wait for a decision; set aside, dismissed and lapsed ones are listed to reconsider, unless their theme is
+    back or has a play. One that became a play is the play now: in neither list (Bryan, 2026-11-12)."""
+    with db.tx() as cur:
+        seg = "new_exec"
+        gtm = db.val(cur, "select id from users where role = 'gtm' order by id limit 1")
+        ev = J({"accounts": 5, "segment_accounts": 6, "elsewhere": 1, "elsewhere_accounts": 30, "p": 0.0001, "alpha": 0.01,
+                "pairs_tested": 5, "sdrs": 2})
+        t = {k: db.val(cur, "insert into learning_themes (kind, label) values ('reason_to_buy', %s) returning id", f"Zq list {k}")
+             for k in ("open", "aside", "back", "gone", "lapsed", "played")}
+        play = db.val(cur, """insert into plays (key, name, hypothesis, trigger, personas, sequence, angle, status, suggested_from)
+                              select 'zq_list_play', 'Zq list play', hypothesis, trigger, personas, sequence, angle, 'draft', %s
+                              from plays order by id limit 1 returning id""", t["played"])
+        ids = {}
+        for k, status, extra in (("open", "open", {}), ("aside", "not_now", {"reason": "Later"}),
+                                 ("back", "not_now", {"reason": "Later"}), ("back2", "open", {}),
+                                 ("gone", "dismissed", {}), ("lapsed", "lapsed", {}),
+                                 ("played", "drafted", {"play_id": play})):
+            theme = t[k.rstrip("2")]
+            decided = status != "open"
+            ids[k] = db.val(cur, """insert into play_suggestions (theme_id, segment_signal_type, evidence, draft, status, reason,
+                                    decided_by, decided_at, play_id) values (%s, %s, %s, '{}', %s, %s, %s, %s, %s) returning id""",
+                            theme, seg, ev, status, extra.get("reason"), gtm if decided and status != "lapsed" else None,
+                            db.val(cur, "select app_now()") if decided else None, extra.get("play_id"))
+    try:
+        got = client.get("/api/play-suggestions", headers=_as("gtm")).json()
+        open_ids = {s["id"] for s in got["suggestions"]}
+        aside = {s["id"]: s for s in got["set_aside"]}
+        assert {ids["open"], ids["back2"]} <= open_ids
+        assert {ids["aside"], ids["gone"], ids["lapsed"]} <= set(aside)
+        assert ids["back"] not in aside and ids["back"] not in open_ids  # it came back: listed once, as open
+        assert ids["played"] not in aside and ids["played"] not in open_ids
+        back = next(s for s in got["suggestions"] if s["id"] == ids["back2"])
+        assert back["set_aside_at"] and not next(s for s in got["suggestions"] if s["id"] == ids["open"])["set_aside_at"]
+        assert aside[ids["aside"]]["reason"] == "Later" and aside[ids["aside"]]["decided_by_name"]
+        assert client.get("/api/play-suggestions", headers=_as("sdr")).status_code == 403
+    finally:
+        with db.tx() as cur:
+            db.run(cur, "delete from play_suggestions where id = any(%s)", list(ids.values()))
+            db.run(cur, "delete from plays where id = %s", play)
+            db.run(cur, "delete from learning_themes where id = any(%s)", list(t.values()))
+
+
 # ---------------------------------------------------------------- the demo, honestly
 
 def test_the_demo_suggests_exactly_what_passes_the_rule(built_demo):
-    """`make demo`'s own command, in a database of its own, with the thresholds untouched. Builds differ run to run, so
-    which pattern opens varies and a build may open none (README says so). What must hold in every build: the planted
-    reason is visible in the notes, every open suggestion passes the rule, and every passing pattern has a suggestion
-    that is open or that a person decided (the demo's GTM and manager decide some, README). Slow: the full 90-day demo."""
+    """`make demo`'s own command, in a database of its own, with the thresholds untouched. The planted reasons are
+    visible in the notes, every open suggestion passes the rule, and every passing pattern has a suggestion that is open
+    or that a person decided (the demo's GTM and manager decide some, README). That every state shows is held by the
+    coverage test on the same build. Slow: the full 90-day demo."""
     from psycopg.rows import dict_row
     assert suggestions.RULE == {"min_accounts": 5, "min_sdrs": 2, "window_days": 90, "alpha": 0.05, "regrow": 1.5}
     with psycopg.connect(built_demo, row_factory=dict_row) as c:

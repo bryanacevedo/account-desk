@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Avatar } from "../marks";
 import { SIGNAL_NAME, SignalIcon, SignalLabel } from "../signalIcons";
-import { ArrowSquareOut, Lightbulb } from "@phosphor-icons/react";
+import { ArrowSquareOut } from "@phosphor-icons/react";
 import {
-  Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, n0, navigate, pct, usePath, useData,
+  Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, day, n0, navigate, pct, usePath, useData,
   safeUrl, withParam, useBusy,
 } from "../lib";
 import { LABEL, STAGE, openSheet } from "../sheets";
@@ -242,55 +242,91 @@ function PlayRow({ p, i }: { p: any; i: number }) {
 }
 
 export function Plays() {
+  const [, params] = usePath();
   const { data, error, reload } = useData<any>("/api/plays");
   const me = useData<any>("/api/me").data;
+  // Suggestions are for manager and GTM (their quotes are private). They sit behind their own views, so the page still
+  // opens on the plays.
+  const decides = !!me && me.user.role !== "sdr";
+  const sug = useData<any>(decides ? "/api/play-suggestions" : null).data;
+  const view = decides ? (params.get("view") || "plays") as "plays" | "suggested" | "aside" : "plays";
   if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
   if (!data) return <div className="page"><div className="head"><h1>Plays</h1></div><Loading /></div>;
   const live = data.plays.filter((p: any) => p.status === "live").length;
+  const open = sug?.suggestions || [], aside = sug?.set_aside || [];
   return (
     <div className="page">
       <div className="head"><div><h1>Plays</h1><p className="sub">{live} live</p></div>
         {me?.user.role === "gtm" ? <button className="btn" onClick={() => openSheet("playedit", "new")}>New play</button> : null}</div>
-      {me && me.user.role !== "sdr" ? <Suggested /> : null}
-      <div className="plist">
-        <div className="prow is-head" aria-hidden="true"><span className="prow-sigs" /><span>Play, and who writes</span><span className="prow-n">Proposed</span><span className="prow-n">Meetings</span></div>
-        {data.plays.map((p: any, i: number) => <PlayRow key={p.id} p={p} i={i} />)}
-      </div>
+      {decides ? (
+        <Seg label="View" value={view} onChange={(v) => navigate(withParam("view", v === "plays" ? null : v), true)}
+          options={[["plays", "Plays"], ["suggested", <>Suggested{open.length ? <span className="n" aria-label={`${open.length} waiting`}>{open.length}</span> : null}</>],
+                    ["aside", sug ? `Set aside ${aside.length}` : "Set aside"]]} />
+      ) : null}
+      {view === "suggested" ? (!sug ? <Loading rows={4} /> : <Suggested rows={open} />)
+        : view === "aside" ? (!sug ? <Loading rows={4} /> : <SetAside rows={aside} />) : (
+        <div className="plist">
+          <div className="prow is-head" aria-hidden="true"><span className="prow-sigs" /><span>Play, and who writes</span><span className="prow-n">Proposed</span><span className="prow-n">Meetings</span></div>
+          {data.plays.map((p: any, i: number) => <PlayRow key={p.id} p={p} i={i} />)}
+        </div>
+      )}
     </div>
   );
 }
 
-/** Plays the desk suggests from what buyers said on calls. Manager and GTM only: the quotes behind them are private. */
-function Suggested() {
-  const { data } = useData<any>("/api/play-suggestions");
-  if (!data) return null;
-  const rows = data.suggestions;
+/** Plays the desk suggests from what buyers said on calls. One that became a play is the play now, so it is never here. */
+function Suggested({ rows }: { rows: any[] }) {
+  if (!rows.length) return (
+    <Empty title="Nothing suggested from calls right now">
+      <span className="mute"> Settings sets how often a theme must come up.</span>
+    </Empty>
+  );
   return (
-    <Section title="Suggested from calls" icon={Lightbulb} count={rows.length}>
-      {rows.length ? (
-        <div className="ledger sugg wrap-names">
-          <div className="row head" style={{ gridTemplateColumns: SUG_COLS }}><span>What buyers said</span><span>Signal</span><span className="num">On this signal</span><span className="num">Other accounts</span></div>
-          {rows.map((x: any) => {
-            const e = x.evidence;
-            return (
-              <button key={x.id} className="row" style={{ gridTemplateColumns: SUG_COLS }} onClick={() => openSheet("suggestion", x.id)}>
-                <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{x.theme}</span>
-                  <span className="s">From {e.sdrs} SDR{e.sdrs === 1 ? "" : "s"}</span></div>
-                <span data-label="Signal"><SignalLabel type={x.segment} label={x.segment_label} /></span>
-                <span className="num" data-label="On this signal"><span className="strong">{e.accounts} of {e.segment_accounts}</span></span>
-                <span className="num mute" data-label="Other accounts">{e.elsewhere} of {e.elsewhere_accounts}</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        <Empty title="Nothing suggested from calls right now">
-          <span className="mute"> Settings sets how often a theme must come up.</span>
-        </Empty>
-      )}
-    </Section>
+    <div className="ledger sugg wrap-names">
+      <div className="row head" style={{ gridTemplateColumns: SUG_COLS }}><span>What buyers said</span><span>Signal</span><span className="num">On this signal</span><span className="num">Other accounts</span></div>
+      {rows.map((x: any) => {
+        const e = x.evidence;
+        return (
+          <button key={x.id} className="row" style={{ gridTemplateColumns: SUG_COLS }} onClick={() => openSheet("suggestion", x.id)}>
+            <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{x.theme}</span>
+              <span className="s">From {e.sdrs} SDR{e.sdrs === 1 ? "" : "s"}{x.set_aside_at ? `, back after being set aside ${day(x.set_aside_at)}` : ""}</span></div>
+            <span data-label="Signal"><SignalLabel type={x.segment} label={x.segment_label} /></span>
+            <span className="num" data-label="On this signal"><span className="strong">{e.accounts} of {e.segment_accounts}</span></span>
+            <span className="num mute" data-label="Other accounts">{e.elsewhere} of {e.elsewhere_accounts}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
+
+/** Themes set aside or dismissed, and patterns that lapsed, while none of them is back or a play: to reconsider. */
+function SetAside({ rows }: { rows: any[] }) {
+  if (!rows.length) return <Empty title="Nothing set aside" />;
+  return (
+    <div className="ledger sugg wrap-names">
+      <div className="row head" style={{ gridTemplateColumns: ASIDE_COLS }}><span>What buyers said</span><span>Signal</span><span>By</span><span className="num">On</span></div>
+      {ASIDE_GROUPS.map(([title, statuses]) => {
+        const g = rows.filter((x: any) => statuses.includes(x.status));
+        return g.length ? [
+          title ? <div key={title} className="row group-head"><span>{title}</span></div> : null,
+          ...g.map((x: any) => (
+            <button key={x.id} className="row" style={{ gridTemplateColumns: ASIDE_COLS }} onClick={() => openSheet("suggestion", x.id)}>
+              <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{x.theme}</span>
+                <span className="s">{ASIDE[x.status]}{x.reason ? `: ${x.reason}` : ""}</span></div>
+              <span data-label="Signal"><SignalLabel type={x.segment} label={x.segment_label} /></span>
+              <span className="mute" data-label="By">{x.decided_by_name || "The desk"}</span>
+              <span className="num mute" data-label="On">{day(x.decided_at)}</span>
+            </button>
+          )),
+        ] : null;
+      })}
+    </div>
+  );
+}
+const ASIDE_GROUPS: [string, string[]][] = [["", ["not_now", "dismissed"]], ["Lapsed", ["lapsed"]]];
+const ASIDE: Record<string, string> = { not_now: "Not now", dismissed: "Never suggest this theme", lapsed: "No longer heard often enough" };
+const ASIDE_COLS = "minmax(0,1.6fr) minmax(0,1.2fr) 120px 120px";
 const SUG_COLS = "minmax(0,1.6fr) minmax(0,1.2fr) 120px 120px";
 
 export { cap };

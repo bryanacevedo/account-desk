@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from .. import clock, db, jobs, outreach, pipeline, plays, replies, scheduler, scoring, timeutil
 from ..db import J
@@ -185,10 +185,15 @@ def manager_reviews_autonomy(cur, at: datetime) -> None:
                   actor_id=manager["id"])
 
 
-# What the manager and GTM do with play suggestions, in the order they are opened, once one has waited two weeks: GTM
-# makes the first a draft play, the manager sets the next aside for now, and says no to the one after. One that comes
-# back after a "not now" waits for a person, as the desk asks. A planted routine (README).
-SUGGESTION_ROUTINE = ["draft", "not_now", "dismissed"]
+# What GTM and the manager do with new suggestions, on Tuesdays (a planted routine, README):
+# GTM makes the hiring one a draft play; the manager sets the API-pricing one and the ERP one aside for now, and says no
+# to the customer-dashboard one. Every other suggestion waits for a person, and so does one that comes back after a "not
+# now", as the desk asks. Keyed by what was said, not by the order patterns appear, so each lands where it should.
+def suggestion_routine() -> dict[str, tuple[str, str | None]]:
+    return {**{w: ("draft", None) for w in REASONS[7][0]},
+            **{w: ("not_now", "Revisit after Q1 planning") for w in REASONS[5][0]},
+            **{w: ("not_now", "The ERP sync is on next quarter's roadmap") for w in ERP},
+            **{w: ("dismissed", "An existing play already covers it") for w in PORTAL}}
 
 
 def review_suggestions(at: datetime) -> None:
@@ -201,15 +206,14 @@ def review_suggestions(at: datetime) -> None:
     with db.tx() as cur:
         gtm = db.one(cur, "select id, role from users where role = 'gtm' and active order by id limit 1")
         manager = db.one(cur, "select id, role from users where role = 'manager' and active order by id limit 1")
-        decided = db.val(cur, "select count(*) from play_suggestions where status in ('drafted', 'not_now', 'dismissed')")
-        waiting = db.all(cur, """select id, theme_id from play_suggestions where status = 'open'
-                                 and created_at < %s - interval '14 days' and not exists (select 1 from play_suggestions
-                                   x where x.theme_id = play_suggestions.theme_id and x.status = 'not_now')
-                                 order by created_at, id""", at)
+        waiting = db.all(cur, """select ps.id, ps.theme_id, t.label from play_suggestions ps
+                                 join learning_themes t on t.id = ps.theme_id where ps.status = 'open'
+                                 and ps.created_at < %s and not exists (select 1 from play_suggestions
+                                   x where x.theme_id = ps.theme_id and x.status = 'not_now')
+                                 order by ps.created_at, ps.id""", at)
+    routine = suggestion_routine()
     for s in waiting:
-        if decided >= len(SUGGESTION_ROUTINE):
-            return
-        step = SUGGESTION_ROUTINE[decided]
+        step, reason = routine.get(s["label"] + ".", (None, None))
         if step == "draft" and gtm:
             with db.tx() as cur:
                 full = suggestions.one(cur, s["id"])
@@ -223,12 +227,9 @@ def review_suggestions(at: datetime) -> None:
                 api.create_play(body, gtm)
             except (ValidationError, api.HTTPException) as exc:
                 log.info("suggestion %s not drafted: %s", s["id"], exc)
-                continue
         elif step in ("not_now", "dismissed") and manager:
             with db.tx() as cur:
-                suggestions.decide(cur, s["id"], decision=step, user_id=manager["id"],
-                                   reason="Revisit after Q1 planning" if step == "not_now" else "An existing play already covers it")
-        decided += 1
+                suggestions.decide(cur, s["id"], decision=step, user_id=manager["id"], reason=reason)
 
 
 def skip_reasons(employees: int | None) -> list[str]:
@@ -329,12 +330,42 @@ TOOLS = [(("Currently on Chargewise, contract ends in June.",), 4),
 CONTEXT = ["On the call: the CFO and the controller.", "Next step: a sandbox with last month's usage data.",
            "Follow up with pricing for 40,000 invoices a month.", "They will bring the data team to the next call."]
 # A planted relationship, so the demo has a true pattern for play suggestions to find (README, "What is real and what
-# is simulated"): accounts that came in on these four signals raise this reason (or name this competitor) on 90% of
-# first calls. To keep the contrast clear, these four were also made rarer everywhere else: their weight in the
+# is simulated"): accounts that came in on these signals raise this reason (or name this competitor) on 90% of
+# first calls (and a changed pricing model raises the API pricing launch, on a share that grows: MORE_PLANTED below). To keep the contrast clear, these four were also made rarer everywhere else: their weight in the
 # general pool above is 1 (it was 2, 2, 2 and 3 before the plant). Nothing else in the notes depends on the signal.
-PLANTED = {"new_exec": REASONS[4][0], "hiring_function": REASONS[7][0], "pricing_change": REASONS[5][0],
-           "competitor_review": TOOLS[1][0]}
+PLANTED = {"new_exec": REASONS[4][0], "hiring_function": REASONS[7][0], "competitor_review": TOOLS[1][0]}
 PLANTED_SHARE = 0.9
+# More planted patterns, so the Plays page shows every state a suggestion can reach (Bryan, 2026-11-12: "i want to be
+# able to see every scenario"). Each is a reason (or a competitor) heard on first calls of accounts that came in on one
+# signal, at a share, between two dates; the rule in suggestions.py still decides on its own whether and when each is a
+# pattern. Drawn after every other line, from the notes' own stream, so nothing else in the world moves.
+UTC = timezone.utc
+ERP = ("Want usage in the ERP without a weekly CSV export.", "Need usage in the ERP with no weekly CSV export.",
+       "Want to stop the weekly CSV export of usage into the ERP.")
+COMMITS = ("Need to bill annual commits with monthly overages.", "Want annual commits and monthly overages on one invoice.",
+           "Need annual commits billed with monthly overages.")
+PORTAL = ("Want customers to see their usage before the invoice arrives.",
+          "Need a usage dashboard customers can check before the invoice.",
+          "Want customers to check their own usage before they get the invoice.")
+CREDITS = ("Want prepaid credits that draw down with usage.", "Need prepaid credits that draw down as usage comes in.",
+           "Want customers to buy prepaid credits that draw down with usage.")
+EINVOICE = ("Need EU e-invoicing ready before the new rules start.", "Want EU e-invoicing in place before the new rules.",
+            "Need e-invoicing ready for the new EU rules.")
+# (signal, ways it is said, share of first calls, heard from, heard until); None is the whole run.
+MORE_PLANTED = [
+    # Launching usage pricing for the API product: heard now and then, then on nearly every call as Q1 gets close, so
+    # once set aside it comes back (rule 5).
+    ("pricing_change", REASONS[5][0], 0.5, None, datetime(2026, 10, 1, tzinfo=UTC)),
+    ("pricing_change", REASONS[5][0], 0.95, datetime(2026, 10, 1, tzinfo=UTC), None),
+    ("pricing_visit", ERP, 0.8, None, datetime(2026, 10, 1, tzinfo=UTC)),          # heard for a while, then not
+    ("pricing_change", PORTAL, 0.7, None, None),
+    ("pricing_change", COMMITS, 0.8, None, None),
+    ("pricing_visit", CREDITS, 0.7, None, None),
+    ("pricing_visit", TOOLS[1][0], 0.9, None, None),                                 # a competitor
+    ("hiring_function", EINVOICE, 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
+]
+# The same e-invoicing reason, once the rules are announced, on first calls everywhere: the pattern it made goes away.
+SPREAD = (EINVOICE, 0.6, datetime(2026, 10, 1, tzinfo=UTC))
 # Who said it and how, so the same reason from ten companies reads like ten people, not one line pasted ten times.
 SAID = ["{}", "Controller: {}", "CFO said it twice: {}", "{} Came up before we asked.", "Their VP Finance brought it up: {}",
         "{} It was the first thing they raised.", "Head of billing, unprompted: {}"]
@@ -353,7 +384,8 @@ ON_TODAY = {"Chargewise": "Currently on Chargewise, contract ends in June.",
             "spreadsheets and Stripe invoices": "Billing runs on spreadsheets and Stripe invoices."}
 
 
-def call_notes(rng: random.Random, signal_type: str | None = None, billing: str | None = None) -> str:
+def call_notes(rng: random.Random, signal_type: str | None = None, billing: str | None = None,
+               at: datetime | None = None) -> str:
     def pick(pool, k):
         return [rng.choice(x) if isinstance(x, tuple) else x
                 for x in rng.choices([x for x, _ in pool], weights=[w for _, w in pool], k=k)]
@@ -361,6 +393,7 @@ def call_notes(rng: random.Random, signal_type: str | None = None, billing: str 
     if signal_type in PLANTED and rng.random() < PLANTED_SHARE:
         said = rng.choice(PLANTED[signal_type])
         lines.append(rng.choice(SAID).format(said))
+    at_plant = len(lines)
     tools = pick(TOOLS, rng.randint(0, 1))
     if billing in ON_TODAY:
         # A line about the tool they run is about their own tool; a Meterline user is not "also looking at Meterline".
@@ -371,7 +404,20 @@ def call_notes(rng: random.Random, signal_type: str | None = None, billing: str 
         lines.append(rng.choice(NOT_BUYING))
     if rng.random() < 0.2:
         lines.append(f'In their words: "{rng.choice(SAID_ON_CALLS)}"')
+    more = []
+    for seg, ways, share, since, until in MORE_PLANTED:
+        if signal_type == seg and rng.random() < share and _within(at, since, until):
+            more.append(rng.choice(ways))
+    ways, share, since = SPREAD
+    if signal_type != MORE_PLANTED[-1][0] and _within(at, since, None) and rng.random() < share:
+        more.append(rng.choice(ways))
+    # Next to the planted line, ahead of objections and tools, so a long note keeps them (extraction keeps eight lines).
+    lines[at_plant:at_plant] = more
     return "\n".join(dict.fromkeys(lines))
+
+
+def _within(at: datetime | None, since: datetime | None, until: datetime | None) -> bool:
+    return at is None or ((since is None or at >= since) and (until is None or at < until))
 
 
 STAGES = ["Discovery", "Evaluation", "Proposal", "Negotiation"]
@@ -404,7 +450,7 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
         pipeline.set_meeting_status(cur, m["id"], status)
         if status == "held":
             # What was said on the call has its own random stream, so the notes never shift the rest of the world.
-            notes = call_notes(random.Random(f"notes:{m['id']}"), m["type_key"], m["billing"])
+            notes = call_notes(random.Random(f"notes:{m['id']}"), m["type_key"], m["billing"], at)
             nid = pipeline.record_call_notes(cur, m["id"], notes, m["writer"])
             if rng.random() < 0.9:
                 pipeline.learn_from(cur, nid, m["writer"])

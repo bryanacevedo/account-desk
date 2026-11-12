@@ -341,6 +341,8 @@ def me(u: dict = Depends(current_user)) -> dict:
                                         where m.status in ('awaiting_approval','failed_gate') and m.channel = 'email' and (ap.owner_id = %s or %s)""",
                                 u["id"], u["role"] != "sdr"),
             "replies": db.val(cur, "select count(*) from replies where needs_review and handled_at is null"),
+            # Open play suggestions wait on a manager or GTM; an SDR never decides them.
+            "suggested": db.val(cur, "select count(*) from play_suggestions where status = 'open'") if u["role"] != "sdr" else 0,
         }
         now = db.val(cur, "select app_now()")
         sim = db.val(cur, "select enabled from sim_clock")
@@ -477,10 +479,12 @@ def ops(u: dict = Depends(current_user)) -> dict:
 
 @app.get("/api/play-suggestions")
 def play_suggestions(u: dict = Depends(current_user)) -> dict:
-    """Plays suggested from call learnings that wait for a decision. Their quotes are private: manager and GTM only."""
+    """Plays suggested from call learnings that wait for a decision, and the themes set aside, dismissed or lapsed that
+    could be reconsidered. One that became a play is not listed: it is the play now. Manager and GTM only."""
     need(u, "manager", "gtm")
     with db.tx() as cur:
-        return {"suggestions": suggestions.open_list(cur), "rule": suggestions.RULE}
+        return {"suggestions": suggestions.open_list(cur), "set_aside": suggestions.set_aside_list(cur),
+                "rule": suggestions.RULE}
 
 
 @app.get("/api/play-suggestions/{suggestion_id}")

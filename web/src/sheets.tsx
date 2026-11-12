@@ -1521,8 +1521,16 @@ export function SuggestionSheet({ id }: { id: number }) {
   const [busy, run] = useBusy();
   const [asking, setAsking] = useState<null | "not_now" | "dismissed">(null);
   const [reason, setReason] = useState("");
+  // One that became a play is the play now: its old link lands on the play's sheet, in place of this one.
+  const toPlay = s?.status === "drafted" && s.play_id ? s.play_id : null;
+  useEffect(() => {
+    if (!toPlay) return;
+    const u = new URL(window.location.href);
+    u.searchParams.set("sheet", `play:${toPlay}`);
+    navigate(u.pathname + "?" + u.searchParams.toString(), true);
+  }, [toPlay]);
   if (error) return <Frame crumb="Suggested play" kind="suggestion"><Failed error={error} retry={reload} /></Frame>;
-  if (!s) return <Frame crumb="Suggested play" kind="suggestion"><Loading rows={8} /></Frame>;
+  if (!s || toPlay) return <Frame crumb="Suggested play" kind="suggestion"><Loading rows={8} /></Frame>;
   const e = s.evidence, d = s.draft;
   const role = me?.user.role;
   // A live play that already starts on this signal: the suggestion is a new angle for it, not a play from nothing.

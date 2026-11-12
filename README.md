@@ -117,7 +117,7 @@ Read on 2026-11-12 from a fresh `python -m outbound demo 90` build of the curren
 | People still hidden in the simulation | 11,092 | `sim_hidden_people`: people the desk has not found yet, including new hires added by seat changes during the run; the desk never reads this table |
 | Days simulated | 90 (13 August to 11 November 2026) | |
 | Plays | 7: the six shipped plays (live; one at supervised, one at research, four at draft when the build ended) and one draft play GTM made from a suggestion | `plays` |
-| Suggested plays | 3: one made a draft play, one set aside for now, one open | `play_suggestions` |
+| Suggested plays | Every state: three or more open (one back after a "not now"), one made a draft play (shown only as that play), two set aside for now, one dismissed, one or two lapsed | `play_suggestions` |
 | Accounts proposed to SDRs | 894 (126 to 190 per SDR); 785 accepted, 15 expired unseen | `account_plays`, treated |
 | Accounts held back | 237 | `account_plays`, held back |
 | Emails sent | 1,636 | `messages` |
@@ -127,14 +127,14 @@ Read on 2026-11-12 from a fresh `python -m outbound demo 90` build of the curren
 | Deals influenced by outbound | 10 worth $1,159,000 | `opportunities` |
 | Build | 514 seconds on an Apple silicon laptop; a 125 MB database | `python -m outbound demo 90` |
 
-Planted so the demo shows every scenario the app can show. `python -m outbound coverage` counts them: of 93 scenarios this build shows 89 and misses none it must show; the 4 it does not show are among those that rest on chance (opt-outs in German and in Portuguese, a suggestion dismissed, a suggestion lapsed). Seventeen scenarios rest on a handful of events in a 90-day build (a play earning its fourth stage, a pattern strong enough to suggest a play, an opt-out in one language) and are marked `BY_CHANCE` in `src/outbound/coverage.py`.
+Planted so the demo shows every scenario the app can show. `python -m outbound coverage` counts them: of 99 scenarios a fresh build on 2026-11-12 showed 97 and missed none it must show; the 2 it did not show rest on chance. Every state a play suggestion can reach is required (open, three or more of them, a reason to buy and a competitor among them, one on a signal a live play starts on, drafted, set aside and still set aside, back after a "not now", dismissed, lapsed). Twelve scenarios rest on a handful of events in a 90-day build (a play earning its fourth stage, an opt-out in one language) and are marked `BY_CHANCE` in `src/outbound/coverage.py`.
 
 How the simulation behaves:
 
 - The simulated world gives each company a hidden need; signals and replies are drawn from it, with some signal types linked to need strongly and some barely, so the results pages have something true to find. The simulated CRM opens and closes deals outbound had nothing to do with, so the held-back comparison measures what outbound adds.
 - The world holds together the way a real list does: a company's name and product fit its industry, it has one finance leader, and a new finance leader the news announces holds that title and starts that day, while the one they replaced leaves.
 - Simulated SDRs edited 275 of the 1,814 emails they approved in this build (15%); they approved 330 LinkedIn notes as written. On Monday mornings the simulated manager approves the next stage for any play at the draft stage or above whose checks all pass; leaving the research stage stays the manager's own call. Demotions are the desk's own.
-- On Tuesdays, once a suggestion has waited two weeks, the simulated GTM engineer turns the first into a draft play, and the manager sets the next aside and says no to the one after (`SUGGESTION_ROUTINE` in `src/outbound/sim/runner.py`).
+- Call notes carry planted patterns, each a reason (or a competitor) heard on most first calls of accounts that came in on one signal, some only for a few weeks, and one that later spreads to every call so its pattern lapses (`PLANTED` and `MORE_PLANTED` in `src/outbound/sim/runner.py`). The rule still decides on its own whether each is a pattern. On Tuesdays the simulated GTM engineer turns the hiring one into a draft play, and the manager sets two aside for now and says no to one (`suggestion_routine`); every other suggestion, and one that comes back after a "not now", waits for a person.
 - Region rules: the demo's seller does not sell in Singapore, and Australia has no rule, so nobody there is cold-emailed. Every sending domain reports no Postmaster data until it is 45 days old (decision 60).
 
 ## The AI, measured

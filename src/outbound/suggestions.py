@@ -273,12 +273,32 @@ def draft_for(cur, theme_id: int, segment: str) -> dict | None:
 # ---------------------------------------------------------------- what people see and decide
 
 def open_list(cur) -> list[dict]:
+    """Open suggestions, each saying whether its theme was set aside before and came back (rule 5)."""
     return db.all(cur, """
         select ps.id, ps.theme_id, t.label as theme, t.kind, ps.segment_signal_type as segment, st.label as segment_label,
-               ps.evidence, ps.draft, ps.created_at
+               ps.evidence, ps.draft, ps.created_at,
+               (select max(x.decided_at) from play_suggestions x where x.theme_id = ps.theme_id and x.status = 'not_now')
+                 as set_aside_at
         from play_suggestions ps join learning_themes t on t.id = ps.theme_id
         join signal_types st on st.key = ps.segment_signal_type
         where ps.status = 'open' order by (ps.evidence->>'p')::float, ps.id""")
+
+
+def set_aside_list(cur) -> list[dict]:
+    """Themes a person set aside or dismissed, or whose pattern lapsed, and that are not back: the latest such suggestion
+    per theme, while the theme has no open suggestion and no play. A suggestion that became a play is the play's history
+    now, never a suggestion, so it is not here (Bryan, 2026-11-12)."""
+    return db.all(cur, """
+        select * from (
+          select distinct on (ps.theme_id) ps.id, ps.theme_id, t.label as theme, t.kind, ps.segment_signal_type as segment,
+                 st.label as segment_label, ps.status, ps.reason, ps.decided_at, u.name as decided_by_name
+          from play_suggestions ps join learning_themes t on t.id = ps.theme_id
+          join signal_types st on st.key = ps.segment_signal_type left join users u on u.id = ps.decided_by
+          where ps.status in ('not_now', 'dismissed', 'lapsed')
+            and not exists (select 1 from play_suggestions x where x.theme_id = ps.theme_id and x.status in ('open', 'drafted'))
+            and not exists (select 1 from plays p where p.suggested_from = ps.theme_id)
+          order by ps.theme_id, ps.decided_at desc, ps.id desc) s
+        order by decided_at desc, id desc""")
 
 
 def one(cur, suggestion_id: int) -> dict | None:

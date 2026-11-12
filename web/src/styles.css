@@ -71,7 +71,8 @@ ul, ol { padding: 0; list-style: none; }
 .nav a:hover { background: var(--well); color: var(--ink); }
 .nav a[aria-current="page"] { background: var(--well); color: var(--ink); font-weight: 560; }
 .nav a[aria-current="page"] svg { color: var(--accent); }
-.nav .n { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 11.5px; font-weight: 600; display: grid; place-items: center; }
+.nav .n, .seg .n { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 11.5px; font-weight: 600; display: grid; place-items: center; }
+.seg .n { display: inline-grid; margin-left: 6px; vertical-align: 1px; }
 .nav .group { margin: 16px 10px 6px; font-size: 11.5px; color: var(--faint); font-weight: 540; }
 .side .grow { flex: 1; }
 .side-foot { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
@@ -285,7 +286,7 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 @keyframes enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* A new count pops, so the eye finds what changed. */
-.nav .n, .pn-n { animation: pop 320ms cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+.nav .n, .seg .n, .pn-n { animation: pop 320ms cubic-bezier(0.3, 1.6, 0.5, 1) both; }
 @keyframes pop { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
 /* The mark: the faded fourth person fills in when you reach for it, one account fully reached. */

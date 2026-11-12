@@ -97,6 +97,21 @@ def scenarios(cur) -> list[dict]:
     sug = {r["status"]: r["n"] for r in db.all(cur, "select status, count(*) as n from play_suggestions group by 1")}
     for s in SUGGESTION_STATUSES:
         add("Play suggestions", s, sug.get(s, 0))
+    # What the Plays page shows of them (Bryan, 2026-11-12: "i want to be able to see every scenario").
+    add("Play suggestions", "three or more open at the end", 1 if sug.get("open", 0) >= 3 else 0)
+    add("Play suggestions", "open: a reason to buy", _n(cur, """select count(*) from play_suggestions ps
+        join learning_themes t on t.id = ps.theme_id where ps.status = 'open' and t.kind = 'reason_to_buy'"""))
+    add("Play suggestions", "open: a competitor", _n(cur, """select count(*) from play_suggestions ps
+        join learning_themes t on t.id = ps.theme_id where ps.status = 'open' and t.kind = 'competitor'"""))
+    add("Play suggestions", "open on a signal a live play starts on", _n(cur, """select count(*) from play_suggestions ps
+        where ps.status = 'open' and exists (select 1 from plays p where p.status = 'live'
+                                             and p.trigger->'any_of' ? ps.segment_signal_type)"""))
+    add("Play suggestions", "came back after a not now", _n(cur, """select count(*) from play_suggestions ps
+        where exists (select 1 from play_suggestions x where x.theme_id = ps.theme_id and x.status = 'not_now'
+                      and x.decided_at < ps.created_at)"""))
+    add("Play suggestions", "set aside and still set aside", _n(cur, """select count(*) from play_suggestions ps
+        where ps.status = 'not_now' and not exists (select 1 from play_suggestions x where x.theme_id = ps.theme_id
+                                                    and x.status in ('open', 'drafted'))"""))
 
     gaps = db.all(cur, "select reason from committee_gaps")
     for name, words in GAP_KINDS.items():
@@ -124,8 +139,7 @@ def scenarios(cur) -> list[dict]:
 BY_CHANCE = {("Autonomy stages (plays that were at it)", "autonomous"), ("Autonomy stages (plays that were at it)", "a demotion"),
              ("Reply labels", "auto_reply"), ("Reply labels", "other"), ("Reply labels", "left_company"),
              ("Tasks", "review_reply"), ("Tasks", "linkedin_message"), ("Tasks", "referral"),
-             *{("Opt-outs by language", lang) for lang in OPT_OUT_LANGUAGES if lang != "en"},
-             *{("Play suggestions", s) for s in SUGGESTION_STATUSES}}
+             *{("Opt-outs by language", lang) for lang in OPT_OUT_LANGUAGES if lang != "en"}}
 
 
 def by_chance(r: dict) -> bool:
