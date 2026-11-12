@@ -194,10 +194,12 @@ export function Results() {
           </div>
         </Section>
       </div>
+      <div className="play-card is-proposed">
       <Section title="Is outreach creating meetings and deals?" right={<span className="mute small">Any meeting or deal, inbound included</span>}>
         <p className="lift-why">A random share of the accounts each play would work is held back and never contacted. If worked accounts book more meetings and deals, outreach is the reason.</p>
         <Comparison rows={[["meeting within 60 days", data.lift], ["deal within 90 days", data.deal_lift]]} />
       </Section>
+      </div>
       <Section title="By channel, last 90 days">
         {data.channels.length ? (
           <div className="ledger">
