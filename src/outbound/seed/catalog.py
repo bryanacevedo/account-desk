@@ -196,6 +196,7 @@ PLAY_CAP = {"people_search": 120, "email_finder": 120, "email_verifier": 240, "p
 SUBSCRIPTIONS = [
     ("mail", 700, "mailbox", "A mailbox seat at the mail provider"),
     ("telemetry", 4900, "month", "Seed-test inbox placement"),
+    ("warmup", 2900, "month", "Mailivery Starter: unlimited mailboxes, 200 warm-up emails a day shared"),
     ("linkedin", 7900, "sender", "One LinkedIn sender at HeyReach"),
     ("jobs_feed", 9900, "month", None), ("funding_feed", 4900, "month", None), ("people_moves", 14900, "month", None),
     ("web_visits", 19900, "month", None), ("intent_feed", 29900, "month", None), ("reviews_feed", 24900, "month", None),

@@ -54,9 +54,16 @@ class Page:
 @dataclass
 class DomainTelemetry:
     domain: str
-    spam_rate: float | None      # None means unknown
-    status: str | None
+    spam_rate: float | None      # None means unknown: the provider has no data, which is not the same as clean
+    status: str | None           # the provider's compliance verdict: "compliant" | "needs_work"; None means no verdict yet
     as_of: object | None = None
+
+
+@dataclass
+class WarmupStatus:
+    state: str                   # warming | maintaining
+    day: int                     # days since warm-up began
+    score: int | None = None     # the vendor's reputation score, 0 to 100, once it has one
 
 
 @dataclass
@@ -139,6 +146,13 @@ class Telemetry(Protocol):
     def placement(self, cur, mailbox: dict) -> list[PlacementResult]: ...  # a seed test, one result per provider
 
 
+class Warmup(Protocol):
+    """A warm-up vendor: swaps mail between mailboxes to build a sender reputation. It reports; the desk's own
+    ramp (outreach.mailbox_capacity) still decides how much the desk sends."""
+    name: str
+    def status(self, cur, mailbox: dict) -> WarmupStatus | None: ...
+
+
 @dataclass
 class DnsResult:
     domain: str
@@ -209,6 +223,7 @@ class Adapters:
     finders: list = field(default_factory=list)
     company: "CompanyEnricher | None" = None     # company data; None means imports and the CRM are all there is
     resolver: "EmailResolver | None" = None      # catch-all resolution; None means catch-all addresses are not sent
+    warmup: "Warmup | None" = None               # warm-up vendor; None means no warm-up status is shown
 
 
 _cached: Adapters | None = None

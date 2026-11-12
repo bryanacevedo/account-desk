@@ -531,6 +531,7 @@ def deliverability(cur) -> dict:
                                     (select count(*) from mailboxes m where m.domain = d.domain) as mailboxes
                              from sending_domains d order by d.domain""")
     boxes = []
+    warmup = adapters.get().warmup
     for m in db.all(cur, """select m.*, u.name as owner from mailboxes m join users u on u.id = m.user_id order by m.domain, m.address"""):
         stats_ = db.one(cur, """select count(*) filter (where event = 'sent') as sent,
                                        count(*) filter (where event = 'bounced_hard') as bounced,
@@ -540,6 +541,7 @@ def deliverability(cur) -> dict:
                                where mailbox_id = %s order by provider, at desc""", m["id"])
         boxes.append({**m, **stats_, "today": outreach.sent_today(cur, m["id"]), "cap": outreach.mailbox_capacity(cur, m),
                       "blocked": outreach.mailbox_sendable(cur, m), "placement": {r["provider"]: r for r in seeds},
+                      "warmup": warmup.status(cur, m) if warmup else None,
                       "placement_at": min((r["at"] for r in seeds), default=None)})
     forecast = db.all(cur, """select date_trunc('day', scheduled_for) as day, count(*) as scheduled from messages
                               where status = 'scheduled' and scheduled_for < app_now() + interval '14 days'

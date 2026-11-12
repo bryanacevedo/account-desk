@@ -387,19 +387,28 @@ def dns_check(cur, payload: dict) -> None:
 
 @jobs.handler("telemetry")
 def telemetry(cur, payload: dict) -> None:
+    """Read each sending domain's reputation from the telemetry vendor (Google Postmaster Tools: spam rate and a
+    compliance verdict). No data is stored as 'unknown', never as clean. A spam rate of 0.3% or more, or a verdict of
+    needs work, pauses every mailbox on the domain."""
     domains = [r["domain"] for r in db.all(cur, "select domain from sending_domains")]
     for t in adapters.get().telemetry.domains(cur, domains):
-        if t.spam_rate is None:
+        if t.spam_rate is None and t.status is None:
             db.run(cur, "update sending_domains set postmaster_status = 'unknown', checked_at = app_now() where domain = %s",
                    t.domain)
             continue
-        db.run(cur, """update sending_domains set spam_rate = %s, spam_rate_at = app_now(), postmaster_status = %s,
-                       checked_at = app_now() where domain = %s""", t.spam_rate, t.status, t.domain)
-        if t.spam_rate >= 0.003:
-            db.run(cur, "update mailboxes set status = 'paused', pause_reason = 'Domain spam rate at or above 0.3%%' "
-                        "where domain = %s and status = 'active'", t.domain)
+        db.run(cur, """update sending_domains set spam_rate = coalesce(%s::numeric, spam_rate),
+                       spam_rate_at = case when %s::numeric is null then spam_rate_at else app_now() end,
+                       postmaster_status = coalesce(%s, 'unknown'), checked_at = app_now() where domain = %s""",
+               t.spam_rate, t.spam_rate, t.status, t.domain)
+        high = t.spam_rate is not None and t.spam_rate >= 0.003
+        failing = t.status == "needs_work"
+        if high or failing:
+            why = "Domain spam rate at or above 0.3%" if high else "Google Postmaster compliance verdict: needs work"
+            db.run(cur, "update mailboxes set status = 'paused', pause_reason = %s where domain = %s and status = 'active'",
+                   why, t.domain)
+            title = f"{t.domain} spam rate {t.spam_rate:.2%}" if high else f"{t.domain} fails Google Postmaster compliance"
             alerts.raise_alert(cur, kind="spam_rate", severity="urgent", channel="#outbound-ops",
-                               title=f"{t.domain} spam rate {t.spam_rate:.2%}", body="Every mailbox on it is paused.",
+                               title=title, body="Every mailbox on it is paused.",
                                dedup_key=f"spam:{t.domain}:{db.val(cur, 'select app_now()::date')}")
 
 

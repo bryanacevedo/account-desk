@@ -88,6 +88,12 @@ MONITORS: dict[str, dict] = {
         "title": "Mailboxes with no seed test in 10 days",
         "sql": """select mb.id from mailboxes mb where mb.status = 'active' and not exists (select 1 from placement_tests t
                   where t.mailbox_id = mb.id and t.at > app_now() - interval '10 days')"""},
+    "postmaster_failing": {
+        "title": "Domains failing Google Postmaster with mailboxes still active",
+        # The telemetry job pauses a domain's mailboxes when its verdict is needs work or its spam rate passes 0.3%;
+        # a mailbox active on such a domain was resumed or added since, and sends at a reputation Google calls bad.
+        "sql": """select d.domain from sending_domains d where (d.postmaster_status = 'needs_work' or d.spam_rate >= 0.003)
+                  and exists (select 1 from mailboxes m where m.domain = d.domain and m.status = 'active')"""},
     "unknown_sends": {
         "title": "Sends whose outcome is unknown for more than a day",
         "sql": "select id from messages where status = 'send_unknown' and sent_at < app_now() - interval '1 day'"},

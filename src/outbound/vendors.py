@@ -22,7 +22,9 @@ CATALOG = [
     ("research", "Research", "Website research", "Reads the account's own pages for facts a draft can cite", "free", "research", "research"),
     ("anthropic", "AI", "Claude", "Briefs, drafts, reply labels and suggested answers", "metered", None, "anthropic"),
     ("mail", "Sending", "Mail provider", "Sends from the SDRs' mailboxes and reports bounces", "subscription", "email", None),
-    ("telemetry", "Sending", "Inbox placement and spam rate", "Seed tests and the provider's spam rate hold or pause a mailbox", "subscription", "telemetry", None),
+    ("telemetry", "Sending", "Inbox placement", "Seed tests hold or pause a mailbox that lands in spam", "subscription", "telemetry", None),
+    ("postmaster", "Sending", "Google Postmaster Tools", "Each sending domain's spam rate and compliance verdict at Gmail; a failing domain pauses its mailboxes", "free", "telemetry", None),
+    ("warmup", "Sending", "Warm-up", "Builds a new mailbox's reputation by swapping mail with a network of other mailboxes", "subscription", "warmup", None),
     ("dns", "Sending", "DNS checks", "SPF, DKIM and DMARC on every sending domain", "free", "dns", None),
     ("linkedin", "LinkedIn", "HeyReach", "Reports accepted requests and first replies", "subscription", None, None),
     ("crm", "CRM", "CRM", "Deals, owners and the pipeline outreach is credited with", "subscription", "crm", None),
@@ -36,7 +38,8 @@ SUGGEST = {
     "people_search": "Apollo", "email_finder": "Findymail, then Prospeo, then LeadMagic",
     "email_verifier": "ZeroBounce", "phone_finder": "Lusha", "email_resolver": "BounceBan or Scrubby",
     "company_data": "Apollo organization enrichment", "research": "No vendor: the account's own website",
-    "anthropic": "Claude Opus 5.5", "mail": "Google Workspace or Microsoft 365", "telemetry": "Google Postmaster Tools and GlockApps",
+    "anthropic": "Claude Opus 5.5", "mail": "Google Workspace or Microsoft 365", "telemetry": "GlockApps",
+    "postmaster": "Google Postmaster Tools (API v2)", "warmup": "Mailivery (Starter, about $29 a month for unlimited mailboxes; public price)",
     "dns": "No vendor: public DNS over HTTPS", "linkedin": "HeyReach", "crm": "Salesforce or HubSpot", "chat": "Slack",
 }
 PROVIDER_NAME = {"findymail": "Findymail", "prospeo": "Prospeo", "leadmagic": "LeadMagic"}
@@ -62,7 +65,7 @@ def _status(slot: str | None, key: str) -> str:
     if key == "linkedin":
         return "connected" if CONFIG.linkedin_tool_token else ("simulated" if CONFIG.mode == "demo" else "not_connected")
     a = getattr(adapters.get(), slot, None) if slot else None
-    if slot in ("company", "resolver") and a is None:
+    if slot in ("company", "resolver", "warmup") and a is None:
         return "not_connected"
     if CONFIG.mode != "live":
         return "simulated"
