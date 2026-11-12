@@ -100,7 +100,9 @@ def desk(cur, monkeypatch):
     """A segment, two themes, two SDRs, a manager and GTM. The window is replaced by a table the test controls."""
     n = next(_ids)
     db.run(cur, """insert into signal_types (key, label, because, level, weight, half_life_days)
-                   values ('t_seg', 'Test segment', 'Because a test needs a segment', 'account', 10, 30) on conflict do nothing""")
+                   values ('t_seg', 'Test segment', 'Because a test needs a segment', 'account', 10, 30),
+                          ('t_seg_b', 'Other segment', 'Because a test needs a second segment', 'account', 10, 30)
+                   on conflict do nothing""")
     db.run(cur, "insert into personas (key, label, title_patterns, committee_role, angle) values ('cfo', 'Finance leader', "
                 "'{cfo}', 'economic_buyer', 'a') on conflict do nothing")
     u = {r: db.val(cur, "insert into users (name, email, role) values (%s, %s, %s) returning id",
@@ -112,9 +114,18 @@ def desk(cur, monkeypatch):
     return {"users": u, "t1": t1, "t2": t2, "table": table}
 
 
-def grow(desk, theme: int, heard: int, size: int = 6) -> None:
-    desk["table"][:] = [x for x in desk["table"] if x["theme_id"] != theme] + rows(
-        theme, "t_seg", heard=heard, size=size, elsewhere=1, others=30, start=1000 * theme)
+def grow(desk, theme: int, heard: int, size: int = 6, segment: str = "t_seg") -> None:
+    start = 1000 * theme + (500 if segment != "t_seg" else 0)
+    desk["table"][:] = [x for x in desk["table"] if not (x["theme_id"] == theme and x["account_id"] >= start
+                                                         and x["account_id"] < start + 500)]
+    desk["table"] += rows(theme, segment, heard=heard, size=size, elsewhere=1, others=30, start=start)
+
+
+def cycle(cur) -> dict:
+    """What the daily job does, in one transaction: the check, then each new suggestion opened."""
+    lapsed = db.val(cur, "select count(*) from play_suggestions where status = 'lapsed'")
+    opened = sum(suggestions.open_suggestion(cur, t, s) is not None for t, s in suggestions.check(cur))
+    return {"opened": opened, "lapsed": db.val(cur, "select count(*) from play_suggestions where status = 'lapsed'") - lapsed}
 
 
 def status(cur, theme: int) -> list[str]:
@@ -123,46 +134,56 @@ def status(cur, theme: int) -> list[str]:
 
 def test_a_pattern_opens_one_suggestion_with_numbers_and_no_quotes(cur, desk):
     grow(desk, desk["t1"], 5)
-    out = suggestions.check(cur)
+    out = cycle(cur)
     assert out["opened"] == 1 and status(cur, desk["t1"]) == ["open"]
     s = db.one(cur, "select * from play_suggestions where theme_id = %s", desk["t1"])
     assert s["evidence"]["accounts"] == 5 and s["evidence"]["pairs_tested"] == 1 and "quote" not in str(s["evidence"])
     assert "t_seg" in s["draft"]["trigger"]["any_of"]
-    suggestions.check(cur)
+    cycle(cur)
     assert status(cur, desk["t1"]) == ["open"]  # checking again opens nothing new
 
 
 def test_an_open_suggestion_lapses_when_its_pattern_goes_away(cur, desk):
     grow(desk, desk["t1"], 5)
-    suggestions.check(cur)
+    cycle(cur)
     grow(desk, desk["t1"], 4)
-    assert suggestions.check(cur)["lapsed"] == 1
+    assert cycle(cur)["lapsed"] == 1
     assert status(cur, desk["t1"]) == ["lapsed"]
 
 
 def test_not_now_comes_back_only_when_the_pattern_grows_by_half(cur, desk):
     grow(desk, desk["t1"], 6, size=10)
-    suggestions.check(cur)
+    cycle(cur)
     sid = db.val(cur, "select id from play_suggestions where theme_id = %s", desk["t1"])
     with pytest.raises(ValueError):
         suggestions.decide(cur, sid, decision="not_now", reason="  ", user_id=desk["users"]["manager"])
     suggestions.decide(cur, sid, decision="not_now", reason="Busy with the launch", user_id=desk["users"]["manager"])
     assert db.val(cur, "select accounts_at_decision from play_suggestions where id = %s", sid) == 6
     grow(desk, desk["t1"], 8, size=10)  # 8 is under 1.5 times 6
-    suggestions.check(cur)
+    cycle(cur)
     assert status(cur, desk["t1"]) == ["not_now"]
     grow(desk, desk["t1"], 9, size=10)  # 9 is 1.5 times 6
-    suggestions.check(cur)
+    cycle(cur)
     assert status(cur, desk["t1"]) == ["not_now", "open"]
+
+
+def test_not_now_in_one_segment_is_not_reopened_by_another(cur, desk):
+    grow(desk, desk["t1"], 6, size=10)
+    cycle(cur)
+    sid = db.val(cur, "select id from play_suggestions where theme_id = %s", desk["t1"])
+    suggestions.decide(cur, sid, decision="not_now", reason="Busy with the launch", user_id=desk["users"]["manager"])
+    grow(desk, desk["t1"], 9, size=9, segment="t_seg_b")  # clear in the other segment, and more than 1.5 times 6
+    cycle(cur)
+    assert status(cur, desk["t1"]) == ["not_now"]
 
 
 def test_a_dismissed_theme_never_comes_back(cur, desk):
     grow(desk, desk["t2"], 5)
-    suggestions.check(cur)
+    cycle(cur)
     sid = db.val(cur, "select id from play_suggestions where theme_id = %s", desk["t2"])
     suggestions.decide(cur, sid, decision="dismissed", reason=None, user_id=desk["users"]["gtm"])
     grow(desk, desk["t2"], 20, size=20)
-    suggestions.check(cur)
+    cycle(cur)
     assert status(cur, desk["t2"]) == ["dismissed"]
     assert db.val(cur, "select count(*) from audit_log where object_kind = 'play_suggestion' and object_id = %s", sid) == 2
 
@@ -171,7 +192,7 @@ def test_a_theme_with_a_play_is_not_suggested_again(cur, desk):
     db.run(cur, """insert into plays (key, name, hypothesis, trigger, personas, sequence, angle, suggested_from)
                    values (%s, 'P', 'h', '{}', '{cfo}', '[]', 'a', %s)""", f"ps{desk['t1']}", desk["t1"])
     grow(desk, desk["t1"], 6)
-    assert suggestions.check(cur)["opened"] == 0
+    assert cycle(cur)["opened"] == 0
 
 
 def test_a_draft_that_names_a_company_or_an_unknown_signal_is_refused(cur, desk):
@@ -338,9 +359,11 @@ def test_saving_the_prefilled_editor_makes_a_draft_play_and_marks_the_suggestion
 
 # ---------------------------------------------------------------- the demo, honestly
 
-def test_the_demo_opens_with_a_suggestion_that_passes_the_rule(database):
-    """`make demo`'s own command, in a database of its own: at least one suggestion is open, and it passes the rule
-    as it stands, with the thresholds untouched. Slow: the full 90-day demo, about two minutes."""
+def test_the_demo_suggests_exactly_what_passes_the_rule(database):
+    """`make demo`'s own command, in a database of its own, with the thresholds untouched. Builds differ run to run, so
+    which pattern opens varies and a build may open none (README says so). What must hold in every build: the planted
+    reason is visible in the notes, every open suggestion passes the rule, and every passing pattern not set aside has
+    one. Slow: the full 90-day demo, about two minutes."""
     import subprocess
     import sys
     import uuid
@@ -365,10 +388,97 @@ def test_the_demo_opens_with_a_suggestion_that_passes_the_rule(database):
                 from learnings l join call_notes cn on cn.id = l.call_note_id join meetings m on m.id = cn.meeting_id
                 left join learning_themes t on t.id = l.theme_id left join users u on u.id = cn.written_by
                 where cn.created_at > app_now() - interval '90 days'""").fetchall()
-        assert opened
         pairs = suggestions.evaluate(rows)
         for s in opened:
             assert pairs[(s["theme_id"], s["segment_signal_type"])]["passes"]
+        passing = {e["theme_id"] for e in pairs.values() if e["passes"]}
+        assert passing == {s["theme_id"] for s in opened}
+        # The plant shows: in some planted segment, a theme is heard at half or more of its accounts.
+        planted = ("new_exec", "hiring_function", "pricing_change", "competitor_review")
+        assert any(e["segment"] in planted and e["segment_accounts"] >= 3 and e["rate"] >= 0.5 for e in pairs.values())
     finally:
         with psycopg.connect(admin, autocommit=True) as c:
             c.execute(f'drop database if exists "{name}" with (force)')
+
+
+# ---------------------------------------------------------------- two at once
+
+def _in_thread(fn):
+    import threading
+    out: dict = {}
+
+    def run():
+        try:
+            out["value"] = fn()
+        except Exception as exc:  # surfaced by the caller
+            out["error"] = exc
+    t = threading.Thread(target=run)
+    t.start()
+    return t, out
+
+
+def test_a_check_waits_for_a_decision_and_never_lapses_it(world, monkeypatch):
+    import time
+    monkeypatch.setattr(suggestions, "_window", lambda cur: [])  # nothing passes: the check would lapse any open one
+    with db.tx() as cur:
+        mgr = db.val(cur, "select id from users where role = 'manager' order by id limit 1")
+        seg = db.val(cur, "select key from signal_types where key = 'new_exec'")
+        t = db.val(cur, "insert into learning_themes (kind, label) values ('reason_to_buy', 'Zq race theme') returning id")
+        sid = db.val(cur, """insert into play_suggestions (theme_id, segment_signal_type, evidence, draft)
+                             values (%s, %s, '{"accounts": 5}', '{}') returning id""", t, seg)
+    try:
+        with db.pool().connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    suggestions.decide(cur, sid, decision="not_now", reason="After the board meeting", user_id=mgr)
+
+                    def check():
+                        with db.tx() as c2:
+                            return suggestions.check(c2)
+                    th, out = _in_thread(check)
+                    time.sleep(0.5)
+                    assert th.is_alive()  # the check waits for the decision's lock
+        th.join(10)
+        assert "error" not in out, out.get("error")
+        with db.tx() as cur:
+            row = db.one(cur, "select status, decided_by from play_suggestions where id = %s", sid)
+        assert row == {"status": "not_now", "decided_by": mgr}
+    finally:
+        with db.tx() as cur:
+            db.run(cur, "delete from play_suggestions where id = %s", sid)
+            db.run(cur, "delete from learning_themes where id = %s", t)
+
+
+def test_two_workers_filing_the_same_new_label_end_on_one_theme(world):
+    import time
+    label = "Zq race label for two workers"
+    try:
+        with db.pool().connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    first = themes.theme_for_label(cur, "objection", label)
+
+                    def second():
+                        with db.tx() as c2:
+                            return themes.theme_for_label(c2, "objection", label.upper())
+                    th, out = _in_thread(second)
+                    time.sleep(0.5)
+        th.join(10)
+        assert "error" not in out, out.get("error")
+        assert out["value"] == first
+    finally:
+        with db.tx() as cur:
+            db.run(cur, "delete from learning_themes where kind = 'objection' and lower(label) = lower(%s)", label)
+
+
+def test_erasure_takes_a_name_out_of_a_theme_label(cur, desk):
+    a = db.val(cur, "insert into accounts (name, primary_domain) values ('Label Co', %s) returning id", f"label{desk['t1']}.example")
+    p = db.val(cur, "insert into people (account_id, full_name, first_name, source) values (%s, 'Odile Varnum', 'Odile', 'test') returning id", a)
+    t = db.val(cur, "insert into learning_themes (kind, label) values ('objection', 'Odile Varnum wants a pilot first') returning id")
+    privacy.erase(cur, p, actor_id=desk["users"]["gtm"])
+    assert db.val(cur, "select label from learning_themes where id = %s", t) == "someone wants a pilot first"
+
+
+def test_fisher_refuses_an_impossible_table():
+    with pytest.raises(ValueError):
+        stats.fisher_greater(0, 9, 9, 10)  # nine of ten in the group and nine heard it, yet none overlap

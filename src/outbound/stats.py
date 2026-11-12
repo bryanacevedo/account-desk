@@ -74,11 +74,9 @@ def fisher_greater(k: int, n_in: int, m: int, total: int) -> float:
     """One-sided Fisher exact test: the chance of seeing k or more of the m accounts that heard something inside a
     group of n_in, out of `total` accounts, if hearing it had nothing to do with the group (the hypergeometric upper
     tail). The 2x2 table is [[k, n_in - k], [m - k, total - n_in - m + k]]. Exact integers, no dependency."""
-    if not (0 <= k <= m <= total and 0 <= n_in <= total) or k > n_in:
+    if not (0 <= k <= m <= total and k <= n_in <= total) or total - n_in - m + k < 0:
         raise ValueError("not a 2x2 table")
     top = min(m, n_in)
-    if k > top:
-        return 0.0
     hits = sum(math.comb(m, x) * math.comb(total - m, n_in - x) for x in range(k, top + 1))
     return hits / math.comb(total, n_in)
 

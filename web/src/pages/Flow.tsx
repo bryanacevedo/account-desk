@@ -260,8 +260,7 @@ export function Plays() {
   );
 }
 
-/** Plays the desk suggests from what buyers said on calls, once code finds a clear pattern. Manager and GTM only:
- * the quotes behind them are private. */
+/** Plays the desk suggests from what buyers said on calls. Manager and GTM only: the quotes behind them are private. */
 function Suggested() {
   const { data } = useData<any>("/api/play-suggestions");
   if (!data) return null;
@@ -269,24 +268,24 @@ function Suggested() {
   return (
     <Section title="Suggested from calls" icon={Lightbulb} count={rows.length}>
       {rows.length ? (
-        <div className="ledger wrap-names">
-          <div className="row head" style={{ gridTemplateColumns: SUG_COLS }}><span>What buyers said</span><span>Accounts that came in on</span><span className="num">Heard there</span><span className="num">Heard elsewhere</span></div>
+        <div className="ledger sugg wrap-names">
+          <div className="row head" style={{ gridTemplateColumns: SUG_COLS }}><span>What buyers said</span><span>Signal</span><span className="num">On this signal</span><span className="num">Other accounts</span></div>
           {rows.map((x: any) => {
             const e = x.evidence;
             return (
               <button key={x.id} className="row" style={{ gridTemplateColumns: SUG_COLS }} onClick={() => openSheet("suggestion", x.id)}>
                 <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{x.theme}</span>
-                  <span className="s">In notes from {e.sdrs} SDRs</span></div>
-                <span className="hide-sm"><SignalLabel type={x.segment} label={x.segment_label} /></span>
-                <span className="num" data-label="Heard there"><span className="strong">{e.accounts} of {e.segment_accounts}</span> <span className="mute small">{pct(e.rate)}</span></span>
-                <span className="num mute" data-label="Heard elsewhere">{e.elsewhere} of {e.elsewhere_accounts} <span className="small">{pct(e.rate_elsewhere)}</span></span>
+                  <span className="s">From {e.sdrs} SDRs</span></div>
+                <span data-label="Signal"><SignalLabel type={x.segment} label={x.segment_label} /></span>
+                <span className="num" data-label="On this signal"><span className="strong">{e.accounts} of {e.segment_accounts}</span></span>
+                <span className="num mute" data-label="Other accounts">{e.elsewhere} of {e.elsewhere_accounts}</span>
               </button>
             );
           })}
         </div>
       ) : (
-        <Empty title="No clear pattern in call notes yet">
-          <span className="mute"> A play is suggested when the same reason is heard at {data.rule.min_accounts} or more accounts that came in on one signal, from {data.rule.min_sdrs} or more SDRs, clearly more often than elsewhere.</span>
+        <Empty title="Nothing suggested from calls right now">
+          <span className="mute"> The bar is in Settings.</span>
         </Empty>
       )}
     </Section>

@@ -1,8 +1,9 @@
 """Each shipped play must hold together as a sales leader would read it: what starts it, what it says and who it reaches.
 Found by hand on 2026-11-11: 'Moving to usage-based pricing' could start on a free-tier sign-up, which the drafter may
 never cite, while its angle told the email to name the pricing change."""
-from outbound.outreach import PRIVATE_SIGNALS
 from test_guarantees import scene  # noqa: F401
+
+from outbound.outreach import PRIVATE_SIGNALS
 from outbound.seed import catalog
 
 

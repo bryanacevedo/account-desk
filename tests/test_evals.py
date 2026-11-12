@@ -130,7 +130,7 @@ def test_theming_holds_its_floors(database):
         db.run(cur, "rollback")
     _, scores = run.report(rows)
     floors = _floors()
-    for k in ("themes_agreement", "themes_filed", "themes_no_names"):
+    for k in ("themes_agreement", "themes_filed", "themes_no_names", "themes_kept_together"):
         assert scores[k] >= floors[k], (k, scores[k])
 
 
@@ -142,5 +142,6 @@ def test_suggested_plays_hold_their_floors(database):
     _, scores = run.report(rows)
     floors = _floors()
     assert all(r["judge"] is not None for r in rows if r["draft"]), "a play was never judged: run it live"
-    for k in ("draft_play_pass", "draft_play_not_as_fact", "draft_play_catalog_only", "draft_play_no_names"):
+    for k in ("draft_play_pass", "draft_play_not_as_fact", "draft_play_catalog_only", "draft_play_no_names",
+              "draft_play_follows", "draft_play_triggers_allowed"):
         assert scores[k] >= floors[k], (k, scores[k])

@@ -573,7 +573,7 @@ export function Settings() {
           <dt>Heard at</dt><dd>{data.suggestion_rule.min_accounts} or more accounts that came in on one signal</dd>
           <dt>Written by</dt><dd>{data.suggestion_rule.min_sdrs} or more different SDRs</dd>
           <dt>Call notes from</dt><dd>The last {data.suggestion_rule.window_days} days</dd>
-          <dt>Clearly more often</dt><dd>Than at other accounts: a one-sided Fisher exact test at {data.suggestion_rule.alpha}, divided by the number of pairs compared</dd>
+          <dt>Gap needed</dt><dd>Heard far more often than at other accounts, and unlikely to be chance</dd>
           <dt>Set aside</dt><dd>Comes back when heard at {data.suggestion_rule.regrow} times as many accounts</dd>
         </dl>
       </Section>

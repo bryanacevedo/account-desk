@@ -64,6 +64,15 @@ def _existing(cur, kind: str) -> dict[int, str]:
     return {r["id"]: r["label"] for r in db.all(cur, "select id, label from learning_themes where kind = %s order by id", kind)}
 
 
+def theme_for_label(cur, kind: str, label: str) -> int:
+    """The theme with this label, made if new. The same label in another case is the same theme, and two workers
+    filing the same new label at once end on one theme: the second insert waits for the first and does nothing."""
+    label = label.strip()
+    db.run(cur, "insert into learning_themes (kind, label) values (%s, %s) on conflict (kind, lower(label)) do nothing",
+           kind, label)
+    return db.val(cur, "select id from learning_themes where kind = %s and lower(label) = lower(%s)", kind, label)
+
+
 def file_learning(cur, learning_id: int) -> int | None:
     """File one learning. Returns its theme id, or None when it is not filed (a quote, or two failed answers)."""
     item = db.one(cur, "select id, kind, text, theme_id from learnings where id = %s for update", learning_id)
@@ -83,11 +92,7 @@ def file_learning(cur, learning_id: int) -> int | None:
         if not fails:
             tid = real[out["theme_id"] - 1][0] if out["theme_id"] is not None else None
             if tid is None:
-                label = out["new_label"].strip()
-                # The same label in another case is the same theme: labels are unique per kind whatever their case.
-                tid = db.val(cur, "select id from learning_themes where kind = %s and lower(label) = lower(%s)",
-                             item["kind"], label) or db.val(
-                    cur, "insert into learning_themes (kind, label) values (%s, %s) returning id", item["kind"], label)
+                tid = theme_for_label(cur, item["kind"], out["new_label"])
             db.run(cur, "update learnings set theme_id = %s where id = %s", tid, learning_id)
             return tid
         payload = {**payload, "failures": fails}
@@ -121,6 +126,5 @@ def backfill(batch: int = 50) -> int:
                 filed += file_learning(cur, i) is not None
         if len(ids) < batch:
             break
-    with db.tx() as cur:
-        suggestions.check(cur)
+    suggestions.sweep()
     return filed

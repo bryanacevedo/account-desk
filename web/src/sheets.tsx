@@ -1229,7 +1229,7 @@ export function PlaySheet({ id }: { id: number }) {
   return (
     <Frame crumb="Play" foot={foot}>
       <div style={{ display: "grid", gap: 6 }}>
-        <h2 style={{ fontSize: 20, lineHeight: "26px", fontWeight: 620, letterSpacing: "-0.02em" }}>{p.name}</h2>
+        <h2 className="sheet-title">{p.name}</h2>
         <div className="thesis">
           <span className="thesis-mark" aria-hidden="true"><i /><i /><i /><i /></span>
           <div className="thesis-body">
@@ -1510,15 +1510,9 @@ export { withParam };
 
 // ---------------------------------------------------------------- a play suggested from call learnings
 
-/** "1 in 4,000": a chance in words a new hire can read. */
-const oneIn = (p: number) => {
-  const x = Math.max(1, 1 / Math.max(p, 1e-12));
-  const step = Math.pow(10, Math.max(0, Math.floor(Math.log10(x)) - 1));  // two figures: 141,979 reads as 140,000
-  return `1 in ${n0(Math.round(x / step) * step)}`;
-};
-
 export function SuggestionSheet({ id }: { id: number }) {
   const { data: s, error, reload } = useData<any>(`/api/play-suggestions/${id}`);
+  const plays = useData<any>("/api/plays").data;
   const me = useData<any>("/api/me").data;
   const [busy, run] = useBusy();
   const [asking, setAsking] = useState<null | "not_now" | "dismissed">(null);
@@ -1527,10 +1521,12 @@ export function SuggestionSheet({ id }: { id: number }) {
   if (!s) return <Frame crumb="Suggested play" kind="suggestion"><Loading rows={8} /></Frame>;
   const e = s.evidence, d = s.draft;
   const role = me?.user.role;
+  // A live play that already starts on this signal: the suggestion is a new angle for it, not a play from nothing.
+  const already = (plays?.plays || []).filter((p: any) => p.status === "live" && p.trigger.any_of.includes(s.segment_signal_type));
   const decide = (decision: "not_now" | "dismissed") => run(async () => {
     await api(`/api/play-suggestions/${id}/decide`, { method: "POST", body: { decision, reason: reason.trim() || null } });
     closeSheet();
-  }, decision === "not_now" ? "Set aside. It comes back if the pattern grows by half." : "Dismissed. This theme is not suggested again.");
+  }, decision === "not_now" ? "Set aside. It comes back if it is heard at half as many accounts again." : "Dismissed. This theme is not suggested again.");
   const makeDraft = () => {
     const u = new URL(window.location.href);
     u.searchParams.set("sheet", "playedit:new");
@@ -1542,7 +1538,7 @@ export function SuggestionSheet({ id }: { id: number }) {
   const foot = open && (role === "gtm" || role === "manager") ? (asking ? (
     <div style={{ display: "grid", gap: 8, width: "100%" }}>
       <textarea className="input" rows={2} value={reason} maxLength={300} onChange={(x) => setReason(x.target.value)} autoFocus
-        aria-label="Why" placeholder={asking === "not_now" ? "Why not now (needed)" : "Why not (optional)"} />
+        aria-label="Why" placeholder={asking === "not_now" ? "Why not now? Required" : "Why not? Optional"} />
       <div className="actions" style={{ justifyContent: "flex-end" }}>
         <button className="btn quiet sm" disabled={busy} onClick={() => { setAsking(null); setReason(""); }}>Back</button>
         <button className="btn sm" disabled={busy || (asking === "not_now" && !reason.trim())} onClick={() => decide(asking)}>
@@ -1551,33 +1547,27 @@ export function SuggestionSheet({ id }: { id: number }) {
     </div>
   ) : (
     <>
-      <button className="btn quiet" disabled={busy} onClick={() => setAsking("dismissed")}>No</button>
+      <button className="btn quiet" disabled={busy} onClick={() => setAsking("dismissed")}>Dismiss</button>
       <button className="btn line" disabled={busy} onClick={() => setAsking("not_now")}>Not now</button>
-      {role === "gtm" ? <button className="btn" disabled={busy} onClick={makeDraft}>Make it a draft play</button>
-        : <span className="mute small">GTM turns it into a draft play</span>}
+      {role === "gtm" ? <button className="btn" disabled={busy} onClick={makeDraft}>Make it a draft play</button> : null}
     </>
   )) : undefined;
-  const STATUS: Record<string, string> = { drafted: "Made into a draft play", not_now: "Set aside for now", dismissed: "Dismissed for good", lapsed: "The pattern went away" };
+  const STATUS: Record<string, string> = { drafted: "Made into a draft play", not_now: "Set aside for now", dismissed: "Dismissed", lapsed: "No longer heard often enough" };
   return (
     <Frame crumb="Suggested play" kind="suggestion" foot={foot}>
       <div style={{ display: "grid", gap: 6 }}>
-        <div className="mute small">{s.kind === "competitor" ? "A competitor heard on calls" : "A reason to buy heard on calls"}</div>
-        <h2 style={{ fontSize: 20, lineHeight: "26px", fontWeight: 620, letterSpacing: "-0.02em" }}>{s.theme || "Theme erased"}</h2>
+        <div className="mute small">{s.kind === "competitor" ? "Competitor" : "Reason to buy"}</div>
+        <h2 className="sheet-title">{s.theme || "Theme removed"}</h2>
       </div>
       {!open ? <div className="notice"><Status kind="off">{STATUS[s.status] || cap(s.status)}</Status>
         <span className="mute">{s.decided_by_name ? `${s.decided_by_name}, ` : ""}{day(s.decided_at)}{s.reason ? `: ${s.reason}` : ""}</span>
         {s.play_id ? <button className="link" onClick={() => openSheet("play", s.play_id)}>Open the play</button> : null}</div> : null}
       <Section title="The pattern">
-        <p style={{ margin: 0, maxWidth: "62ch" }}>Heard at <b>{e.accounts} of the {e.segment_accounts}</b> accounts that came in on <b>{s.segment_label}</b>, against {e.elsewhere} of {e.elsewhere_accounts} elsewhere,
-          in notes from {e.sdrs} SDRs over the last {e.window_days} days.</p>
         <div className="lift-pair">
-          <div><b>{pct(e.rate, 0)}</b><span>of accounts that came in on this signal <span className="mute">({e.accounts} of {e.segment_accounts})</span></span></div>
-          <div><b>{pct(e.rate_elsewhere, 0)}</b><span>of the other accounts with call notes <span className="mute">({e.elsewhere} of {e.elsewhere_accounts})</span></span></div>
+          <div><b>{e.accounts} of {e.segment_accounts}</b><span>accounts that came in on {s.segment_label}</span></div>
+          <div><b>{e.elsewhere} of {e.elsewhere_accounts}</b><span>other accounts with call notes</span></div>
         </div>
-        <Status kind="ok" title="A one-sided Fisher exact test, held to 0.05 divided by the number of pairs compared (Bonferroni).">
-          {`A gap this size comes by chance about ${oneIn(e.p)} times`}</Status>
-        <div className="mute small" style={{ maxWidth: "62ch" }}>The desk compared {e.pairs_tested} pairs of theme and signal, so a gap had to be
-          rarer than {oneIn(e.alpha)} to count. This one is.</div>
+        <div className="mute small">From {e.sdrs} SDRs in the last {e.window_days} days. Clears the bar set in Settings.</div>
       </Section>
       <Section title="What they said" count={s.quotes.length}>
         <div className="ledger">
@@ -1591,12 +1581,12 @@ export function SuggestionSheet({ id }: { id: number }) {
         </div>
       </Section>
       {s.objections.length ? (
-        <Section title="What you will hear">
+        <Section title="Objections at these accounts">
           <div className="ledger">
             {s.objections.map((o: any) => (
               <div key={o.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto", minHeight: 36 }}>
                 <span className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{o.label}</span>
-                  <span className="s">{o.kind === "reason_not" ? "Reason not to buy" : "Objection"}</span></span>
+                  {o.kind === "reason_not" ? <span className="s">Reason not to buy</span> : null}</span>
                 <span className="num mute small">{o.accounts} {o.accounts === 1 ? "account" : "accounts"}</span>
               </div>
             ))}
@@ -1606,13 +1596,19 @@ export function SuggestionSheet({ id }: { id: number }) {
       <Section title="The drafted play">
         <dl className="kv">
           <dt>Name</dt><dd>{d.name}</dd>
-          <dt>Why</dt><dd>{d.hypothesis}</dd>
+          <dt>Heard</dt><dd>{d.hypothesis}</dd>
           <dt>First touch</dt><dd>{d.angle}</dd>
           <dt>Starts on</dt><dd style={{ display: "grid", gap: 6 }}>{d.trigger.any_of.map((k: string) => <SignalLabel key={k} type={k} label={s.draft_labels?.signals[k] || cap(k)} />)}</dd>
           <dt>Who</dt><dd>{d.personas.map((k: string) => s.draft_labels?.personas[k] || PERSONA[k] || k).join(", ")}</dd>
         </dl>
-        <div className="mute small">Saved as a draft play in which the SDR approves every email. A manager other than its author launches it.</div>
+        <div className="mute small">Saves as a draft. The SDR approves every email. Another manager launches it.</div>
       </Section>
+      {already.length ? (
+        <div className="notice">
+          <span>A live play already starts on this signal: {already.map((p: any, i: number) => (
+            <span key={p.id}>{i ? ", " : ""}<button className="link" onClick={() => openSheet("play", p.id)}>{p.name}</button></span>))}</span>
+        </div>
+      ) : null}
     </Frame>
   );
 }

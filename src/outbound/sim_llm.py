@@ -230,8 +230,14 @@ def extract(p: dict) -> dict:
         elif any(w in low for w in ("worried", "concern", "too expensive", "timing", "not sure")):
             items.append({"kind": "objection", "text": ln[:120], "quote": ln})
         elif any(w in low for w in ("need", "want", "close", "audit", "board")):
-            items.append({"kind": "reason_to_buy", "text": ln[:120], "quote": ln})
+            items.append({"kind": "reason_to_buy", "text": _idea(ln)[:120], "quote": ln})
     return {"items": items[:8]}
+
+
+def _idea(line: str) -> str:
+    """The idea in a note line without who said it or how: 'CFO, unprompted: X. Came up twice.' is X."""
+    core = re.sub(r"^[A-Z][\w ,]{0,40}: ", "", line)
+    return re.split(r"(?<=\.) ", core, maxsplit=1)[0]
 
 
 @sim("check_claims")
@@ -290,20 +296,15 @@ def _short(text: str, n: int) -> str:
 def draft_play(p: dict) -> dict:
     seg, label = p["segment"], p["theme"]["label"].rstrip(".")
     private = any("without naming" in f for f in p.get("failures", []))
+    where = _lower_first(seg["label"])
     if p["theme"]["kind"] == "competitor":
-        name = _short(f"{seg['label']}, up against {label}", 60)
-        hypothesis = f"Accounts that come in on {_lower_first(seg['label'])} often name {label} on first calls. {seg['because']}"
-        angle = (f"Teams comparing billing tools often weigh {label}. Lead with what is worth testing in an evaluation, "
-                 "and never run another tool down")
+        hypothesis = f"Accounts that came in on {where} name {label} on first calls."
+        angle = f"Ask what they are comparing. Offer to walk through what to test, and leave {label} out of it"
     else:
-        idea = _lower_first(label)
-        name = _short(f"{seg['label']}: {idea}", 60)
-        hypothesis = (f"Accounts that come in on {_lower_first(seg['label'])} keep raising the same need on first calls: "
-                      f"{idea}. {seg['because']}")
-        angle = (f"Teams in that position often find this: {idea}. Lead with how other finance teams handled it, "
-                 "and ask whether it is on their list")
+        hypothesis = f"Accounts that came in on {where} raise this on first calls: {_lower_first(label)}."
+        angle = f"Ask whether this is still true for them: {_lower_first(label)}. Say how other finance teams handled it"
     return {
-        "name": name,
+        "name": _short(label, 80),
         "hypothesis": hypothesis[:400],
         "trigger": {"any_of": [seg["key"]]},
         "personas": [x["key"] for x in p["catalog"]["personas"]][:2],

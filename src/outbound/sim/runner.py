@@ -240,11 +240,15 @@ TOOLS = [(("Currently on Chargewise, contract ends in June.",), 4),
 CONTEXT = ["On the call: the CFO and the controller.", "Next step: a sandbox with last month's usage data.",
            "Follow up with pricing for 40,000 invoices a month.", "They will bring the data team to the next call."]
 # A planted relationship, so the demo has a true pattern for play suggestions to find (README, "What is real and what
-# is simulated"): accounts that came in on these signals raise this reason (or name this competitor) on most first
-# calls, and everyone else rarely does. Nothing else in the notes depends on the signal.
+# is simulated"): accounts that came in on these four signals raise this reason (or name this competitor) on 90% of
+# first calls. To keep the contrast clear, these four were also made rarer everywhere else: their weight in the
+# general pool above is 1 (it was 2, 2, 2 and 3 before the plant). Nothing else in the notes depends on the signal.
 PLANTED = {"new_exec": REASONS[4][0], "hiring_function": REASONS[7][0], "pricing_change": REASONS[5][0],
            "competitor_review": TOOLS[1][0]}
 PLANTED_SHARE = 0.9
+# Who said it and how, so the same reason from ten companies reads like ten people, not one line pasted ten times.
+SAID = ["{}", "Controller: {}", "CFO said it twice: {}", "{} Came up before we asked.", "Their VP Finance brought it up: {}",
+        "{} It was the first thing they raised.", "Head of billing, unprompted: {}"]
 
 
 def call_notes(rng: random.Random, signal_type: str | None = None) -> str:
@@ -253,7 +257,8 @@ def call_notes(rng: random.Random, signal_type: str | None = None) -> str:
                 for x in rng.choices([x for x, _ in pool], weights=[w for _, w in pool], k=k)]
     lines = [rng.choice(CONTEXT)] + pick(REASONS, rng.randint(1, 2))
     if signal_type in PLANTED and rng.random() < PLANTED_SHARE:
-        lines.append(rng.choice(PLANTED[signal_type]))
+        said = rng.choice(PLANTED[signal_type])
+        lines.append(rng.choice(SAID).format(said))
     lines += pick(OBJECTIONS, rng.randint(0, 2)) + pick(TOOLS, rng.randint(0, 1))
     return "\n".join(dict.fromkeys(lines))
 

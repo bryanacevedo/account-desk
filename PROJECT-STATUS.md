@@ -4,13 +4,13 @@
 
 ## Where it stands
 
-v1 is built end to end on simulated vendors. **Public** at https://github.com/bryanacevedo/account-desk since 2026-11-11 (Bryan: keep the name, publish). CI green on the first push (lint, the suite on Postgres 18, the web build). **Live demo** at https://account-desk-x4ko.onrender.com since 2026-11-11 (Render free plan, service `account-desk`, Docker with Postgres inside; the 60-day simulation is built into the image, so the app starts in seconds once Render has woken the container (up to a minute after idling); checked on the live link: every page 200 in under 0.7 s). The first deploy failed because the simulation ran at start and took longer than Render's port wait; fixed by building it into the image.
+v1 is built end to end on simulated vendors. **Public** at https://github.com/bryanacevedo/account-desk since 2026-11-11 (Bryan: keep the name, publish). CI green on the first push (lint, the suite on Postgres 18, the web build). **Live demo** at https://account-desk-x4ko.onrender.com since 2026-11-11 (Render free plan, service `account-desk`, Docker with Postgres inside; the simulation is built into the image, so the app starts in seconds once Render has woken the container (up to a minute after idling). The deployed image is still the 60-day build from before play suggestions; the 90-day build is on a branch and has not been deployed or timed on Render). The first deploy failed because the simulation ran at start and took longer than Render's port wait; fixed by building it into the image.
 
 Checked on 2026-11-11 by running them:
 
 - `pytest` on real Postgres 18: 223 tests, all passing on 2026-11-11 (branch with play suggestions), including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
 - `ruff check src tests`: clean. `tsc --noEmit` and `vite build`: clean.
-- `make demo`: 700 invented accounts, 90 simulated days (60 before play suggestions; the 90-day window of call notes needs the full 90); opens on 2026-11-11 with work waiting for three of the four SDRs (Maya Okafor has none that morning).
+- `make demo`: 700 invented accounts, 90 simulated days (the 90-day window of call notes needs the full 90), about two minutes; opens on 2026-11-11. MAYA_LINE
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Since then two fresh design reviews and checks at 375 wide (see below).
 
 ## At production size (measured 2026-11-11)
@@ -33,7 +33,7 @@ Checked on 2026-11-11 by running them:
 
 **Not proven:**
 
-- Every AI task has an eval (315 cases, 241 written by an agent that never saw the code), run live once on 2026-11-11: themes 89% pairwise agreement (often splits one idea in two, never merges two), suggested plays 4 of 15 pass the judge with every trigger and persona from the catalog and no forbidden name; replies 99% accepted (147 of 148), drafts 94% pass after one rewrite (47 of 50) and 70% judge-faithful (35 of 50), briefs 100% faithful (20 of 20), suggested replies 63% pass every check (19 of 30) with 1 of 30 judged invented, call notes 87% recall. Not a real buyer among them.
+- Every AI task has an eval (315 cases, 241 written by an agent that never saw the code), run live on 2026-11-11: replies 99% accepted (147 of 148), drafts 94% pass after one rewrite (47 of 50) and 70% judge-faithful (35 of 50), briefs 100% faithful (20 of 20), suggested replies 63% pass every check (19 of 30) with 1 of 30 judged invented, call notes 87% recall. Themes: 89% of pairs grouped as a person would, but only 58% of pairs that belong together kept together. Suggested plays: all 15 use only catalog triggers and personas and name no one (code checks); 10 of 15 also pass every judge check. Not a real buyer among them.
 - Only the DNS check is live (SPF, DKIM and DMARC over DNS-over-HTTPS). Every other vendor is simulated: people search, finders, verifier, catch-all resolver, company data, phone, research, mail provider, telemetry, CRM, Slack. For these only the contracts exist, and in live mode a vendor without a key refuses instead of simulating.
 - The HeyReach webhook has not seen a real event.
 - No mail provider adapter: a live desk cannot send email yet.

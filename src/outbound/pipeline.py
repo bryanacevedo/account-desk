@@ -4,7 +4,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
-from . import adapters, alerts, audit, db, jobs, plays, suggestions, themes  # noqa: F401 register the theme and pattern jobs
+# suggestions and themes are unused here; importing them registers their jobs wherever learn_from can queue one.
+from . import adapters, alerts, audit, db, jobs, plays, suggestions, themes  # noqa: F401
 from .db import J
 
 log = logging.getLogger("outbound.pipeline")

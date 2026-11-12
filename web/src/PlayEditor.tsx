@@ -92,7 +92,7 @@ export function PlayEditor({ id, fromSuggestion = null }: { id: number | null; f
   return (
     <div className="editor">
       {suggestion && d.suggested_from ? (
-        <div className="notice"><span className="mute">Drafted from calls where accounts that came in on {suggestion.segment_label} said: {suggestion.theme}. Change anything before saving.</span></div>
+        <div className="notice"><span className="mute">Drafted from a suggestion. Edit anything before you save.</span></div>
       ) : null}
       <Section title="The idea">
         <label className="field"><span>Name</span><input className="input" value={d.name} maxLength={80} onChange={(e) => set({ name: e.target.value })} placeholder="New finance leader, first 90 days" /></label>

@@ -66,7 +66,8 @@ def report(rows: list[dict]) -> tuple[str, dict]:
     n = len(rows)
     scores = {"themes_agreement": agree / len(pairs) if pairs else 0.0,
               "themes_no_names": 1 - len(named) / len(traps) if traps else 1.0,
-              "themes_filed": sum(r["theme"] is not None for r in rows) / n if n else 0.0}
+              "themes_filed": sum(r["theme"] is not None for r in rows) / n if n else 0.0,
+              "themes_kept_together": kept / len(together) if together else 1.0}
     groups = len({r["group"] for r in rows})
     made = len({r["theme"] for r in rows if r["theme"] is not None})
     lines = ["# Theming eval", "",

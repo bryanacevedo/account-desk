@@ -22,6 +22,7 @@ import math
 
 from . import alerts, audit, copy_gate, db, jobs, llm, stats, themes
 from .db import J
+from .outreach import PRIVATE_SIGNALS
 
 log = logging.getLogger("outbound.suggestions")
 
@@ -78,30 +79,40 @@ def evaluate(rows: list[dict], *, rule: dict | None = None) -> dict[tuple[int, s
     return pairs
 
 
-def _blocked(cur, theme_id: int, accounts: int) -> str | None:
-    """Rules 4 and 5: why a passing pattern still may not open a suggestion, or None."""
+def _blocked(cur, theme_id: int, segment: str, accounts: int) -> str | None:
+    """Rules 4 and 5: why a passing pattern still may not open a suggestion, or None. A theme set aside comes back
+    only through the segment it was set aside in, once it is heard there at 1.5 times as many accounts."""
     if db.val(cur, "select exists (select 1 from plays where suggested_from = %s)", theme_id):
         return "a play was made from it"
     if db.val(cur, "select exists (select 1 from play_suggestions where theme_id = %s and status in ('open', 'dismissed'))",
               theme_id):
         return "open or dismissed"
-    last = db.one(cur, """select accounts_at_decision from play_suggestions where theme_id = %s and status = 'not_now'
-                          order by decided_at desc limit 1""", theme_id)
-    if last and accounts < math.ceil(RULE["regrow"] * (last["accounts_at_decision"] or 0)):
-        return "set aside, and not grown by half"
+    last = db.one(cur, """select segment_signal_type, accounts_at_decision from play_suggestions
+                          where theme_id = %s and status = 'not_now' order by decided_at desc limit 1""", theme_id)
+    if last and (segment != last["segment_signal_type"]
+                 or accounts < math.ceil(RULE["regrow"] * (last["accounts_at_decision"] or 0))):
+        return "set aside, and not grown by half in its segment"
     return None
 
 
 @jobs.handler("check_patterns")
 def check_patterns(cur, payload: dict) -> None:
-    check(cur)
+    """Refresh and lapse in this job's transaction; each new suggestion is drafted by its own job, so no row is held
+    while the model writes."""
+    for tid, seg in check(cur):
+        jobs.enqueue(cur, "open_suggestion", {"theme_id": tid, "segment": seg}, dedupe_key=f"open_suggestion:{tid}")
 
 
-def check(cur) -> dict:
-    """Look for patterns now: lapse open suggestions whose pattern went away, refresh the rest, open new ones."""
+@jobs.handler("open_suggestion")
+def open_suggestion_job(cur, payload: dict) -> None:
+    open_suggestion(cur, payload["theme_id"], payload["segment"])
+
+
+def check(cur) -> list[tuple[int, str]]:
+    """Lapse open suggestions whose pattern went away and refresh the numbers of the rest. Returns the patterns that may
+    open a new suggestion, as (theme, segment). Short: no model call happens here."""
     db.run(cur, "select pg_advisory_xact_lock(7342047)")  # one check at a time
     pairs = evaluate(_window(cur))
-    out = {"pairs_tested": len(pairs), "opened": 0, "lapsed": 0, "dropped": 0}
     for s in db.all(cur, "select id, theme_id, segment_signal_type from play_suggestions where status = 'open' for update"):
         e = pairs.get((s["theme_id"], s["segment_signal_type"]))
         if e and e["passes"]:
@@ -110,24 +121,44 @@ def check(cur) -> dict:
         db.run(cur, "update play_suggestions set status = 'lapsed', decided_at = app_now() where id = %s", s["id"])
         audit.log(cur, "desk", "suggestion_lapsed", "play_suggestion", s["id"],
                   {"theme_id": s["theme_id"], "segment": s["segment_signal_type"], **(_evidence(e) if e else {})})
-        out["lapsed"] += 1
-    best: dict[int, dict] = {}
-    for e in pairs.values():
-        if e["passes"] and (e["theme_id"] not in best or e["p"] < best[e["theme_id"]]["p"]):
-            best[e["theme_id"]] = e
-    for tid, e in best.items():
-        if _blocked(cur, tid, e["accounts"]):
-            continue
-        draft = draft_for(cur, tid, e["segment"])
-        if draft is None:
-            out["dropped"] += 1
-            continue
-        sid = db.val(cur, """insert into play_suggestions (theme_id, segment_signal_type, evidence, draft)
-                             values (%s, %s, %s, %s) returning id""", tid, e["segment"], J(_evidence(e)), J(draft))
-        audit.log(cur, "desk", "suggestion_opened", "play_suggestion", sid,
-                  {"theme_id": tid, "segment": e["segment"], **_evidence(e)})
-        out["opened"] += 1
-    return out
+    out: dict[int, str] = {}
+    for e in sorted((e for e in pairs.values() if e["passes"]), key=lambda e: e["p"]):
+        if e["theme_id"] not in out and not _blocked(cur, e["theme_id"], e["segment"], e["accounts"]):
+            out[e["theme_id"]] = e["segment"]
+    return list(out.items())
+
+
+def open_suggestion(cur, theme_id: int, segment: str) -> int | None:
+    """Draft and open one suggestion. The model writes while nothing is locked; the rule and rules 4 and 5 are checked
+    again just before the insert, under a lock per theme, and a second open one for the theme is refused by the database."""
+    e = pair_now(cur, theme_id, segment)
+    if not e or not e["passes"] or _blocked(cur, theme_id, segment, e["accounts"]):
+        return None
+    draft = draft_for(cur, theme_id, segment)
+    if draft is None:
+        return None
+    db.run(cur, "select pg_advisory_xact_lock(hashtext('open_suggestion:' || %s))", theme_id)
+    e = pair_now(cur, theme_id, segment)
+    if not e or not e["passes"] or _blocked(cur, theme_id, segment, e["accounts"]):
+        return None
+    sid = db.val(cur, """insert into play_suggestions (theme_id, segment_signal_type, evidence, draft) values (%s, %s, %s, %s)
+                         on conflict (theme_id) where status = 'open' do nothing returning id""",
+                 theme_id, segment, J(_evidence(e)), J(draft))
+    if sid:
+        audit.log(cur, "desk", "suggestion_opened", "play_suggestion", sid, {"theme_id": theme_id, "segment": segment,
+                                                                            **_evidence(e)})
+    return sid
+
+
+def sweep() -> dict:
+    """A check, then each new suggestion in its own transaction. For the backfill and the demo."""
+    with db.tx() as cur:
+        todo = check(cur)
+    opened = 0
+    for tid, seg in todo:
+        with db.tx() as cur:
+            opened += open_suggestion(cur, tid, seg) is not None
+    return {"candidates": len(todo), "opened": opened}
 
 
 def _evidence(e: dict) -> dict:
@@ -151,7 +182,6 @@ def catalog(cur, segment: str | None = None) -> dict:
 
 
 def without_private(cat: dict, segment: str | None) -> dict:
-    from .outreach import PRIVATE_SIGNALS
     return {**cat, "signal_types": [t for t in cat["signal_types"] if t["key"] not in PRIVATE_SIGNALS or t["key"] == segment]}
 
 
@@ -180,7 +210,6 @@ def check_draft(cur, d: dict, segment: str, cat: dict) -> list[str]:
     if any(x in text for x in copy_gate.DASHES):
         fails.append("No long dashes.")
     angle = (d.get("angle") or "").lower()
-    from .outreach import PRIVATE_SIGNALS
     if any(t in PRIVATE_SIGNALS for t in trig) and "without naming" not in angle:
         # The same rule the shipped plays keep (tests/test_play_catalog.py): a play a private signal starts says how
         # it opens without naming what was seen.

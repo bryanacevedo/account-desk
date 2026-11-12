@@ -3,6 +3,7 @@ and leaves a hashed suppression so they are never added again (docs/SPEC.md 22.1
 from __future__ import annotations
 
 import hashlib
+import re
 
 from . import audit, db
 
@@ -66,5 +67,22 @@ def erase(cur, person_id: int, *, actor_id: int | None) -> dict:
                                                 and not exists (select 1 from learnings l where l.theme_id = t.id)""", themes)]
         counts["play_suggestions"] = db.run(cur, "delete from play_suggestions where theme_id = any(%s) and status <> 'drafted'", empty)
         counts["learning_themes"] = db.run(cur, "delete from learning_themes where id = any(%s)", empty)
+    # A theme label never should name a person (the filing check refuses it), but one that does loses the name here.
+    # Should the new label match another theme's, the learnings move to that theme and this one goes.
+    pattern = re.compile(re.escape(p["full_name"]), re.I)
+    renamed = 0
+    for t in db.all(cur, "select id, kind, label from learning_themes where label ilike %s", name_like):
+        label = pattern.sub("someone", t["label"]).strip()
+        same = db.val(cur, "select id from learning_themes where kind = %s and lower(label) = lower(%s) and id <> %s",
+                      t["kind"], label, t["id"])
+        if same:
+            db.run(cur, "update learnings set theme_id = %s where theme_id = %s", same, t["id"])
+            db.run(cur, "delete from play_suggestions where theme_id = %s and status <> 'drafted'", t["id"])
+            db.run(cur, "update plays set suggested_from = %s where suggested_from = %s", same, t["id"])
+            db.run(cur, "delete from learning_themes where id = %s", t["id"])
+        else:
+            db.run(cur, "update learning_themes set label = %s where id = %s", label, t["id"])
+        renamed += 1
+    counts["themes_renamed"] = renamed
     audit.log(cur, "person", "erased", "person", person_id, {"counts": counts}, actor_id=actor_id)
     return {"ok": True, "counts": counts}
