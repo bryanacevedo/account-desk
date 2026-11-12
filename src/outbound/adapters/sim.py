@@ -301,10 +301,7 @@ class SimTelemetry:
         for d in domains:
             row = db.one(cur, "select registered_at, spam_rate from sending_domains where domain = %s", d)
             age = db.val(cur, "select (app_now()::date - %s)", row["registered_at"])
-            # Postmaster shows nothing until there is enough volume; one small demo domain never gets there, so the
-            # demo shows a domain with no data, which counts as unknown and never as clean.
-            from ..seed.catalog import POSTMASTER_SILENT
-            if age < 45 or d in POSTMASTER_SILENT:
+            if age < 45:  # Postmaster shows nothing until there is enough volume
                 out.append(DomainTelemetry(d, None, None))
                 continue
             complaints = db.val(cur, """select count(*) from deliveries dl join mailboxes m on m.id = dl.mailbox_id

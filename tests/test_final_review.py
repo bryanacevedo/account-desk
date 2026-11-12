@@ -290,15 +290,6 @@ def test_old_complaint_data_is_not_known_for_a_promotion(cur, scene):
     assert not known()
 
 
-def test_the_sim_has_a_domain_postmaster_never_reports_on(cur):
-    from outbound.adapters import sim
-    from outbound.seed import catalog
-    silent = catalog.POSTMASTER_SILENT[0]
-    db.run(cur, """insert into sending_domains (domain, registered_at) values (%s, app_now()::date - 300)
-                   on conflict (domain) do update set registered_at = excluded.registered_at""", silent)
-    got = sim.SimTelemetry().domains(cur, [silent])[0]
-    assert (got.spam_rate, got.status) == (None, None)
-
 
 # ---------------------------------------------------------------- copy checks that change behaviour
 

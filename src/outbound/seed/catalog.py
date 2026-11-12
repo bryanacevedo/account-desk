@@ -229,8 +229,6 @@ SENDING_DOMAINS = [
     ("getlumenledger.com", 220), ("lumenledger-hq.com", 210), ("trylumenledger.com", 190), ("lumenledgerapp.com", 25),
     ("hellolumenledger.com", 200), ("meetlumenledger.com", 180),
 ]
-# Domains that send too little to Gmail for Postmaster Tools to report on: the sim never returns data for them.
-POSTMASTER_SILENT = ("lumenledgerapp.com",)
 
 # The monthly cap each demo play was launched with (credits per vendor, AI in cents). Phone lookups were 60 when the
 # desk had four SDRs; at 3,000 accounts the three busiest plays ran out by mid-month and their accounts arrived on the 1st.
