@@ -38,6 +38,11 @@ class Config:
     anthropic_live: bool = field(default_factory=lambda: _flag("ANTHROPIC_LIVE"))
     evals_strict: bool = field(default_factory=lambda: _flag("EVALS_STRICT"))
     slack_token: str = field(default_factory=lambda: os.environ.get("SLACK_BOT_TOKEN", ""))
+    # Google Postmaster Tools API v2: an OAuth client and a refresh token from the Google account that verified the
+    # sending domains in Postmaster Tools. Any of the three unset: no Postmaster data, said so, never invented.
+    postmaster_client_id: str = field(default_factory=lambda: os.environ.get("POSTMASTER_CLIENT_ID", ""))
+    postmaster_client_secret: str = field(default_factory=lambda: os.environ.get("POSTMASTER_CLIENT_SECRET", ""))
+    postmaster_refresh_token: str = field(default_factory=lambda: os.environ.get("POSTMASTER_REFRESH_TOKEN", ""))
     worker_inline: bool = field(default_factory=lambda: not _flag("NO_WORKER"))
 
     def validate(self) -> None:

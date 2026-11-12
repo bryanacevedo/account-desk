@@ -21,6 +21,7 @@ from . import (
     PhoneHit,
     PlacementResult,
     SendResult,
+    WarmupStatus,
 )
 
 log = logging.getLogger("outbound.sim")
@@ -310,8 +311,21 @@ class SimTelemetry:
             # Postmaster measures all traffic to Gmail, warm-up included (about 40 a day per mailbox here).
             mailboxes = db.val(cur, "select count(*) from mailboxes where domain = %s", d)
             rate = complaints / (sends + 7 * 40 * max(mailboxes, 1))
-            out.append(DomainTelemetry(d, round(rate, 5), "compliant" if rate < 0.003 else "at_risk"))
+            out.append(DomainTelemetry(d, round(rate, 5), "compliant" if rate < 0.003 else "needs_work"))
         return out
+
+
+class SimWarmup:
+    """A warm-up vendor's report. Stands in for a real one; the desk's own ramp is separate and unchanged."""
+    name = "sim:warmup"
+
+    def status(self, cur, mailbox: dict) -> WarmupStatus:
+        day = db.val(cur, "select app_now()::date - %s", mailbox["warmup_started"])
+        if day < 14:
+            return WarmupStatus("warming", day)
+        # Once warm it keeps swapping a little mail to hold the reputation; the score is stable per mailbox.
+        score = 86 + int(hashlib.sha256(str(mailbox["id"]).encode()).hexdigest(), 16) % 13
+        return WarmupStatus("maintaining", day, score)
 
 
 class SimChat:
@@ -369,4 +383,4 @@ def adapters() -> Adapters:
     return Adapters(people=SimPeopleSearch(), finder=SimFinder(), verifier=SimVerifier(), phone=SimPhone(),
                     research=SimResearch(), email=SimEmail(), telemetry=SimTelemetry(), dns=SimDns(), chat=SimChat(), crm=SimCrm(),
                     notes=["All vendors simulated"], finders=[SimWaterfallStep(*w) for w in WATERFALL],
-                    company=SimCompany(), resolver=SimResolver())
+                    company=SimCompany(), resolver=SimResolver(), warmup=SimWarmup())
