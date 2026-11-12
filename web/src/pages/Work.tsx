@@ -66,7 +66,7 @@ export function Today() {
               <div key={p.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1.1fr) minmax(0,2fr) 52px auto" }}>
                 <Logo domain={p.primary_domain} name={p.name} />
                 <button className="cell-main" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }} onClick={() => openSheet("account", p.account_id)}>
-                  <span className="t">{p.name}</span><span className="s"><span className="prop-play">{p.play}</span>{p.urgent ? ", decide today" : ""}{me?.user.role !== "sdr" && p.owner ? `, ${p.owner}` : ""}</span><span className="s only-sm">{p.why_now.summary}</span>
+                  <span className="t prop-play">{p.play}</span><span className="s">at <span className="prop-acct">{p.name}</span>{p.urgent ? ", decide today" : ""}{me?.user.role !== "sdr" && p.owner ? `, ${p.owner}` : ""}</span><span className="s only-sm">{p.why_now.summary}</span>
                 </button>
                 <div className="cell-main hide-sm"><span className="t" style={{ fontWeight: 450 }}>{p.why_now.summary}</span><span className="s"><SignalLabel type={p.why_now.type} label={ago(p.why_now.observed_at)} /></span></div>
                 <span className="num hide-sm"><span className="mute small">Priority </span>{p.priority}</span>
