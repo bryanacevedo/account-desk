@@ -215,8 +215,9 @@ SENDING_DOMAINS = [
     ("hellolumenledger.com", 200), ("meetlumenledger.com", 180),
 ]
 
-# The monthly cap each demo play was launched with (credits per vendor, AI in cents).
-PLAY_CAP = {"people_search": 120, "email_finder": 120, "email_verifier": 240, "phone_finder": 60, "anthropic_cents": 1500}
+# The monthly cap each demo play was launched with (credits per vendor, AI in cents). Phone lookups were 60 when the
+# desk had four SDRs; at 3,000 accounts the three busiest plays ran out by mid-month and their accounts arrived on the 1st.
+PLAY_CAP = {"people_search": 120, "email_finder": 120, "email_verifier": 240, "phone_finder": 150, "anthropic_cents": 1500}
 
 # Flat fees, demo assumptions in the range public price lists show. A manager replaces them from real bills.
 SUBSCRIPTIONS = [
