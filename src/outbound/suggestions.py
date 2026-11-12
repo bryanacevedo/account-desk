@@ -294,16 +294,19 @@ def one(cur, suggestion_id: int) -> dict | None:
         s["quotes"], s["objections"] = [], []
         return s
     # The quotes are read live from the learnings, never copied into the suggestion, so an erasure removes them here too.
+    # One quote per account (its latest), so the list counts accounts the way the pattern does.
     s["quotes"] = db.all(cur, """
-        select l.id, l.quote, l.text, cn.created_at, cn.meeting_id, m.account_id, a.name as company, a.primary_domain,
-               u.name as sdr
+        select * from (
+        select distinct on (m.account_id) l.id, l.quote, l.text, cn.created_at, cn.meeting_id, m.account_id,
+               a.name as company, a.primary_domain, u.name as sdr
         from learnings l join call_notes cn on cn.id = l.call_note_id join meetings m on m.id = cn.meeting_id
         join accounts a on a.id = m.account_id left join users u on u.id = cn.written_by
         where l.theme_id = %s and cn.created_at > app_now() - make_interval(days => %s)
           and m.account_id in (select m2.account_id from learnings l2 join call_notes c2 on c2.id = l2.call_note_id
                                join meetings m2 on m2.id = c2.meeting_id where l2.signal_type = %s
                                and c2.created_at > app_now() - make_interval(days => %s))
-        order by cn.created_at desc""", s["theme_id"], RULE["window_days"], s["segment_signal_type"], RULE["window_days"])
+        order by m.account_id, cn.created_at desc) q order by created_at desc""",
+        s["theme_id"], RULE["window_days"], s["segment_signal_type"], RULE["window_days"])
     s["objections"] = _objections(cur, s["theme_id"], s["segment_signal_type"])
     names = {r["key"]: r["label"] for r in db.all(cur, "select key, label from signal_types")}
     personas = {r["key"]: r["label"] for r in db.all(cur, "select key, label from personas")}

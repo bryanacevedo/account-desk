@@ -532,6 +532,7 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 /* Suggestions sit above the plays list and line up with its inset rows. */
 .ledger.sugg .row { margin: 0; width: 100%; padding-left: 12px; padding-right: 12px; }
 .section:has(> .ledger.sugg) { margin-bottom: 8px; }
+@media (max-width: 900px) { .ledger.sugg .row { padding-left: 4px; padding-right: 4px; } }
 .sheet::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--kind); opacity: 0.55; }
 .sheet-top { gap: 10px; }
 .sheet-kind { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--ink-2);
