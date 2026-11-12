@@ -1215,8 +1215,9 @@ export function PlaySheet({ id }: { id: number }) {
         : p.status === "draft" ? (isManager && !isAuthor ? <button className="btn" disabled={busy || !limits} onClick={() => change({ status: "live", reason: "Launched after the cost card", monthly_cap: limits }, "Launched, with its monthly cap.")}>Launch</button>
           : <span className="mute small">{isAuthor ? "A manager launches it" : "Waiting for a manager"}</span>)
         : <button className="btn line" disabled={busy || !isManager} onClick={() => change({ status: "live", reason: "Resumed from the desk" }, "Live again.")}>Resume</button>}
-      {promo.next && p.status !== "draft" ? <button className="btn" disabled={busy || !promo.ready || !isManager} title={!isManager ? "A manager approves a promotion" : undefined}
-        onClick={() => change({ autonomy: promo.next, reason: "Met every check" }, "Promoted.")}>Move to {STAGE[promo.next]}</button> : null}
+      {promo.next && p.status !== "draft" ? (promo.ready && isManager
+        ? <button className="btn" disabled={busy} onClick={() => change({ autonomy: promo.next, reason: "Met every check" }, "Promoted to the next stage.")}>Promote to stage {STAGE_ORDER.indexOf(promo.next) + 1} of 4</button>
+        : <span className="mute small">{promo.ready ? "Ready for the next stage. A manager promotes it." : `Next stage: ${promo.checks.filter((c: any) => c.ok).length} of ${promo.checks.length} checks met`}</span>) : null}
     </>
   ) : undefined;
   return (
@@ -1224,6 +1225,7 @@ export function PlaySheet({ id }: { id: number }) {
       <div style={{ display: "grid", gap: 6 }}>
         <h2 style={{ fontSize: 20, lineHeight: "26px", fontWeight: 620, letterSpacing: "-0.02em" }}>{p.name}</h2>
         <div className="mute">{p.hypothesis}</div>
+        <div className="play-starts"><span className="mute small">Starts on</span>{p.trigger.any_of.map((k: string) => <SignalLabel key={k} type={k} label={signalNames[k] || cap(k)} />)}</div>
       </div>
       <div className="figs">
         <Fig value={<Status kind={p.status === "live" ? "go" : "off"}>{cap(p.status)}</Status>} label="Status" sm />
@@ -1246,7 +1248,6 @@ export function PlaySheet({ id }: { id: number }) {
       <PlayAccounts id={id} /></>}
       <Section title="Trigger">
         <dl className="kv">
-          <dt>Signals</dt><dd style={{ display: "grid", gap: 6 }}>{p.trigger.any_of.map((k: string) => <SignalLabel key={k} type={k} label={signalNames[k] || cap(k)} />)}</dd>
           <dt>Fit tiers</dt><dd>{p.trigger.fit_tiers.join(" and ")}</dd>
           <dt>Priority from</dt><dd>{p.trigger.min_priority}</dd>
           <dt>Signal age</dt><dd>Within {p.trigger.within_days} days</dd>
@@ -1269,7 +1270,8 @@ export function PlaySheet({ id }: { id: number }) {
       {p.status === "draft" && isManager && !isAuthor && limits ? <CapForm limits={limits} setLimits={setLimits} worst={worst} /> : null}
       {p.status !== "draft" && p.cap_use?.length ? <CapUse rows={p.cap_use} /> : null}
       {promo.next && p.status !== "draft" ? (
-        <Section title={`To move to: ${STAGE[promo.next]}`}>
+        <Section title="Who writes, and the next stage" right={<StageScale autonomy={p.autonomy} />}>
+          <div className="mute small">Next: {STAGE[promo.next]}, once every check below is met.</div>
           <div className="ledger">
             {promo.checks.map((c: any) => (
               <div key={c.label} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto", minHeight: 36 }}>
@@ -1398,6 +1400,18 @@ function PlayAccounts({ id }: { id: number }) {
         </nav>
       ) : null}
     </Section>
+  );
+}
+
+const STAGE_ORDER = ["research", "draft", "supervised", "autonomous"];
+/** Four steps, the earned ones filled, the current one cobalt, then "n of 4". */
+function StageScale({ autonomy }: { autonomy: string }) {
+  const stage = Math.max(0, STAGE_ORDER.indexOf(autonomy));
+  return (
+    <span className="prow-stage" style={{ marginTop: 0 }}>
+      <span className="prow-meter" aria-hidden="true">{STAGE_ORDER.map((x, k) => <i key={x} className={k < stage ? "on" : k === stage ? "on is-now" : ""} />)}</span>
+      <span className="prow-of">Stage {stage + 1} of 4</span>
+    </span>
   );
 }
 
