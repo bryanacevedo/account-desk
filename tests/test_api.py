@@ -61,6 +61,8 @@ def test_webhook_reply_is_stored_once(client):
             "received_at": "2026-10-01T10:00:00+00:00"}
     raw, h = signed(body)
     first = client.post("/api/webhooks/reply", content=raw, headers=h).json()
+    # The provider sends it again, signed afresh (the very same signed request is refused as a replay).
+    raw, h = signed(body, ts=int(time.time()) - 1)
     second = client.post("/api/webhooks/reply", content=raw, headers=h).json()
     assert first["reply_id"] and second["duplicate"] is True
 
@@ -259,7 +261,7 @@ def test_a_calendar_booking_and_its_cancellation(client):
               "starts_at": "2026-12-01T15:00:00+00:00", "inbound": True}
     raw, h = signed(booked)
     mid = client.post("/api/webhooks/meeting", content=raw, headers=h).json()["meeting_id"]
-    raw, h = signed(booked)
+    raw, h = signed(booked, ts=int(time.time()) - 1)  # the tool sends it again, signed afresh
     assert client.post("/api/webhooks/meeting", content=raw, headers=h).json()["meeting_id"] == mid  # once
     with db.tx() as cur:
         m = db.one(cur, "select source, status, person_id from meetings where id = %s", mid)

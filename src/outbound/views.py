@@ -65,7 +65,7 @@ def accounts(cur, *, q: str | None, view: str, owner: int | None, limit: int = 1
         where.append("sh.delta > 0")
     if q:
         where.append("(a.name ilike %s or a.primary_domain ilike %s)")
-        args += [f"%{q}%", f"%{q}%"]
+        args += [like_pattern(q), like_pattern(q)]
     if owner:
         where.append("a.owner_id = %s")
         args.append(owner)
@@ -640,9 +640,23 @@ def health(cur) -> dict:
             "kill_switch": bool(db.val(cur, "select value from settings where key = 'kill_switch'"))}
 
 
+# The settings the Settings page may show. Anything else in the table (secrets, cursors, schedule marks) stays out,
+# including keys added later that nobody thought to hide.
+SETTINGS_SHOWN = ("kill_switch", "account_max_active", "account_max_active_wide", "person_cooldown_days",
+                  "account_reply_pause_hours", "verify_max_age_days", "proposal_ttl_days", "urgent_proposal_ttl_days",
+                  "stagger_days", "send_window", "mailbox_max_daily", "sla_business_hours", "approval_lapse_business_days",
+                  "placement_hold_below", "placement_pause_below", "placement_max_age_days", "linkedin_note_max_chars",
+                  "competing_tools", "call_window", "retention_months", "lia_ref", "lia_review_due")
+
+
+def like_pattern(q: str) -> str:
+    """A search text as an ilike pattern that matches it literally: % and _ in it are not wildcards."""
+    return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
 def settings(cur) -> dict:
-    return {"settings": {r["key"]: r["value"] for r in db.all(cur, "select key, value from settings where key not like 'sched:%%' "
-                                                       "and key <> 'unsubscribe_secret'")},
+    return {"settings": {r["key"]: r["value"] for r in db.all(cur, "select key, value from settings where key = any(%s)",
+                                                              list(SETTINGS_SHOWN))},
             "signal_types": db.all(cur, "select * from signal_types order by weight desc"),
             "icp": db.one(cur, "select * from icp_versions order by published_at desc limit 1"),
             "personas": db.all(cur, "select * from personas"),

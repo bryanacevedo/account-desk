@@ -79,6 +79,15 @@ def resolve_person(cur, person: dict | None) -> int | None:
     return None
 
 
+def http_url(url) -> str | None:
+    """A link the desk keeps and shows: http or https only. Anything else (javascript:, data:, a bare word) is
+    dropped, so it can never become a live link on a page."""
+    if not isinstance(url, str):
+        return None
+    u = url.strip()
+    return u if re.match(r"^https?://[^\s/]+", u, re.I) else None
+
+
 def ingest(cur, source_key: str, raws: Iterable[dict]) -> dict:
     """Ingest one batch from one source. Records the run, so a silent source shows up on Health."""
     run_id = db.val(cur, "insert into source_runs (source_key) values (%s) returning id", source_key)
@@ -96,7 +105,16 @@ def ingest(cur, source_key: str, raws: Iterable[dict]) -> dict:
                               else resolve_account(cur, raw.get("domain"), raw.get("company")))
         person_id = resolve_person(cur, raw.get("person")) if t["level"] == "person" else None
         status = "matched" if account_id else "unmatched"
-        ev = raw["evidence"]
+        ev = dict(raw["evidence"])
+        if "url" in ev:
+            ev["url"] = http_url(ev["url"])
+            if ev["url"] is None:
+                del ev["url"]
+        if not ev.get("url") and not ev.get("quote"):
+            counts["unmatched"] += 1  # evidence needs a link or a quote; a link that is not http(s) is no link
+            continue
+        if raw.get("person") and raw["person"].get("linkedin_url"):
+            raw = {**raw, "person": {**raw["person"], "linkedin_url": http_url(raw["person"]["linkedin_url"])}}
         row = db.one(cur, """
             insert into signals (type_key, source, external_id, account_id, person_id, raw_domain, raw_company,
                                  observed_at, strength, evidence, status, status_reason)

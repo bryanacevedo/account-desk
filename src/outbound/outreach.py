@@ -17,6 +17,7 @@ from . import (
     jobs,
     llm,
     plays,
+    signals,
     sim_llm,  # noqa: F401  registers the stand-in model tasks
     spend,
     timeutil,
@@ -57,7 +58,8 @@ def _research_facts(cur, account: dict) -> None:
                         account["id"], "page:" + pg.kind, pg.text)
         if not exists:
             db.run(cur, """insert into facts (account_id, kind, text, source, source_url, observed_at)
-                           values (%s,%s,%s,'research',%s,app_now())""", account["id"], "page:" + pg.kind, pg.text, pg.url)
+                           values (%s,%s,%s,'research',%s,app_now())""", account["id"], "page:" + pg.kind, pg.text,
+                   signals.http_url(pg.url))
     db.run(cur, """insert into research_cache (domain, kind, content, fetched_at) values (%s, 'pages', %s, app_now())
                    on conflict (domain, kind) do update set content = excluded.content, fetched_at = excluded.fetched_at""",
            account["primary_domain"], J([pg.__dict__ for pg in pages]))

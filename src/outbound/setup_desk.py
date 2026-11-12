@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, field_validator
 from . import audit, db, jobs
 from .db import J
 from .seed import catalog as C
-from .signals import normalize_domain, normalize_name
+from .signals import http_url, normalize_domain, normalize_name
 
 EMAIL = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
@@ -223,6 +223,9 @@ def import_people(cur, text: str) -> dict:
         email = (r.get("email") or "").lower() or None
         if email and "@" not in email:
             refused.append({"row": i, "why": "email is not an address"})
+            continue
+        if r.get("linkedin_url") and not http_url(r["linkedin_url"]):
+            refused.append({"row": i, "why": "linkedin_url must start with http:// or https://"})
             continue
         from .privacy import erased
         if erased(cur, email=email, linkedin_url=r.get("linkedin_url") or None):

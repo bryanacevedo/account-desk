@@ -51,6 +51,9 @@ class Config:
     postmaster_client_secret: str = field(default_factory=lambda: os.environ.get("POSTMASTER_CLIENT_SECRET", ""))
     postmaster_refresh_token: str = field(default_factory=lambda: os.environ.get("POSTMASTER_REFRESH_TOKEN", ""))
     worker_inline: bool = field(default_factory=lambda: not _flag("NO_WORKER"))
+    # The proxies whose X-Forwarded-For is believed, comma separated (addresses or networks). Default: only a proxy
+    # on this machine. On Render, set it to the network Render's proxy reaches the service from.
+    forwarded_allow_ips: str = field(default_factory=lambda: os.environ.get("FORWARDED_ALLOW_IPS", "127.0.0.1"))
 
     def validate(self) -> None:
         if self.live_send and self.auth_mode == "demo":

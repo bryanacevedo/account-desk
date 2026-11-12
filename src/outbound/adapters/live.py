@@ -119,8 +119,9 @@ class PostmasterTelemetry:
         body = postmaster_stats_body(self.today())
         out = []
         for d in domains:
-            comp = self._get(token, "GET", f"{POSTMASTER}/domains/{d}/complianceStatus")
-            stats = self._get(token, "POST", f"{POSTMASTER}/domains/{d}/domainStats:query", body)
+            name = urllib.parse.quote(d, safe="")  # a domain is one path segment, whatever it contains
+            comp = self._get(token, "GET", f"{POSTMASTER}/domains/{name}/complianceStatus")
+            stats = self._get(token, "POST", f"{POSTMASTER}/domains/{name}/domainStats:query", body)
             out.append(postmaster_telemetry(d, comp, stats))
         return out
 

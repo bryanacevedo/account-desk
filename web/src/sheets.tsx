@@ -6,7 +6,7 @@ import { SignalIcon, SignalLabel } from "./signalIcons";
 import { PlayEditor, PlayPreview } from "./PlayEditor";
 import {
   Bar, Empty, Seg, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTime, late, money, n0, navigate, pct,
-  toast, useBusy, useData, useNowIso, withParam, type Glyph,
+  safeUrl, toast, useBusy, useData, useNowIso, withParam, type Glyph,
 } from "./lib";
 
 // ---------------------------------------------------------------- the sheet frame
@@ -192,7 +192,7 @@ export function PersonSheet({ id }: { id: number }) {
               : p.email_status === "catch_all" ? ["hold", "Cannot be confirmed"] : ["half", cap(p.email_status)]) : null} />
           <Reach label="Phone" value={p.phone ? <>{p.phone}{p.phone_type && p.phone_type !== "unknown" ? <span className="mute">, {p.phone_type}</span> : null}</> : null}
             state={p.phone ? (p.phone_dnc ? ["stop", "Do not call"] : p.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(p.phone_status)]) : null} />
-          <Reach label="LinkedIn" value={p.linkedin_url ? <a href={p.linkedin_url} target="_blank" rel="noreferrer noopener">Profile <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
+          <Reach label="LinkedIn" value={safeUrl(p.linkedin_url) ? <a href={safeUrl(p.linkedin_url)} target="_blank" rel="noreferrer noopener">Profile <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
             state={data.touches.some((x: any) => x.kind === "linkedin_accepted") ? ["ok", "Connected"] : data.touches.some((x: any) => x.kind === "linkedin_connect") ? ["wait", "Request sent"] : null} />
           {p.status !== "active" ? <Reach label="Status" value={cap(p.status)} /> : null}
           {p.role_started_at ? <Reach label="In role" value={`Since ${day(p.role_started_at)}`} /> : null}
@@ -311,7 +311,7 @@ export function TaskSheet({ id }: { id: number }) {
       {!open ? <div className="notice"><Status kind={t.status === "done" ? "ok" : "off"}>{t.note || cap(t.status)}</Status></div> : null}
       {linkedin ? (
         <Section title={t.kind === "linkedin_connect" ? "Connection note" : "Message"}
-          right={t.linkedin_url ? <a className="btn quiet sm" href={t.linkedin_url} target="_blank" rel="noreferrer noopener">Open profile <ArrowSquareOut size={12} /></a> : null}>
+          right={safeUrl(t.linkedin_url) ? <a className="btn quiet sm" href={safeUrl(t.linkedin_url)} target="_blank" rel="noreferrer noopener">Open profile <ArrowSquareOut size={12} /></a> : null}>
           {t.draft !== null ? (
             <>
               <textarea className="input" rows={t.kind === "linkedin_connect" ? 4 : 6} value={body} disabled={!open}
@@ -367,7 +367,7 @@ export function TaskSheet({ id }: { id: number }) {
             {t.sources.map((f: any) => (
               <div key={f.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
                 <span style={{ whiteSpace: "normal" }}>{f.text}</span>
-                {f.url ? <a className="mute" href={f.url} target="_blank" rel="noreferrer noopener" aria-label="Source"><ArrowSquareOut size={14} /></a> : <span />}
+                {safeUrl(f.url) ? <a className="mute" href={safeUrl(f.url)} target="_blank" rel="noreferrer noopener" aria-label="Source"><ArrowSquareOut size={14} /></a> : <span />}
               </div>
             ))}
           </div>
@@ -769,7 +769,7 @@ function WhyNow({ why }: { why: any }) {
       <div className="because">{why.because}</div>
       <div className="actions small mute" style={{ justifyContent: "space-between" }}>
         <span>{why.label}, {ago(why.observed_at)}</span>
-        {why.url ? <a className="src" href={why.url} target="_blank" rel="noreferrer noopener">Source <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
+        {safeUrl(why.url) ? <a className="src" href={safeUrl(why.url)} target="_blank" rel="noreferrer noopener">Source <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
       </div>
     </div>
   );
@@ -937,7 +937,7 @@ export function SignalTimeline({ signals }: { signals: any[] }) {
           <SignalIcon type={s.type_key} />
           <div className="cell-main" style={{ whiteSpace: "normal" }}>
             <span className="t" style={{ whiteSpace: "normal" }}>{s.label}</span>
-            <span className="s" style={{ whiteSpace: "normal" }}>{s.evidence.summary}{s.evidence.url ? <> <a href={s.evidence.url} target="_blank" rel="noreferrer noopener" className="mute"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
+            <span className="s" style={{ whiteSpace: "normal" }}>{s.evidence.summary}{safeUrl(s.evidence.url) ? <> <a href={safeUrl(s.evidence.url)} target="_blank" rel="noreferrer noopener" className="mute"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
           </div>
         </li>
       ))}
@@ -1101,7 +1101,7 @@ export function MessageSheet({ id }: { id: number }) {
             {m.facts.map((f: any) => (
               <li key={f.id}><span className="id">{idOf.get(f.id)}</span>
                 <span>{f.text} <span className="mute small">{f.kind.startsWith("signal:") ? "Signal" : "Their website"}, {day(f.observed_at)}</span>
-                  {f.source_url ? <> <a href={f.source_url} target="_blank" rel="noreferrer noopener" className="mute"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
+                  {safeUrl(f.source_url) ? <> <a href={safeUrl(f.source_url)} target="_blank" rel="noreferrer noopener" className="mute"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
               </li>
             ))}
           </ul>

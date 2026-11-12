@@ -5,7 +5,7 @@ import { SIGNAL_NAME, SignalIcon, SignalLabel } from "../signalIcons";
 import { ArrowSquareOut, Lightbulb } from "@phosphor-icons/react";
 import {
   Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, n0, navigate, pct, usePath, useData,
-  withParam, useBusy,
+  safeUrl, withParam, useBusy,
 } from "../lib";
 import { LABEL, STAGE, openSheet } from "../sheets";
 
@@ -129,7 +129,7 @@ function Feed({ rows }: { rows: any[] }) {
             : <div className="cell-main"><span className="t">{s.raw_domain || s.raw_company || "Unknown company"}</span><span className="s">{s.label}</span></div>}
           <span className="clip hide-sm">{s.evidence.summary}</span>
           <span className="num mute small hide-sm">{ago(s.ingested_at)}</span>
-          {s.evidence.url ? <a className="iconbtn" href={s.evidence.url} target="_blank" rel="noreferrer noopener" aria-label="Open the source"><ArrowSquareOut size={15} /></a> : <span />}
+          {safeUrl(s.evidence.url) ? <a className="iconbtn" href={safeUrl(s.evidence.url)} target="_blank" rel="noreferrer noopener" aria-label="Open the source"><ArrowSquareOut size={15} /></a> : <span />}
         </div>
       ))}
     </div>
