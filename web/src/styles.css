@@ -684,3 +684,7 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
   .prow-hyp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) { .prow-meter i.on { animation: none; } .prow:not(.is-head):hover .prow-main { transform: none; } }
+
+/* The play sheet: what starts it sits under the bet, in words. */
+.play-starts { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-top: 4px; font-size: 13px; color: var(--ink-2); }
+.stage-stack { display: grid; gap: 8px; }
