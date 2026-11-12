@@ -37,7 +37,7 @@ Every step belongs to whichever of the three is good at it. A step that does not
 | Write the message | Approves, edits, or writes | Drafts from cited facts | The copy gate: citations, numbers, length, banned words, merge fields |
 | Decide whether a person may be contacted now | | | The contact gate, at every moment |
 | When and from which inbox | | | Account calendar, send window, holidays, mailbox health and caps |
-| Read a reply | Classifies when the model is unsure; answers every hot reply | Labels from a fixed list, extracts dates, referrals, new companies | Stops first, cleans, applies the rules, routes, starts the SLA clock |
+| Read a reply | Classifies when the model is unsure; answers every positive reply | Labels from a fixed list, extracts dates, referrals, new companies | Stops first, cleans, applies the rules, routes, starts the SLA clock |
 | Talk to a buyer | Owns it: calls, LinkedIn, replies, meetings | Suggests a reply the SDR may use | Creates the tasks, logs the touches |
 | Learn from calls | Decides which notes are worth learning from | Extracts objections, competitors, reasons from the notes | Aggregates by play and signal (a GROUP BY a person can audit) |
 | Know whether it works | Changes weights and plays | | Funnel, holdout lift, signal performance, monitors |
@@ -91,7 +91,7 @@ All tables are in `migrations/`. Every state column has a CHECK constraint namin
 - **account_plays** (id, account_id, play_id, trigger_signal_id, arm treated|holdout, state (see 22.19), why_now jsonb, owner_id, proposed_at, accepted_at, closed_at, close_reason). Partial unique index: one open account play per account.
 - **enrollments** (id, account_play_id, person_id, persona_key, state pending|active|paused|stopped|done, step_index, next_at, pause_until, stop_reason, mailbox_id).
 - **messages** (id, enrollment_id, step_index, channel email|linkedin|call|task, subject, body, citations jsonb, body_hash, status draft|failed_gate|awaiting_approval|approved|rejected|scheduled|sending|sent|send_unknown|failed|cancelled, gate jsonb, approved_hash, approved_by, approved_at, scheduled_for, sent_at, mailbox_id, provider_id, thread_key).
-- **mailboxes** (id, address, domain, provider, display_name, user_id, warmup_state, ramp_start, daily_cap, status active|paused|retired, pause_reason) and **sending_domains** (domain, spf, dkim, dmarc, dmarc_policy, registered_at, blocklisted, checked_at, status).
+- **mailboxes** (id, address, domain, provider, display_name, user_id, warmup_started, ramp_start, status active|paused|retired, pause_reason, cap_today, cap_day; `cap_today` is computed by the database's `mailbox_cap()`, migrations 0011 and 0017) and **sending_domains** (domain, spf, dkim, dmarc, dmarc_policy, registered_at, blocklisted, checked_at, status).
 - **deliveries** (message_id, event sent|delivered|bounced_hard|bounced_soft|complaint, at, detail) for mailbox and template health.
 - **replies** (id, message_id null, person_id null, account_id null, received_at, from_addr, subject, raw, cleaned, language, label, confidence, extracted jsonb, classified_by rules|model|person, needs_review, handled_by, handled_at, outcome).
 - **suppressions** (id, kind email|domain|person|account, value, reason, source, created_at, expires_at null).
@@ -247,7 +247,7 @@ An approval stores `approved_hash = sha256(subject + body)`. Sending refuses any
 **Classification.** Rules first: bounce notifications (DSN), auto-replies (headers and phrasing), explicit opt-out phrases in English, Spanish, Portuguese, French and German. Then the model, which can only return a label from a fixed list plus extracted fields: `interested`, `meeting_request`, `question`, `not_now` (return date), `not_interested`, `referral` (name, email, title), `left_company` (new company if stated), `out_of_office` (return date), `unsubscribe`, `wrong_person`, `bounce`, `auto_reply`, `other`. Confidence below 0.7, or text that tries to instruct the system, goes to a person.
 
 **Actions.**
-- interested, meeting_request, question: hot. Alert the owner in the team channel with an @-mention; the SLA clock starts (default 4 business hours); a missed SLA escalates to the manager. A suggested reply is drafted for the SDR, who sends it from their own inbox.
+- interested, meeting_request, question: a positive reply. Alert the owner in the team channel with an @-mention; the SLA clock starts (default 4 business hours); a missed SLA escalates to the manager. A suggested reply is drafted for the SDR, who sends it from their own inbox.
 - not_now: hold the person and account until the date (default 90 days), then the account may be proposed again.
 - not_interested: stop the account play (`lost`, reason), hold the account 180 days.
 - referral: create the referred person (if an email is given) and propose adding them to the account play with a referral angle; the SDR approves.
@@ -267,7 +267,7 @@ An approval stores `approved_hash = sha256(subject + body)`. Sending refuses any
 
 **CRM** adapters (only the simulated one exists; a HubSpot-shaped or Salesforce-shaped one is not written). Read: accounts, owners, lifecycle, open opportunities, contacts. Write through `crm_outbox` with idempotency keys: contact create, activity (email sent, reply), task (hot reply), meeting. Retries with backoff; after 5 attempts an item is dead and alerts GTM.
 
-**Slack**: hot replies, SLA escalations, launch requests and health alerts go to channels (`#outbound-replies`, `#outbound-ops`), never DMs, with the person @-mentioned. Every alert is also a row in `alerts`, and the health endpoint reports undelivered alerts, so a dead Slack is visible.
+**Slack**: positive replies, SLA escalations, launch requests and health alerts go to channels (`#outbound-replies`, `#outbound-ops`), never DMs, with the person @-mentioned. Every alert is also a row in `alerts`, and the health endpoint reports undelivered alerts, so a dead Slack is visible.
 
 **Security.** Webhooks are HMAC-signed with a timestamp (5 minutes) and replay protection. Writes need a write key in shared deployments. Live sending (`LIVE_SEND=1`) refuses to start without `AUTH_MODE` set to a real mode. Personal data: erasure deletes the person, their messages and replies, and leaves a hashed suppression row so they are never re-added. Secrets only from env.
 
@@ -299,7 +299,7 @@ Each item below is labelled **[enforced]** (cannot happen) or **[monitor]** (det
 7. **[monitor]** No email sent outside the recipient's send window or on a weekend.
 8. **[enforced]** No mailbox sent more than its cap on any day.
 9. **[enforced]** No message reached a holdout account.
-10. **[monitor]** Every hot reply has an alert, and every alert past SLA has an escalation.
+10. **[monitor]** Every positive reply has an alert, and every alert past SLA has an escalation.
 11. **[monitor]** No crm_outbox item pending for more than 24 hours.
 12. **[enforced]** No send while the kill switch was on.
 13. **[enforced]** Every account play beyond `proposed` has a trigger signal that exists.
@@ -317,7 +317,7 @@ Each item below is labelled **[enforced]** (cannot happen) or **[monitor]** (det
 - Funnel by play and by signal type: proposed, accepted, contacted, replied, positive, meeting, opportunity, pipeline.
 - **Lift against holdout**: meeting rate treated vs holdout per play, with a 90% interval (Wilson), labelled "too few to call" under 30 accounts per arm.
 - Signal type performance: meetings per 100 accounts triggered, against the weight it carries. A suggestion to move a weight is shown; a person applies it.
-- SDR SLA: median time to first response on hot replies; misses.
+- SDR SLA: median time to first response on positive replies; misses.
 - Deliverability: bounce, complaint and reply rates per mailbox and domain.
 - Cost: spend per meeting and per opportunity (managers and GTM only).
 
@@ -325,14 +325,14 @@ Each item below is labelled **[enforced]** (cannot happen) or **[monitor]** (det
 
 React and Vite, served by the API. Pages by job:
 
-- **Today** (SDR): proposed accounts to accept, drafts to approve, hot replies with their SLA, tasks due.
+- **Today** (SDR): proposed accounts to accept, drafts to approve, positive replies with their SLA, tasks due.
 - **Accounts**: ranked by priority, why now, change this week, owner, stage.
 - **Account** (side sheet and full page): who they are, score with its breakdown, signal timeline, committee by persona with gaps, the play and its calendar, messages and replies, meetings and pipeline.
 - **Signals**: the feed, unmatched signals, source health, type performance.
 - **Plays**: each play's hypothesis, trigger, sequence, stage, launch checks, results against holdout.
 - **Approvals**: each draft beside the facts it cites, with the gate result; approve, edit or reject.
 - **Replies**: every reply with its label, the action taken, and the ones a person must classify.
-- **Inboxes** (managers, GTM): domains and mailboxes, their health, where mail lands (seed tests) and today's sending capacity.
+- **Inboxes** (managers, GTM): domains and mailboxes, their health, where mail lands (inbox tests) and today's sending capacity.
 - **In flight**: every open play with each person's sequence as a step strip and what happens next.
 - **Vendors and costs** (managers, GTM): every vendor and signal source, connected or simulated, with spend, projection and cost per meeting.
 - **Results** (manager, GTM): funnel, lift, signal performance, cost per meeting.
@@ -409,9 +409,9 @@ There are no stored templates; every draft is written per person. The unit that 
 ### 22.5 Complaints and placement are aggregate signals
 
 Gmail never says which message was reported. So:
-- A **deliverability telemetry** adapter reads Google Postmaster Tools (domain spam rate, compliance status) per sending domain, Yahoo's complaint feedback loop and Microsoft SNDS/JMRP where enrolled, and seed-list placement tests per mailbox. Simulated in the demo; no live adapter exists yet. Each email carries a `Feedback-ID` header naming the play.
+- A **deliverability telemetry** adapter reads Google Postmaster Tools (domain spam rate, compliance status) per sending domain, and inbox tests (seed-list placement tests) per mailbox. The Postmaster Tools adapter is written (decision 49) but has not called Google; inbox tests are simulated. Yahoo's complaint feedback loop and Microsoft SNDS/JMRP are not built. Each email carries a `Feedback-ID` header naming the play.
 - Per-message complaint events exist only where a feedback loop provides them.
-- Missing data is **unknown**, never zero. A domain whose spam rate is unknown for more than 7 days, or at or above 0.1%, cannot gain capacity; at 0.3% it pauses. Promotion to a higher autonomy stage is blocked while any domain the play uses is unknown.
+- Missing data is **unknown**, never zero. A domain whose spam rate is unknown for more than 7 days, or at or above 0.1%, cannot gain capacity; at 0.3% it pauses. Promotion to a higher autonomy stage is blocked while any sending domain with an active mailbox is unknown, which is stricter than the domains the play uses (decisions 59 and 60).
 - Bounce rate for a mailbox: hard bounces over sends in a rolling 14 days, measured from 50 sends. Warn at 1.5%, pause at 2%. For a play: over its last 200 sends; demotion at 3%.
 - Tracking is off: no open pixel, no link rewriting. Plain-text email. Each sending domain has at most 3 mailboxes and its own daily cap. DMARC must align with SPF or DKIM.
 
@@ -477,7 +477,7 @@ Credits stay in their vendor's unit and AI spend in dollars; they are never adde
 ### 22.17 Hosting, Slack, uploads, login
 
 - Host: Render free web service from the repo's Dockerfile, Postgres inside the container (fresh on each restart, sleeps after 15 idle minutes). Memory target under 400 MB, measured.
-- Slack: ops alerts go to `#outbound-ops`. When an account play becomes engaged, the desk creates a channel for that account (`#acct-<domain>`), invites the owner first, and posts the reply there; hot-reply alerts @-mention the owner.
+- Slack: ops alerts go to `#outbound-ops`. When an account play becomes engaged, the desk creates a channel for that account (`#acct-<domain>`), invites the owner first, and posts the reply there; positive-reply alerts @-mention the owner.
 - The public demo (`PUBLIC_DEMO=1`) takes no uploads and sends nothing outside.
 - `AUTH_MODE` has `demo` (acting-as menu) and `header` (identity from a trusted proxy header such as Cloudflare Access). `LIVE_SEND=1` refuses to start in `demo`.
 - Erasure deletes the person, their enrollments, messages, replies, touches, facts about them, learnings quoting them, tasks and meetings; scrubs their address from crm_outbox payloads, llm_calls and audit_log details; and leaves an `email_hash` suppression.
