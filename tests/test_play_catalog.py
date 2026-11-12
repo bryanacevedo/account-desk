@@ -2,6 +2,7 @@
 Found by hand on 2026-11-11: 'Moving to usage-based pricing' could start on a free-tier sign-up, which the drafter may
 never cite, while its angle told the email to name the pricing change."""
 from outbound.outreach import PRIVATE_SIGNALS
+from test_guarantees import scene  # noqa: F401
 from outbound.seed import catalog
 
 
@@ -25,3 +26,15 @@ def test_every_trigger_and_persona_exists():
     for p in _plays():
         assert set(p["trigger"]["any_of"]) <= types, p["key"]
         assert set(p["personas"]) <= personas, p["key"]
+
+
+def test_a_first_stage_play_is_not_held_by_drafts_it_can_never_have(cur, scene):  # noqa: F811
+    """At the first stage the SDR writes everything, so the desk has no drafts to judge. Asking for 50 approved
+    drafts would keep the play there for ever (found 2026-11-11)."""
+    from outbound import db, views
+    play = db.one(cur, "select * from plays order by id limit 1")
+    play["autonomy"] = "research"
+    check = views.promotion_check(cur, play)
+    labels = {c["label"] for c in check["checks"]}
+    assert "50 drafts approved by a person" not in labels and "Approved without edits" not in labels
+    assert check["next"] == "draft"

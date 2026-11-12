@@ -472,6 +472,10 @@ def promotion_check(cur, play: dict) -> dict:
         {"label": "Complaint data for every sending domain", "value": "Known" if not unknown else f"{unknown} unknown",
          "ok": unknown == 0},
     ]
+    if idx == 0:
+        # At the first stage the SDR writes everything, so there are no desk drafts to judge: the move to drafts the
+        # SDR approves is a manager's call, held back only by complaints or sending domains with unknown spam data.
+        checks = [c for c in checks if c["label"] in ("Spam complaints", "Complaint data for every sending domain")]
     return {"next": STAGES[idx + 1], "ready": all(c["ok"] for c in checks), "checks": checks}
 
 

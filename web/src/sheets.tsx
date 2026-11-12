@@ -1270,8 +1270,10 @@ export function PlaySheet({ id }: { id: number }) {
       {p.status === "draft" && isManager && !isAuthor && limits ? <CapForm limits={limits} setLimits={setLimits} worst={worst} /> : null}
       {p.status !== "draft" && p.cap_use?.length ? <CapUse rows={p.cap_use} /> : null}
       {promo.next && p.status !== "draft" ? (
-        <Section title="Who writes, and the next stage" right={<StageScale autonomy={p.autonomy} />}>
-          <div className="mute small">Next: {STAGE[promo.next]}, once every check below is met.</div>
+        <Section title="Who writes" right={<StageScale autonomy={p.autonomy} />}>
+          <div className="small" style={{ color: "var(--ink-2)" }}>Now: {STAGE[p.autonomy]}. Next: {STAGE[promo.next]}, {p.autonomy === "research"
+            ? "when a manager moves it there; the desk has no drafts of its own to judge yet, so only these checks apply."
+            : "once every check below is met."}</div>
           <div className="ledger">
             {promo.checks.map((c: any) => (
               <div key={c.label} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto", minHeight: 36 }}>
