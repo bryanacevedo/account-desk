@@ -720,3 +720,8 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .prop-row:hover .prop-play { color: var(--accent); }
 .prop-row.is-leaving { opacity: 0; transform: translateX(16px); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .prop-row { animation: none; } .prop-row.is-leaving { transform: none; } }
+
+/* The email itself gets the same halo as a proposed play: it is the thing being approved. */
+.mail { border-color: color-mix(in srgb, var(--accent) 38%, var(--line)); border-radius: var(--r-l); margin: 6px 4px;
+  box-shadow: 0 0 0 4px var(--accent-wash), 0 0 0 5px color-mix(in srgb, var(--accent) 14%, transparent),
+              0 16px 52px -6px rgba(43, 71, 201, .48); }
