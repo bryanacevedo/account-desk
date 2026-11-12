@@ -111,16 +111,10 @@ def test_call_notes_hold_their_floors(database):
         assert scores[k] >= floors[k], (k, scores[k])
 
 
-# Recorded live while a competitor review could still be cited. Since 2026-11-11 competitor reviews are private (the
-# desk acts on them and never names them), so these cases now give the model an input it never answered and replay
-# the stand-in instead. They stay out of the floors until `make evals-live` re-records them; then empty these.
-STALE_WRITING = {"d2_16"}
+# Cases recorded against an input the desk no longer sends replay the stand-in, so they stay out of the floors until
+# `make evals-live` re-records them. Empty since the 2026-11-12 re-record.
+STALE_WRITING: set[str] = set()
 
-
-def _stale_draft_play(c: dict) -> bool:
-    """A case whose catalog offered competitor reviews outside their own segment: the desk now leaves them out."""
-    return c["segment"]["key"] != "competitor_review" and any(
-        t["key"] == "competitor_review" for t in c["catalog"]["signal_types"])
 
 
 def test_drafts_and_briefs_hold_their_floors(database):
@@ -156,9 +150,8 @@ def test_theming_holds_its_floors(database):
 def test_suggested_plays_hold_their_floors(database):
     run = _load("run_draft_play")
     with db.tx() as cur:
-        rows = [run.run_case(cur, c) for c in run.load() if not _stale_draft_play(c)]
+        rows = [run.run_case(cur, c) for c in run.load()]
         db.run(cur, "rollback")
-    assert rows, "every suggested-play case is stale: run make evals-live"
     _, scores = run.report(rows)
     floors = _floors()
     assert all(r["judge"] is not None for r in rows if r["draft"]), "a play was never judged: run it live"
