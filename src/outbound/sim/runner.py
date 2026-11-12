@@ -189,11 +189,13 @@ def manager_reviews_autonomy(cur, at: datetime) -> None:
 # GTM makes the hiring one a draft play; the manager sets the API-pricing one and the ERP one aside for now, and says no
 # to the customer-dashboard one. Every other suggestion waits for a person, and so does one that comes back after a "not
 # now", as the desk asks. Keyed by what was said, not by the order patterns appear, so each lands where it should.
-def suggestion_routine() -> dict[str, tuple[str, str | None]]:
-    return {**{w: ("draft", None) for w in REASONS[7][0]},
-            **{w: ("not_now", "Revisit after Q1 planning") for w in REASONS[5][0]},
-            **{w: ("not_now", "The ERP sync is on next quarter's roadmap") for w in ERP},
-            **{w: ("dismissed", "An existing play already covers it") for w in PORTAL}}
+def suggestion_routine() -> dict[str, tuple[str, str | None, int]]:
+    """What was said: (decision, reason, days it waits first). The ERP one waits three weeks, by when buyers have stopped
+    raising it, so it stays set aside; the API pricing one is set aside at once and comes back."""
+    return {**{w: ("draft", None, 0) for w in REASONS[7][0]},
+            **{w: ("not_now", "Revisit after Q1 planning", 0) for w in REASONS[5][0]},
+            **{w: ("not_now", "The ERP sync is on next quarter's roadmap", 21) for w in ERP},
+            **{w: ("dismissed", "An existing play already covers it", 0) for w in PORTAL}}
 
 
 def review_suggestions(at: datetime) -> None:
@@ -206,14 +208,16 @@ def review_suggestions(at: datetime) -> None:
     with db.tx() as cur:
         gtm = db.one(cur, "select id, role from users where role = 'gtm' and active order by id limit 1")
         manager = db.one(cur, "select id, role from users where role = 'manager' and active order by id limit 1")
-        waiting = db.all(cur, """select ps.id, ps.theme_id, t.label from play_suggestions ps
+        waiting = db.all(cur, """select ps.id, ps.theme_id, t.label, ps.created_at from play_suggestions ps
                                  join learning_themes t on t.id = ps.theme_id where ps.status = 'open'
                                  and ps.created_at < %s and not exists (select 1 from play_suggestions
                                    x where x.theme_id = ps.theme_id and x.status = 'not_now')
                                  order by ps.created_at, ps.id""", at)
     routine = suggestion_routine()
     for s in waiting:
-        step, reason = routine.get(s["label"] + ".", (None, None))
+        step, reason, wait = routine.get(s["label"] + ".", (None, None, 0))
+        if s["created_at"] > at - timedelta(days=wait):
+            continue
         if step == "draft" and gtm:
             with db.tx() as cur:
                 full = suggestions.one(cur, s["id"])
