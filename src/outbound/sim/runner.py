@@ -244,7 +244,7 @@ CONTEXT = ["On the call: the CFO and the controller.", "Next step: a sandbox wit
 # calls, and everyone else rarely does. Nothing else in the notes depends on the signal.
 PLANTED = {"new_exec": REASONS[4][0], "hiring_function": REASONS[7][0], "pricing_change": REASONS[5][0],
            "competitor_review": TOOLS[1][0]}
-PLANTED_SHARE = 0.8
+PLANTED_SHARE = 0.9
 
 
 def call_notes(rng: random.Random, signal_type: str | None = None) -> str:

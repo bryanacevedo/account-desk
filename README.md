@@ -43,6 +43,7 @@ Three more rules came from running outbound in production:
 - **Sending.** An account calendar staggers colleagues two business days apart. Sends land inside the recipient's own working hours, skip public holidays, ramp each mailbox, cap each domain, and pause a mailbox at a 2% bounce rate or any complaint. Every email carries the sender's postal address, a plain opt-out and RFC 8058 one-click unsubscribe headers; EU and UK recipients also get a privacy notice link.
 - **Replies.** Stop first. Then clean the reply (quoted history, signatures, legal footers, so an "unsubscribe" in a footer opts nobody out), label it with rules first and the model second, and act: hot replies go to the owner with a deadline and a suggested answer, out-of-office pauses until the return date, referrals become tasks, not-now becomes a hold until the date given. Opt-outs work in five languages.
 - **Meetings and pipeline.** Meetings stop the account's sequences. Opportunities are attributed as sourced or influenced. Call notes, once a person marks them worth learning from, become quotes grouped by play and signal.
+- **Plays suggested from calls.** Each learning is filed under a theme, one label for one idea however it was worded. When code finds a clear pattern (the same reason to buy or competitor at 5 or more accounts that came in on one signal, from 2 or more SDRs, clearly more often than elsewhere by a Fisher exact test corrected for every pair compared), the desk drafts a play built on it. Managers and GTM read the numbers and every quote behind it on Plays; GTM turns it into a draft play in the play editor, and either can set it aside or dismiss the theme for good.
 - **Results.** A funnel from signal to meeting, meeting rate per signal type, and the difference from the held-back accounts with a Newcombe interval. Below the sample size needed to tell a difference, the page says how many accounts are still needed instead of showing a number.
 - **Health.** Monitors, background jobs, the CRM outbox, alerts and spend against each vendor's monthly cap, plus one button that stops all sending.
 
@@ -83,7 +84,7 @@ make setup
 make demo
 ```
 
-That builds an invented company with 700 accounts, simulates 60 days of signals, SDRs, buyers and vendors (about 30 seconds), and serves the desk at http://localhost:8800. Pick who you are acting as in the sidebar. "Move a day ahead" runs the world forward a day.
+That builds an invented company with 700 accounts, simulates 90 days of signals, SDRs, buyers and vendors (about two minutes), and serves the desk at http://localhost:8800. Pick who you are acting as in the sidebar. "Move a day ahead" runs the world forward a day.
 
 ```bash
 make test
@@ -133,7 +134,7 @@ Set `LINKEDIN_TOOL_TOKEN` to a long random string, then in HeyReach add a webhoo
 
 ## The AI, measured
 
-Every task the model does has an eval: 268 cases in all, 194 of them written by a separate agent that never saw the
+Every task the model does has an eval: 315 cases in all, 241 of them written by a separate agent that never saw the
 code, so they test what the desk should do rather than what it happens to do. Each runs through the desk's real path,
 is graded by code where code can see the answer, and by a Claude Sonnet 5.5 judge with a written checklist where it
 cannot (the model under test never grades itself). Live run on 2026-11-11 with Claude Opus 5.5:
@@ -145,11 +146,13 @@ cannot (the model under test never grades itself). Live run on 2026-11-11 with C
 | Account briefs | 20 | 100% faithful to their facts by the judge; every instruction hidden in a fact ignored |
 | Suggested replies | 30 | 63% pass every check (tone is the usual miss); none has an invented number or placeholder; 1 in 30 repeats a prospect's question about an integration as if it exists |
 | Learnings from call notes | 20 | 87% of expected learnings found; every quote verbatim; 95% invent nothing |
+| Filing learnings under themes | 32 | 89% of pairs grouped as a person would; different ideas never merged, but the same idea is often split (58% of pairs that belong together kept together); no label names a person or address |
+| Drafting a play from a pattern | 15 | every trigger and persona from the catalog and no forbidden name (both checked in code); 80% never state the theme as the buyer's own situation; only 27% pass every judge check, mostly for adding triggers the pattern does not support and product claims the theme does not make |
 
 The first live run found real problems and the prompts were fixed against the eval: suggested replies invented
 integrations and data locations or left placeholders in half the cases (now no placeholders, and 1 in 30 invents something); drafts stated guesses about the
 buyer's billing as fact (judge-faithful 40% on the first live run, 70% now); briefs stated inferences as findings (judge-faithful 10% on the first live run, 100% now); return dates missed because the model was never told today's date. Reports with every case in full:
-`evals/REPLIES.md`, `WRITING.md`, `SUGGEST.md`, `EXTRACT.md`; the cases' coverage in `evals/CASES_V2.md`.
+`evals/REPLIES.md`, `WRITING.md`, `SUGGEST.md`, `EXTRACT.md`, `THEMES.md`, `DRAFT_PLAY.md` (recorded once live on 2026-11-11, prompts not yet tuned against them); the cases' coverage in `evals/CASES_V2.md`.
 
 ```bash
 make evals
@@ -174,11 +177,11 @@ than in the weeks before.
 
 **Real and tested:** the scoring, plays, the contact gate and the database trigger behind it (including mailbox and domain daily caps, and no email after someone engaged on LinkedIn or by phone), the copy checks for email and LinkedIn, the account calendar, send windows and holidays, mailbox and domain health rules, inbox placement rules, stop-first reply handling, reply cleaning and the rules that label replies, referrals and job changes from replies, attribution (recomputed when a meeting falls through), the statistics, signed webhooks for replies, signals and calendar bookings, one-click unsubscribe, erasure, setup from a file with CSV imports, the read-only MCP server, the job queue and the monitors. The DNS check is live: it reads SPF, DKIM and DMARC over DNS-over-HTTPS.
 
-**Simulated:** every other vendor (people search, email finder and verifier, phone finder, website research, the mail provider, deliverability telemetry and seed tests, blocklists, the CRM, Slack) and every buyer. The simulated CRM opens and closes deals, including deals and demo requests that outbound had nothing to do with, so the held-back comparison measures what outbound adds. The simulated world gives each company a hidden need; signals and replies are drawn from it, with some signal types linked to need strongly and some barely, so the results pages have something true to find.
+**Simulated:** every other vendor (people search, email finder and verifier, phone finder, website research, the mail provider, deliverability telemetry and seed tests, blocklists, the CRM, Slack) and every buyer. The simulated CRM opens and closes deals, including deals and demo requests that outbound had nothing to do with, so the held-back comparison measures what outbound adds. The simulated world gives each company a hidden need; signals and replies are drawn from it, with some signal types linked to need strongly and some barely, so the results pages have something true to find. One relationship is planted for play suggestions: on first calls, accounts that came in on a new finance leader mostly say an audit flagged revenue recognition, those reviewing a competitor mostly name Meterline, and two more reasons follow hiring and pricing changes (`PLANTED` in `src/outbound/sim/runner.py`). The demo's suggestions come from that plant, found by the same rule a real desk uses.
 
 **Not yet proven:**
 
-- Every AI task is measured on real Claude answers (`evals/`, 268 cases); the demo and tests use a deterministic stand-in. The cases are written to be realistic but none is a real buyer's reply.
+- Every AI task is measured on real Claude answers (`evals/`, 315 cases); the demo and tests use a deterministic stand-in. The cases are written to be realistic but none is a real buyer's reply.
 - Only DNS checks have a live adapter. There is no mail provider adapter yet, so a live desk cannot send email; the other contracts are in `src/outbound/adapters/__init__.py`.
 - The company-data vendor and the catch-all resolver are simulated; no live adapter exists for either yet.
 - The HeyReach webhook has not seen a real HeyReach event (if an account sends an event for every reply, the desk takes those too); the accepted event's field names come from third-party guides.

@@ -270,15 +270,16 @@ function Suggested() {
     <Section title="Suggested from calls" icon={Lightbulb} count={rows.length}>
       {rows.length ? (
         <div className="ledger wrap-names">
+          <div className="row head" style={{ gridTemplateColumns: SUG_COLS }}><span>What buyers said</span><span>Accounts that came in on</span><span className="num">Heard there</span><span className="num">Heard elsewhere</span></div>
           {rows.map((x: any) => {
             const e = x.evidence;
             return (
               <button key={x.id} className="row" style={{ gridTemplateColumns: SUG_COLS }} onClick={() => openSheet("suggestion", x.id)}>
                 <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{x.theme}</span>
-                  <span className="s">{x.draft.name}</span></div>
+                  <span className="s">In notes from {e.sdrs} SDRs</span></div>
                 <span className="hide-sm"><SignalLabel type={x.segment} label={x.segment_label} /></span>
-                <span className="num" data-label="Came in on it"><span className="strong">{e.accounts} of {e.segment_accounts}</span> <span className="mute small">{pct(e.rate)}</span></span>
-                <span className="num mute" data-label="Elsewhere">{e.elsewhere} of {e.elsewhere_accounts} <span className="small">{pct(e.rate_elsewhere)}</span></span>
+                <span className="num" data-label="Heard there"><span className="strong">{e.accounts} of {e.segment_accounts}</span> <span className="mute small">{pct(e.rate)}</span></span>
+                <span className="num mute" data-label="Heard elsewhere">{e.elsewhere} of {e.elsewhere_accounts} <span className="small">{pct(e.rate_elsewhere)}</span></span>
               </button>
             );
           })}

@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 46. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-11. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 48. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -8,9 +8,9 @@ v1 is built end to end on simulated vendors. **Public** at https://github.com/br
 
 Checked on 2026-11-11 by running them:
 
-- `pytest` on real Postgres 18: 201 tests (the count `pytest --collect-only` gives on 2026-11-11; the last full run recorded here passed 199), including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
+- `pytest` on real Postgres 18: 223 tests, all passing on 2026-11-11 (branch with play suggestions), including a 21-day simulation of the whole desk (140 accounts) checked against every promise, and regression tests for both code reviews and both design reviews.
 - `ruff check src tests`: clean. `tsc --noEmit` and `vite build`: clean.
-- `make demo`: 700 invented accounts, 60 simulated days; opens on 2026-11-11 with work waiting for three of the four SDRs (Maya Okafor has none that morning).
+- `make demo`: 700 invented accounts, 90 simulated days (60 before play suggestions; the 90-day window of call notes needs the full 90); opens on 2026-11-11 with work waiting for three of the four SDRs (Maya Okafor has none that morning).
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Since then two fresh design reviews and checks at 375 wide (see below).
 
 ## At production size (measured 2026-11-11)
@@ -33,7 +33,7 @@ Checked on 2026-11-11 by running them:
 
 **Not proven:**
 
-- Every AI task has an eval (268 cases, 194 written by an agent that never saw the code), run live once on 2026-11-11: replies 99% accepted (147 of 148), drafts 94% pass after one rewrite (47 of 50) and 70% judge-faithful (35 of 50), briefs 100% faithful (20 of 20), suggested replies 63% pass every check (19 of 30) with 1 of 30 judged invented, call notes 87% recall. Not a real buyer among them.
+- Every AI task has an eval (315 cases, 241 written by an agent that never saw the code), run live once on 2026-11-11: themes 89% pairwise agreement (often splits one idea in two, never merges two), suggested plays 4 of 15 pass the judge with every trigger and persona from the catalog and no forbidden name; replies 99% accepted (147 of 148), drafts 94% pass after one rewrite (47 of 50) and 70% judge-faithful (35 of 50), briefs 100% faithful (20 of 20), suggested replies 63% pass every check (19 of 30) with 1 of 30 judged invented, call notes 87% recall. Not a real buyer among them.
 - Only the DNS check is live (SPF, DKIM and DMARC over DNS-over-HTTPS). Every other vendor is simulated: people search, finders, verifier, catch-all resolver, company data, phone, research, mail provider, telemetry, CRM, Slack. For these only the contracts exist, and in live mode a vendor without a key refuses instead of simulating.
 - The HeyReach webhook has not seen a real event.
 - No mail provider adapter: a live desk cannot send email yet.
@@ -49,6 +49,8 @@ Checked on 2026-11-11 by running them:
 ## Done since the first review (2026-11-11)
 
 Counts in this list (tests, cases) are as of when each item was done, not today's.
+
+- Plays suggested from call learnings (docs/PLAY-SUGGESTIONS.md revision 2, DECISIONS 47 and 48), on a branch for review: learnings filed under themes by a background job (`theme` task, code-checked); a pattern rule code decides (5 accounts in a signal segment, 2 SDRs, one-sided Fisher exact test with Bonferroni over every pair compared, 90 days); a drafted play (`draft_play` task, catalog-only triggers and personas, no names, no private signal without an angle that names nothing); a "Suggested from calls" section on Plays and a side sheet for managers and GTM; GTM saves it from the prefilled editor as a draft play; not now and no audited; migration 0024; erasure takes themes left empty. The demo runs 90 days with a planted reason per signal and opens with at least one suggestion that passes the rule (builds differ run to run; with the plant at 80% of calls one build in six had none, so it is 90%, and four builds since all had one or two). Evals recorded live once (about $0.35): the suggested-play prompt adds unsupported triggers and product claims and was not tuned yet. 223 tests.
 
 - Hard gates on invention, in code: suggested replies are checked for numbers, product facts and placeholders the prospect did not bring up (rewritten once, then withheld); every draft's sentences about the buyer are read against the facts by a second call (rewritten once, then held as Needs a rewrite). Re-measured live: drafts 94% pass, briefs 100% faithful, suggested replies with no invented number or placeholder. Accounts list pages through all accounts. The held-back comparison is said in plain words.
 

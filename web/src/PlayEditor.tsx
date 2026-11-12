@@ -97,7 +97,7 @@ export function PlayEditor({ id, fromSuggestion = null }: { id: number | null; f
       <Section title="The idea">
         <label className="field"><span>Name</span><input className="input" value={d.name} maxLength={80} onChange={(e) => set({ name: e.target.value })} placeholder="New finance leader, first 90 days" /></label>
         <label className="field"><span>When this happens, these people need us, because</span>
-          <textarea className="input" rows={2} value={d.hypothesis} maxLength={400} onChange={(e) => set({ hypothesis: e.target.value })} /></label>
+          <textarea className="input" rows={3} value={d.hypothesis} maxLength={400} onChange={(e) => set({ hypothesis: e.target.value })} /></label>
         <label className="field"><span>What the first touch leads with</span>
           <textarea className="input" rows={2} value={d.angle} maxLength={400} onChange={(e) => set({ angle: e.target.value })} /></label>
       </Section>

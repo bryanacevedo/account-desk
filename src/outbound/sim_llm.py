@@ -277,19 +277,35 @@ def theme(p: dict) -> dict:
 
 
 def _short(text: str, n: int) -> str:
-    """Cut at a word, never inside one."""
-    return text if len(text) <= n else text[:n].rsplit(" ", 1)[0].rstrip(" ,:;")
+    """Cut at a word, never inside one, and never end on a small word."""
+    if len(text) <= n:
+        return text
+    words = text[:n].rsplit(" ", 1)[0].rstrip(" ,:;").split(" ")
+    while len(words) > 1 and words[-1].lower() in _STOP:
+        words.pop()
+    return " ".join(words)
 
 
 @sim("draft_play")
 def draft_play(p: dict) -> dict:
-    seg, idea = p["segment"], _lower_first(p["theme"]["label"]).rstrip(".")
+    seg, label = p["segment"], p["theme"]["label"].rstrip(".")
+    private = any("without naming" in f for f in p.get("failures", []))
+    if p["theme"]["kind"] == "competitor":
+        name = _short(f"{seg['label']}, up against {label}", 60)
+        hypothesis = f"Accounts that come in on {_lower_first(seg['label'])} often name {label} on first calls. {seg['because']}"
+        angle = (f"Teams comparing billing tools often weigh {label}. Lead with what is worth testing in an evaluation, "
+                 "and never run another tool down")
+    else:
+        idea = _lower_first(label)
+        name = _short(f"{seg['label']}: {idea}", 60)
+        hypothesis = (f"Accounts that come in on {_lower_first(seg['label'])} keep raising the same need on first calls: "
+                      f"{idea}. {seg['because']}")
+        angle = (f"Teams in that position often find this: {idea}. Lead with how other finance teams handled it, "
+                 "and ask whether it is on their list")
     return {
-        "name": _short(f"{seg['label']}: {idea}", 60),
-        "hypothesis": (f"Accounts that come in on {_lower_first(seg['label'])} keep raising the same need on first calls: "
-                       f"{idea}. {seg['because']}")[:400],
+        "name": name,
+        "hypothesis": hypothesis[:400],
         "trigger": {"any_of": [seg["key"]]},
         "personas": [x["key"] for x in p["catalog"]["personas"]][:2],
-        "angle": (f"Teams in that position often find this: {idea}. Lead with how other finance teams handled it, "
-                  "and ask whether it is on their list" + (", without naming what we saw." if any("without naming" in f for f in p.get("failures", [])) else "."))[:400],
+        "angle": (angle + (", without naming what we saw." if private else "."))[:400],
     }

@@ -1511,7 +1511,11 @@ export { withParam };
 // ---------------------------------------------------------------- a play suggested from call learnings
 
 /** "1 in 4,000": a chance in words a new hire can read. */
-const oneIn = (p: number) => `1 in ${n0(Math.max(1, 1 / Math.max(p, 1e-12)))}`;
+const oneIn = (p: number) => {
+  const x = Math.max(1, 1 / Math.max(p, 1e-12));
+  const step = Math.pow(10, Math.max(0, Math.floor(Math.log10(x)) - 1));  // two figures: 141,979 reads as 140,000
+  return `1 in ${n0(Math.round(x / step) * step)}`;
+};
 
 export function SuggestionSheet({ id }: { id: number }) {
   const { data: s, error, reload } = useData<any>(`/api/play-suggestions/${id}`);
@@ -1564,8 +1568,7 @@ export function SuggestionSheet({ id }: { id: number }) {
         <span className="mute">{s.decided_by_name ? `${s.decided_by_name}, ` : ""}{day(s.decided_at)}{s.reason ? `: ${s.reason}` : ""}</span>
         {s.play_id ? <button className="link" onClick={() => openSheet("play", s.play_id)}>Open the play</button> : null}</div> : null}
       <Section title="The pattern">
-        <p style={{ margin: 0, maxWidth: "62ch" }}>Heard at <b>{e.accounts} of the {e.segment_accounts}</b> accounts that came in on{" "}
-          <SignalLabel type={s.segment_signal_type} label={s.segment_label} />, against {e.elsewhere} of {e.elsewhere_accounts} elsewhere,
+        <p style={{ margin: 0, maxWidth: "62ch" }}>Heard at <b>{e.accounts} of the {e.segment_accounts}</b> accounts that came in on <b>{s.segment_label}</b>, against {e.elsewhere} of {e.elsewhere_accounts} elsewhere,
           in notes from {e.sdrs} SDRs over the last {e.window_days} days.</p>
         <div className="lift-pair">
           <div><b>{pct(e.rate, 0)}</b><span>of accounts that came in on this signal <span className="mute">({e.accounts} of {e.segment_accounts})</span></span></div>
@@ -1608,7 +1611,7 @@ export function SuggestionSheet({ id }: { id: number }) {
           <dt>Starts on</dt><dd style={{ display: "grid", gap: 6 }}>{d.trigger.any_of.map((k: string) => <SignalLabel key={k} type={k} label={s.draft_labels?.signals[k] || cap(k)} />)}</dd>
           <dt>Who</dt><dd>{d.personas.map((k: string) => s.draft_labels?.personas[k] || PERSONA[k] || k).join(", ")}</dd>
         </dl>
-        <div className="mute small">Saved as a draft at the first stage, where the SDR writes everything. A manager other than its author launches it.</div>
+        <div className="mute small">Saved as a draft play in which the SDR approves every email. A manager other than its author launches it.</div>
       </Section>
     </Frame>
   );
