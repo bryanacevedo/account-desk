@@ -233,7 +233,7 @@ Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/cata
 
 ## Deploy
 
-`render.yaml` describes the hosted demo: one Docker service on Render's free plan with Postgres inside the container and the 90-day simulation built into the image (`scripts/docker-build-demo.sh`), so a start or a wake from sleep only boots Postgres. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). The current build has not been timed on Render's own builder.
+`render.yaml` describes the hosted demo: one Docker service on Render's free plan with Postgres inside the container and the 90-day simulation built into the image (`scripts/docker-build-demo.sh`), so a start or a wake from sleep only boots Postgres. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). On Render's own builder the image took about 17 minutes to build (2026-11-12).
 
 ## Not yet proven
 
