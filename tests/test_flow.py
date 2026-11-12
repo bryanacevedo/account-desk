@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from outbound import db, monitors
+from outbound.outreach import PRIVATE_SIGNALS
 
 
 def q(sql, *args):
@@ -91,8 +92,7 @@ def test_every_email_carries_the_legal_footer(world):
 def test_no_sent_email_cites_tracking_data(world):
     bad = q("""select m.id from messages m, jsonb_array_elements_text(m.citations->'ids') c(id)
                join facts f on f.id = c.id::bigint
-               where m.status = 'sent' and f.kind in ('signal:pricing_visit', 'signal:site_visit', 'signal:intent_topic',
-                 'signal:product_signup', 'signal:social_engaged', 'signal:event_attended')""")
+               where m.status = 'sent' and f.kind = any(%s)""", [f"signal:{k}" for k in PRIVATE_SIGNALS])
     assert bad == []
 
 

@@ -17,8 +17,12 @@ def scene(cur):
     u = db.val(cur, "insert into users (name, email, role) values ('T', %s, 'sdr') returning id", f"t{id(cur)}@x.example")
     a = db.val(cur, "insert into accounts (name, primary_domain, fit_tier) values ('Test Co', %s, 'A') returning id",
                f"test{id(cur)}.example")
-    p = db.val(cur, """insert into people (account_id, full_name, first_name, email, email_status, email_verified_at, source)
-                       values (%s, 'Ana Test', 'Ana', %s, 'valid', now(), 'test') returning id""", a, f"ana{id(cur)}@x.example")
+    # A country with a rule: a person whose country has none, or is not known, is never cold-emailed (migration 0025).
+    db.run(cur, "insert into region_rules (country, rule) values ('US', 'allowed') on conflict do nothing")
+    p = db.val(cur, """insert into people (account_id, full_name, first_name, email, email_status, email_verified_at, source,
+                                           country, timezone)
+                       values (%s, 'Ana Test', 'Ana', %s, 'valid', now(), 'test', 'US', 'America/New_York') returning id""",
+               a, f"ana{id(cur)}@x.example")
     db.run(cur, "insert into signal_types (key, label, because, level, weight, half_life_days) values "
                 "('t_sig', 'Test', 'Because of a test signal', 'account', 10, 10) on conflict do nothing")
     db.run(cur, "insert into signal_sources (key, label, adapter, cadence_minutes) values ('t_src', 'T', 'sim', 60) "

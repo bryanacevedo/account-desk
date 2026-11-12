@@ -80,6 +80,18 @@ def send_one(cur, payload: dict) -> None:
             jobs.enqueue(cur, "reverify", {"person_id": person["id"]}, dedupe_key=f"reverify:{person['id']}")
         later(now + timedelta(hours=4), reasons[0].message)
         return
+    first = m["channel"] == "email" and not db.val(cur, """select exists (select 1 from messages where enrollment_id = %s
+                                                     and channel = 'email' and step_index < %s and status in
+                                                     ('sent', 'sending', 'send_unknown'))""", e["id"], m["step_index"])
+    if first:
+        # Colleagues at one account hear from us two business days apart in their own time, however late the
+        # earlier one went. The account lock makes two first emails there take turns.
+        db.one(cur, "select id from accounts where id = %s for update", ap["account_id"])
+        wait = outreach.colleague_clear(cur, e, person, now)
+        if wait is not None:
+            later(timeutil.next_slot(wait, timezone=person["timezone"], country=person["country"], window=window,
+                                     jitter_key=f"m{m['id']}s"), "a colleague heard from us less than two business days ago")
+            return
     if not timeutil.in_window(now, timezone=person["timezone"], country=person["country"], window=window):
         later(timeutil.next_slot(now, timezone=person["timezone"], country=person["country"], window=window,
                                  jitter_key=f"m{m['id']}r"), "outside the send window")

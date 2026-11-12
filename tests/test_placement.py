@@ -91,13 +91,16 @@ def test_a_mailbox_gone_quiet_next_to_its_peers_raises_an_alert(cur, box):
                 "'economic_buyer', 'a') on conflict do nothing")
     play = db.val(cur, """insert into plays (key, name, hypothesis, trigger, personas, sequence, angle) values
                           (%s, 'P', 'h', '{}', '{cfo}', '[]', 'a') returning id""", f"pl{id(cur)}")
+    db.run(cur, "insert into region_rules (country, rule) values ('US', 'allowed') on conflict do nothing")
     # 70 sends from each mailbox for the same play: the peer gets 14 replies, ours gets 1 (its peers predict 14).
     for mb, replied in ((peer, 14), (box["id"], 1)):
         for i in range(70):
             a = db.val(cur, "insert into accounts (name, primary_domain, fit_tier) values (%s, %s, 'A') returning id",
                        f"Co {mb}-{i}", f"co{mb}x{i}x{id(cur)}.example")
-            p = db.val(cur, """insert into people (account_id, full_name, first_name, email, email_status, email_verified_at, source)
-                               values (%s, 'Ana Test', 'Ana', %s, 'valid', app_now(), 'test') returning id""", a, f"ana{mb}x{i}@co.example")
+            p = db.val(cur, """insert into people (account_id, full_name, first_name, email, email_status, email_verified_at, source,
+                                                   country)
+                               values (%s, 'Ana Test', 'Ana', %s, 'valid', app_now(), 'test', 'US') returning id""",
+                       a, f"ana{mb}x{i}@co.example")
             s = db.val(cur, """insert into signals (type_key, source, external_id, account_id, observed_at, strength, evidence, status)
                                values ('t_sig', 't_src', %s, %s, app_now(), 0.5, %s, 'matched') returning id""",
                        f"s{mb}x{i}x{id(cur)}", a, J({"summary": "x", "url": "https://x"}))

@@ -14,7 +14,7 @@ from .db import J
 # Demo assumptions in the range public 2026 price lists show: a verification near a cent, a found work email near ten
 # cents, a direct dial well under a dollar. A real desk sets these from its own contracts.
 RATES = {"people_search": 2.0, "email_finder": 10.0, "email_verifier": 0.8, "email_resolver": 3.0, "phone_finder": 60.0,
-         "company_data": 2.0, "research": 0.0}
+         "company_data": 2.0}
 UNITS = {"people_search": "credits", "email_finder": "credits", "email_verifier": "credits", "phone_finder": "credits",
          "email_resolver": "credits", "company_data": "credits",
          "anthropic": "tokens"}
@@ -120,6 +120,22 @@ def paid_call(cur, adapter: str, operation: str, *, vendor: str, qty: float, pur
                     db.run(c, "insert into ledger (vendor, unit, qty, cost_cents, purpose, account_id, adapter_call_id, play_id) "
                               "values (%s,%s,%s,%s,%s,%s,%s,%s)", vendor, UNITS.get(vendor, "credits"), charged,
                            round(charged * RATES.get(vendor, 0), 4), purpose, account_id, call_id, play_id)
+
+
+@contextmanager
+def free_call(cur, adapter: str, operation: str) -> Iterator[dict]:
+    """Logs a call that costs nothing (reading an account's own website): recorded as unpaid, with no ledger row, so
+    the cost page never shows a free source as a paid vendor charging zero."""
+    started = time.perf_counter()
+    info: dict = {}
+    ok = False
+    try:
+        yield info
+        ok = True
+    finally:
+        with db.pool().connection() as own, own.transaction(), own.cursor() as c:
+            db.run(c, "insert into adapter_calls (adapter, operation, paid, ok, ms, detail) values (%s,%s,false,%s,%s,%s)",
+                   adapter, operation, ok, int((time.perf_counter() - started) * 1000), J(info))
 
 
 def charge_llm(cur, *, model: str, input_tokens: int, output_tokens: int, cost_cents: float, purpose: str,

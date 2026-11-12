@@ -10,6 +10,32 @@ from datetime import datetime
 
 from . import db
 
+# How each lifecycle reads in a sentence: "Account is an open opportunity", never "a open opp".
+LIFECYCLE = {"customer": "a customer", "open_opp": "an open opportunity", "competitor": "a competitor",
+             "churned": "a former customer", "prospect": "a prospect"}
+
+# Countries by name, for the reasons a person reads. A code without a name here is shown as the code.
+COUNTRY_NAMES = {"US": "the United States", "CA": "Canada", "GB": "the United Kingdom", "DE": "Germany", "FR": "France",
+                 "NL": "the Netherlands", "ES": "Spain", "IE": "Ireland", "BR": "Brazil", "AU": "Australia",
+                 "SG": "Singapore", "IT": "Italy", "BE": "Belgium", "SE": "Sweden", "DK": "Denmark", "PL": "Poland",
+                 "AT": "Austria", "PT": "Portugal", "FI": "Finland", "CH": "Switzerland", "NO": "Norway", "IN": "India",
+                 "JP": "Japan", "MX": "Mexico", "NZ": "New Zealand"}
+
+
+def lifecycle_phrase(lifecycle: str) -> str:
+    return LIFECYCLE.get(lifecycle, "a " + lifecycle.replace("_", " "))
+
+
+def country_name(code: str | None) -> str:
+    return COUNTRY_NAMES.get((code or "").upper(), code or "an unknown country")
+
+
+def no_rule_message(country: str | None) -> str:
+    """The named gap for a country the desk has no email rule for. Unknown means no cold email until one exists."""
+    if not country:
+        return "Their country is not known, so no cold email until it is"
+    return f"Email in {country_name(country)} needs a region rule first"
+
 
 @dataclass(frozen=True)
 class Reason:
@@ -31,9 +57,9 @@ def account_reasons(cur, account_id: int, *, for_proposal: bool = True) -> list[
     a = db.one(cur, """select a.lifecycle, a.fit_tier, p.lifecycle as parent_lifecycle
                        from accounts a left join accounts p on p.id = a.parent_id where a.id = %s""", account_id)
     if a["lifecycle"] in ("customer", "open_opp", "competitor"):
-        out.append(Reason("lifecycle", True, f"Account is a {a['lifecycle'].replace('_', ' ')}"))
+        out.append(Reason("lifecycle", True, f"Account is {lifecycle_phrase(a['lifecycle'])}"))
     if a["parent_lifecycle"] in ("customer", "open_opp", "competitor"):
-        out.append(Reason("parent_lifecycle", True, f"Parent company is a {a['parent_lifecycle'].replace('_', ' ')}"))
+        out.append(Reason("parent_lifecycle", True, f"Parent company is {lifecycle_phrase(a['parent_lifecycle'])}"))
     if a["fit_tier"] == "X":
         out.append(Reason("excluded", True, "Outside the ideal customer profile"))
     if db.val(cur, """select exists (select 1 from suppressions where kind = 'account' and value = %s
@@ -116,7 +142,11 @@ def person_reasons(cur, person_id: int, channel: str, *, account_play_id: int | 
     if channel == "email":
         rule = db.val(cur, "select rule from region_rules where country = %s", p["country"])
         basis = db.val(cur, "select basis from contact_basis where person_id = %s", person_id)
-        if rule == "blocked":
+        if rule is None and basis != "consent":
+            # No rule for their country (or no known country): treated as needing consent, so nobody is cold-emailed
+            # somewhere the desk has not been told the law. A manager adds the rule; the database refuses it too.
+            out.append(Reason("no_region_rule", True, no_rule_message(p["country"])))
+        elif rule == "blocked":
             out.append(Reason("region_blocked", True, "Not emailed in this country"))
         elif rule == "consent_required" and basis != "consent":
             out.append(Reason("no_consent", True, "This country needs consent before a cold email"))

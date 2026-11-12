@@ -250,7 +250,8 @@ def meeting(cur, meeting_id: int, *, money: bool) -> dict | None:
     m["learnings"] = db.all(cur, """select l.kind, l.text, l.quote from learnings l join call_notes cn on cn.id = l.call_note_id
                                     where cn.meeting_id = %s""", meeting_id)
     m["deals"] = db.all(cur, "select id, name, stage, attribution, won, closed_at, created_at" + (", amount_cents" if money else "") +
-                        " from opportunities where attribution_meeting_id = %s or (account_id = %s and created_at >= %s) "
+                        " from opportunities where attribution_meeting_id = %s or (account_id = %s and created_at >= %s "
+                        "and attribution_meeting_id is null) "
                         "order by created_at", meeting_id, m["account_id"], m["booked_at"])
     return m
 

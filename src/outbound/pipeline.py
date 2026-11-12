@@ -69,12 +69,23 @@ def attribute(cur, opp_id: int) -> str:
     Influenced: otherwise, a treated play that actually reached the account in the 90 days before the deal.
     A play that was offered but never contacted anyone gets no credit."""
     o = db.one(cur, "select * from opportunities where id = %s for update", opp_id)
+    # A deal belongs to the meeting held with its own contact. When that contact met us in the 90 days before the deal,
+    # only their meeting can source it (an inbound one cannot), so a colleague's earlier meeting is never credited with
+    # a deal that came from someone else's conversation (found 2026-11-11).
+    contact_met = bool(o["contact_email"]) and db.val(cur, """
+        select exists (select 1 from meetings m join people p on p.id = m.person_id where m.account_id = %s
+                       and lower(p.email) = lower(%s) and m.status in ('held', 'booked')
+                       and m.booked_at <= %s and m.booked_at > %s - interval '90 days')""",
+        o["account_id"], o["contact_email"], o["created_at"], o["created_at"])
     m = db.one(cur, """
         select m.id as meeting_id, m.account_play_id, ap.play_id from meetings m join account_plays ap on ap.id = m.account_play_id
+        left join people p on p.id = m.person_id
         where m.account_id = %s and ap.arm = 'treated' and m.source <> 'inbound' and m.status in ('held', 'booked')
           and m.booked_at <= %s and m.booked_at > %s - interval '90 days'
           and exists (select 1 from touches t where t.account_play_id = ap.id and t.direction = 'out' and t.at < m.booked_at)
-        order by m.booked_at desc limit 1""", o["account_id"], o["created_at"], o["created_at"])
+          and (not %s or lower(p.email) = lower(%s))
+        order by m.booked_at desc limit 1""",
+        o["account_id"], o["created_at"], o["created_at"], contact_met, o["contact_email"] or "")
     inf = None if m else db.one(cur, """
         select ap.id as account_play_id, ap.play_id from account_plays ap
         where ap.account_id = %s and ap.arm = 'treated'

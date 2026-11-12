@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import logging
 import re
+from datetime import timedelta
 
 from . import (
     adapters,
@@ -29,7 +30,8 @@ EU_UK = {"GB", "DE", "FR", "NL", "ES", "IE", "IT", "BE", "SE", "DK", "PL", "AT",
 OUR_NAMES = [CONFIG.sender_company]
 # Signals the desk acts on but never mentions to the buyer: they came from tracking, not from anything the
 # company published. Citing them reads as surveillance.
-PRIVATE_SIGNALS = ("pricing_visit", "site_visit", "intent_topic", "product_signup", "social_engaged", "event_attended")
+PRIVATE_SIGNALS = ("pricing_visit", "site_visit", "intent_topic", "product_signup", "social_engaged", "event_attended",
+                   "competitor_review")
 
 
 # ---------------------------------------------------------------- research
@@ -39,8 +41,7 @@ def _research_facts(cur, account: dict) -> None:
                          "and fetched_at > app_now() - interval '30 days'", account["primary_domain"])
     if cached:
         return
-    with spend.paid_call(cur, "research", "pages", vendor="research", qty=0, purpose="research",
-                         account_id=account["id"]) as info:
+    with spend.free_call(cur, "research", "pages") as info:
         pages = adapters.get().research.pages(cur, account)
         info["pages"] = len(pages)
     for pg in pages:
@@ -57,12 +58,12 @@ def _research_facts(cur, account: dict) -> None:
 def account_facts(cur, account_id: int, limit: int = 14, *, citable_only: bool = True) -> list[dict]:
     private = [f"signal:{k}" for k in PRIVATE_SIGNALS] if citable_only else []
     return db.all(cur, """
-        (select id, kind, text, source_url, observed_at from facts
+        (select id, kind, text, source_url, observed_at, person_id from facts
           where account_id = %s and kind like 'signal:%%' and observed_at > app_now() - interval '90 days'
             and kind <> all(%s)
           order by observed_at desc limit 8)
         union all
-        (select id, kind, text, source_url, observed_at from facts
+        (select id, kind, text, source_url, observed_at, person_id from facts
           where account_id = %s and kind not like 'signal:%%' order by observed_at desc limit 8)""",
         account_id, private, account_id)[:limit]
 
@@ -190,6 +191,13 @@ def enroll_referral(cur, payload: dict) -> None:
     if ap is None:
         return task("No open play at this account, so nobody was enrolled.")
     play = db.one(cur, "select * from plays where id = %s", ap["play_id"])
+    # A reply gives a name, not where the person works from, and an email's region rule needs a country.
+    if _first_channel(play) == "email":
+        from .enrichment import locate_person
+        try:
+            locate_person(cur, pid)
+        except (spend.OverBudget, adapters.VendorMissing):
+            pass
     reasons = _enrollable(cur, pid, ap["id"], _first_channel(play))
     if reasons:
         return task(reasons[0].message)
@@ -369,6 +377,14 @@ def build_committee(cur, ap: dict, play: dict, account: dict, *, exclude: frozen
         picked = None
         last_reason = "Nobody with this role found"
         for c in candidates:
+            if not c["country"] and any(st["channel"] == "email" for st in play["sequence"]):
+                # Known only by name and seat (an announcement, a referral): the region rule needs their country.
+                from .enrichment import locate_person
+                try:
+                    locate_person(cur, c["id"])
+                except (spend.OverBudget, adapters.VendorMissing):
+                    pass
+                c = db.one(cur, "select * from people where id = %s", c["id"])
             reasons = _enrollable(cur, c["id"], ap["id"], _first_channel(play))
             if reasons:
                 last_reason = reasons[0].message
@@ -378,7 +394,7 @@ def build_committee(cur, ap: dict, play: dict, account: dict, *, exclude: frozen
             if "email" in channels:
                 rule = _record_basis(cur, c, play)
                 if rule == "consent_required":
-                    last_reason = f"Email in {c['country']} needs consent first; the SDR can call or connect instead"
+                    last_reason = f"Email in {gate.country_name(c['country'])} needs consent first; the SDR can call or connect instead"
                     continue
                 status = _ensure_email(cur, c, account)
                 if status != "valid":
@@ -523,6 +539,20 @@ def linkedin_text(sentences: list[dict]) -> str:
     return f"{head}\n{rest}" if rest else head
 
 
+def seat_news_not_theirs(cur, fact: dict, person: dict) -> bool:
+    """Whether a new-finance-leader fact must not go to this person: they sit in the finance leader's seat and are not
+    the one it names, or it names nobody and they started in the seat more than 30 days before the news."""
+    if fact["kind"] != "signal:new_exec":
+        return False
+    from .enrichment import in_leader_seat
+    if not in_leader_seat(cur, person.get("title")):
+        return False
+    if fact.get("person_id") is not None:
+        return fact["person_id"] != person["id"]
+    started = person.get("role_started_at")
+    return started is None or started < fact["observed_at"].date() - timedelta(days=30)
+
+
 def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
     e = db.one(cur, "select * from enrollments where id = %s", enrollment_id)
     ap = db.one(cur, "select * from account_plays where id = %s", e["account_play_id"])
@@ -537,6 +567,10 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
     others_refs = {r["id"] for r in db.all(cur, "select id from facts where account_id = %s and kind = 'referral' "
                                                "and person_id is distinct from %s", account["id"], person["id"])}
     facts = [f for f in facts if f["id"] not in others_refs]
+    # News of a new finance leader is not written to someone else in that seat, nor to someone who has sat in it for
+    # longer than the news is old: it would congratulate the wrong person (found 2026-11-11).
+    not_theirs = {f["id"] for f in facts if seat_news_not_theirs(cur, f, person)}
+    facts = [f for f in facts if f["id"] not in not_theirs]
     fact_map = {f["id"]: f["text"] for f in facts}
     prev = db.one(cur, "select subject from messages where enrollment_id = %s and step_index < %s and channel = 'email' "
                        "order by step_index desc limit 1", enrollment_id, step_index)
@@ -554,7 +588,8 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
     verdict = None
     for attempt in (1, 2):
         payload = {"company": account["name"], "our_company": CONFIG.sender_company, "sender": owner["name"], "angle": persona["angle"],
-                   "play_angle": play["angle"], "brief": (ap["brief"] or {}).get("findings", []),
+                   "play_angle": play["angle"],
+                   "brief": [x for x in (ap["brief"] or {}).get("findings", []) if not set(x.get("fact_ids") or []) & not_theirs],
                    "person": {"id": person["id"], "first_name": copy_gate.clean_first_name(person["first_name"], person["full_name"]),
                               "title": person["title"]},
                    "step": {"index": step_index, "job": step["job"]}, "persona_key": e["persona_key"],
@@ -716,12 +751,12 @@ def activate(cur, enrollment_id: int) -> None:
     ap = db.one(cur, "select * from account_plays where id = %s", e["account_play_id"])
     person = db.one(cur, "select * from people where id = %s", e["person_id"])
     stagger = int(db.val(cur, "select value from settings where key = 'stagger_days'") or 2)
-    # Each colleague starts two business days after the last start at this account, whatever has happened to that
-    # colleague since; the account row lock keeps two approvals from picking the same day.
+    # Each colleague's first email goes two business days, in their own time, after the last colleague's first email
+    # at this account: the one actually sent, or the one scheduled. A start date alone is not enough, because a first
+    # email can wait days behind a send window, a holiday or a full mailbox (found 2026-11-11). The account row lock
+    # keeps two approvals from picking the same day, and the send itself checks again (colleague_clear).
     db.one(cur, "select id from accounts where id = %s for update", ap["account_id"])
-    last = db.val(cur, """select max(e.started_at) from enrollments e join account_plays x on x.id = e.account_play_id
-                          where x.account_id = %s and e.started_at is not null and e.id <> %s""",
-                  ap["account_id"], enrollment_id)
+    last = last_colleague_first_email(cur, ap["account_id"], enrollment_id)
     now = db.val(cur, "select app_now()")
     start = now
     if last is not None:
@@ -733,6 +768,37 @@ def activate(cur, enrollment_id: int) -> None:
     m = db.one(cur, "select id from messages where enrollment_id = %s and step_index = 0", enrollment_id)
     if m:
         schedule_message(cur, m["id"])  # when the first step is a task, the email waits for its own day
+
+
+def last_colleague_first_email(cur, account_id: int, enrollment_id: int):
+    """When the latest colleague at this account got (or is set to get) their first email: sent beats scheduled, and a
+    colleague with neither counts from when their sequence started."""
+    return db.val(cur, """
+        select max(coalesce(
+                 (select min(m.sent_at) from messages m where m.enrollment_id = e.id and m.channel = 'email'
+                    and m.status in ('sent', 'sending', 'send_unknown')),
+                 (select min(m.scheduled_for) from messages m where m.enrollment_id = e.id and m.channel = 'email'
+                    and m.status = 'scheduled'),
+                 e.started_at))
+        from enrollments e join account_plays x on x.id = e.account_play_id
+        where x.account_id = %s and e.started_at is not null and e.id <> %s""", account_id, enrollment_id)
+
+
+def colleague_clear(cur, enrollment: dict, person: dict, at):
+    """None when a first email may go now; otherwise the earliest time it may, two business days in the recipient's
+    own time after a colleague's first email that was already sent."""
+    stagger = int(db.val(cur, "select value from settings where key = 'stagger_days'") or 2)
+    last = db.val(cur, """select max(m.sent_at) from messages m join enrollments e on e.id = m.enrollment_id
+                          join account_plays x on x.id = e.account_play_id
+                          where x.account_id = (select account_id from account_plays where id = %s) and e.id <> %s
+                            and m.channel = 'email' and m.status in ('sent', 'sending', 'send_unknown')
+                            and m.sent_at = (select min(m2.sent_at) from messages m2 where m2.enrollment_id = e.id
+                                             and m2.channel = 'email' and m2.status in ('sent', 'sending', 'send_unknown'))""",
+                  enrollment["account_play_id"], enrollment["id"])
+    if last is None:
+        return None
+    earliest = timeutil.add_business_days(last, stagger, country=person["country"], timezone=person["timezone"])
+    return None if at >= earliest else earliest
 
 
 def _window(cur):

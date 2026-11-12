@@ -113,6 +113,12 @@ def ingest(cur, source_key: str, raws: Iterable[dict]) -> dict:
             continue
         counts["matched"] += 1
         touched.add(account_id)
+        if t["key"] == "new_exec" and raw.get("person"):
+            # An announcement names a person and a seat: the desk's record of who sits there is brought in line with
+            # it, so the play writes to the new leader and never congratulates someone who has been there for years.
+            person_id = seat_from_announcement(cur, account_id, raw["person"], raw["observed_at"], source_key)
+            if person_id:
+                db.run(cur, "update signals set person_id = %s where id = %s", person_id, row["id"])
         db.run(cur, """insert into facts (account_id, person_id, kind, text, source, source_url, observed_at)
                        values (%s,%s,%s,%s,%s,%s,%s)""",
                account_id, person_id, "signal:" + t["key"], ev["summary"], source_key, ev.get("url"), raw["observed_at"])
@@ -124,6 +130,78 @@ def ingest(cur, source_key: str, raws: Iterable[dict]) -> dict:
     for aid in touched:
         jobs.enqueue(cur, "rescore", {"account_id": aid, "reason": "signal"}, dedupe_key=f"rescore:{aid}")
     return counts
+
+
+SENIORITY = [("chief", "c_suite"), ("cfo", "c_suite"), ("vice president", "vp"), ("vp", "vp"), ("head of", "director"),
+             ("director", "director"), ("manager", "manager")]
+
+
+def seat_from_announcement(cur, account_id: int, person: dict, observed_at, source_key: str) -> int | None:
+    """Match the person a new-leader announcement names to someone on record at the account, or add them, with the
+    announced title and the appointment date as their role start. A nameless announcement changes nobody."""
+    from .enrichment import linkedin_key, source
+    started = parse_observed(observed_at).date()
+    title = (person.get("title") or "").strip() or None
+    name = (person.get("full_name") or person.get("name") or "").strip()
+    pid = resolve_person(cur, person)
+    if pid and db.val(cur, "select account_id from people where id = %s", pid) != account_id:
+        pid = None
+    if pid is None and name:
+        pid = db.val(cur, "select id from people where account_id = %s and lower(full_name) = lower(%s) and status = 'active' "
+                          "order by id limit 1", account_id, name)
+    if pid is None:
+        if not name or not title:
+            return None
+        first, _, last = name.partition(" ")
+        low = title.lower()
+        seniority = next((v for k, v in SENIORITY if k in low), None)
+        url = (person.get("linkedin_url") or "").strip() or None
+        if url and db.val(cur, "select exists (select 1 from people where linkedin_key = %s)", linkedin_key(url)):
+            url = None  # someone else on record has this profile; the name and seat are still worth keeping
+        pid = db.val(cur, """insert into people (account_id, full_name, first_name, last_name, title, seniority, linkedin_url,
+                                                 linkedin_key, role_started_at, source)
+                             values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) returning id""",
+                     account_id, name, first, last or None, title, seniority, url, linkedin_key(url), started, source_key)
+        source(cur, "person", pid, "role_started_at", started.isoformat(), source_key)
+    else:
+        p = db.one(cur, "select title, role_started_at from people where id = %s", pid)
+        if title and title != p["title"]:
+            db.run(cur, "update people set title = %s where id = %s", title, pid)
+            source(cur, "person", pid, "title", title, source_key)
+        if p["role_started_at"] is None or p["role_started_at"] < started:
+            db.run(cur, "update people set role_started_at = %s where id = %s", started, pid)
+            source(cur, "person", pid, "role_started_at", started.isoformat(), source_key)
+    _replaced_in_seat(cur, account_id, pid, title, started)
+    return pid
+
+
+def _seat(title: str | None) -> str | None:
+    """The one seat a finance-leader title names: a company has one CFO, one VP Finance, one Head of Finance."""
+    t = (title or "").lower()
+    if re.search(r"\bcfo\b", t) or "chief financial" in t:
+        return "cfo"
+    if "vp finance" in t or "vice president of finance" in t:
+        return "vp_finance"
+    if "head of finance" in t:
+        return "head_of_finance"
+    return None
+
+
+def _replaced_in_seat(cur, account_id: int, pid: int, title: str | None, started) -> None:
+    """Whoever held the announced seat before the appointment is no longer in it: marked as left, their sequences
+    stopped, so the account never shows two CFOs and nobody writes to the one who went."""
+    seat = _seat(title)
+    if seat is None:
+        return
+    from . import outreach
+    for p in db.all(cur, """select id, title from people where account_id = %s and id <> %s and status = 'active'
+                            and (role_started_at is null or role_started_at < %s)""", account_id, pid, started):
+        if _seat(p["title"]) != seat:
+            continue
+        db.run(cur, "update people set status = 'left' where id = %s", p["id"])
+        for e in db.all(cur, "select id from enrollments where person_id = %s and state in ('pending','active','paused')", p["id"]):
+            outreach.stop_enrollment(cur, e["id"], "replaced_in_seat")
+        audit.log(cur, "desk", "replaced_in_seat", "person", p["id"], {"by": pid, "seat": seat})
 
 
 def _consider_move(cur, signal_id: int, new_account_id: int, person: dict, source_key: str) -> None:
