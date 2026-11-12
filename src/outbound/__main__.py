@@ -9,6 +9,7 @@
   import KIND FILE   import accounts or people from a CSV file
   mcp                read-only MCP server on stdio (why an account is hot, what is waiting, how a play did)
   themes backfill    file every learning not yet under a theme, then look for play suggestions
+  coverage           count every scenario the built demo shows; exits 1 if any is at zero
 """
 from __future__ import annotations
 
@@ -66,6 +67,9 @@ def main(argv: list[str]) -> int:
         from . import monitors, outreach, pipeline, replies, scheduler, scoring, sending, suggestions, themes  # noqa: F401
         from .sim import runner
         print(runner.run(int(argv[2]) if len(argv) > 2 else 1, slow_last_days=0, idle_hours=0))
+    elif cmd == "coverage":
+        from . import coverage
+        return coverage.main()
     elif cmd == "monitors":
         from . import monitors
         with db.tx() as cur:

@@ -179,6 +179,15 @@ than in the weeks before.
 
 **Simulated:** every other vendor (people search, email finder and verifier, phone finder, website research, the mail provider, deliverability telemetry and seed tests, blocklists, the CRM, Slack) and every buyer. The simulated CRM opens and closes deals, including deals and demo requests that outbound had nothing to do with, so the held-back comparison measures what outbound adds. The simulated world gives each company a hidden need; signals and replies are drawn from it, with some signal types linked to need strongly and some barely, so the results pages have something true to find. One relationship is planted for play suggestions (`PLANTED` in `src/outbound/sim/runner.py`): on 90% of first calls, accounts that came in on a new finance leader say an audit flagged revenue recognition, those hiring in finance operations say the close team reconciles usage by hand, those changing their pricing model say they are launching usage pricing, and those reviewing a competitor name Meterline. To keep the contrast clear, those four reasons were also made rarer everywhere else (their weight in the general pool went from 2, 2, 2 and 3 to 1). The suggestions come from that plant, found by the same rule a real desk uses. Builds differ run to run, so which pattern opens varies, and a build can open none: one build in six did at 80% of calls, none of eight has since the plant went to 90%.
 
+The world holds together the way a real list does: a company's name and product fit its industry, its billing tool is the one its stack, its own docs and any competitor signal name, it has one finance leader, and a new finance leader the news announces exists, holds that title and starts that day, while the one they replaced leaves (mail to them bounces after). Job changes come from past champions and from people the desk has been in touch with, the people a job-change feed is set to watch.
+
+Planted so the demo shows every scenario the app can show (`python -m outbound coverage` counts them, and a test fails if any is at zero):
+
+- SDRs edit fewer of the new finance leader play's drafts (about 4% of approvals against 13%), so it is the play that earns autonomy; on Monday mornings the simulated manager approves the next stage for any play whose checks all pass, the same rule the Plays page applies to a click. Demotions are the desk's own (a complaint, bounces or edits).
+- On Tuesdays the simulated GTM engineer turns the first open play suggestion into a draft play, and the manager sets the next one aside for now and says no to the one after (`SUGGESTION_ROUTINE` in `src/outbound/sim/runner.py`).
+- A few replies are a shared inbox's automatic acknowledgement or say nothing a label can use, one opt-out is in Portuguese, and some call notes give a reason not to buy or a line worth quoting.
+- Region rules: the demo's seller does not sell in Singapore (a business choice, set as `blocked`), and Australia has no rule, so nobody there is cold-emailed ("Email in Australia needs a region rule first").
+
 **Not yet proven:**
 
 - Every AI task is measured on real Claude answers (`evals/`, 315 cases); the demo and tests use a deterministic stand-in. The cases are written to be realistic but none is a real buyer's reply.
@@ -188,7 +197,8 @@ than in the weeks before.
 - Cloudflare Access login has not been run against a real Access app, and contention was measured with one server process.
 - Prices on the cost page are demo assumptions until a manager enters real ones.
 - There is no login. "Acting as" is chosen from a menu in demo mode; `AUTH_MODE=header` reads identity from a verified Cloudflare Access token (no other proxy is supported yet). Live sending refuses to start in demo mode.
-- Region rules (which countries need a recorded legitimate interest or consent before a cold email) are a starting point. Counsel to confirm.
+- Region rules (which countries need a recorded legitimate interest or consent before a cold email) are a starting point. Counsel to confirm. A country with no rule, or a person whose country is not known, gets no cold email until one is added; the database refuses it too.
+- Competitor reviews became private signals on 2026-11-11 (the desk acts on them and never cites them). Fifteen recorded eval cases were answered before that and now show the model a different input: one writing case and fourteen suggested-play cases are held out of the floors until `make evals-live` re-records them (`STALE_WRITING` in `tests/test_evals.py`).
 - Profile photos in the demo are stock portraits from randomuser.me. In live use the photo URL comes from the enrichment vendor and is erased with the person.
 
 ## Words used here
