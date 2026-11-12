@@ -687,4 +687,16 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 @media (prefers-reduced-motion: reduce) { .prow-meter i.on { animation: none; } .prow:not(.is-head):hover .prow-main { transform: none; } }
 
 /* The play sheet: what starts it, one quiet line under the bet. */
-.play-starts { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-top: 2px; font-size: 13px; color: var(--ink-2); }
+.play-starts { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-top: 0; font-size: 13px; color: var(--ink-2); }
+
+/* A play's thesis, in the desk's own words: the app's mark speaks, the belief leads, the rest follows quietly. */
+.thesis { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 14px; margin: 10px 0 4px; padding: 18px 20px 18px 16px;
+  border-radius: var(--r-l); background: color-mix(in srgb, var(--accent-wash) 70%, var(--ground)); }
+.thesis-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); display: grid; grid-template-columns: repeat(2, 6px);
+  gap: 3px; place-content: center; margin-top: 2px; }
+.thesis-mark i { width: 6px; height: 6px; border-radius: 2px; background: #fff; }
+.thesis-mark i:last-child { opacity: .4; }
+.thesis-body { display: grid; gap: 8px; max-width: 60ch; }
+.thesis-body p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+.thesis-body .thesis-lead { font-size: 17px; line-height: 1.45; font-weight: 550; letter-spacing: -0.01em; color: var(--ink); margin-bottom: 2px; }
+.thesis-body b { font-weight: 600; color: var(--ink); }

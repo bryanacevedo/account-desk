@@ -1224,8 +1224,22 @@ export function PlaySheet({ id }: { id: number }) {
     <Frame crumb="Play" foot={foot}>
       <div style={{ display: "grid", gap: 6 }}>
         <h2 style={{ fontSize: 20, lineHeight: "26px", fontWeight: 620, letterSpacing: "-0.02em" }}>{p.name}</h2>
-        <div className="mute">{p.hypothesis}</div>
-        <div className="play-starts"><span className="mute small">Starts on</span>{p.trigger.any_of.map((k: string) => <SignalLabel key={k} type={k} label={signalNames[k] || cap(k)} />)}</div>
+        <div className="thesis">
+          <span className="thesis-mark" aria-hidden="true"><i /><i /><i /><i /></span>
+          <div className="thesis-body">
+            <p className="thesis-lead">{p.hypothesis}</p>
+            <p>So when a company that fits our profile shows {p.trigger.any_of.length === 1 ? "this signal, " : "one of these signals, "}<b>{(() => {
+              const n = p.trigger.any_of.map((k: string) => (signalNames[k] || cap(k)).toLowerCase());
+              return n.length > 1 ? `${n.slice(0, -1).join(", ")} or ${n[n.length - 1]}` : n[0];
+            })()}</b>, I bring it to its SDR. {(() => {
+              const has = (c: string) => p.sequence.some((x: any) => x.channel.startsWith(c));
+              const ch = [has("email") ? "email" : null, has("linkedin") ? "LinkedIn message" : null, has("call") ? "call" : null].filter(Boolean) as string[];
+              return `Every ${ch.length > 1 ? `${ch.slice(0, -1).join(", ")} and ${ch[ch.length - 1]}` : ch[0] || "message"} starts from one idea.`;
+            })()} {p.angle}</p>
+            <p>If the accounts we work book meetings no more often than the {Math.round(100 / Math.max(1, p.holdout_pct)) === 5 ? "1 in 5" : `${p.holdout_pct}%`} I
+              hold back and never contact, the bet is wrong.</p>
+          </div>
+        </div>
       </div>
       <div className="figs">
         <Fig value={<Status kind={p.status === "live" ? "go" : "off"}>{cap(p.status)}</Status>} label="Status" sm />
