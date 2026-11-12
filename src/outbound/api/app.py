@@ -210,14 +210,16 @@ def _trusted_proxy(host: str) -> bool:
 
 
 def client_ip(request: Request) -> str:
-    """Who is asking: behind a trusted proxy, the first X-Forwarded-For hop (the client as the proxy saw it);
-    otherwise the address the connection came from. A client cannot pick its own key by sending the header."""
+    """Who is asking: behind a trusted proxy, the nearest X-Forwarded-For hop that is not itself a trusted proxy;
+    otherwise the address the connection came from. Hops are read from the right, because a client can write any
+    left-hand entries it likes, so it cannot pick its own key by sending the header."""
     peer = request.client.host if request.client else "?"
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded and _trusted_proxy(peer):
-        first = forwarded.split(",")[0].strip()
-        if first:
-            return first
+    if not forwarded or not _trusted_proxy(peer):
+        return peer
+    for hop in reversed([h.strip() for h in forwarded.split(",") if h.strip()]):
+        if not _trusted_proxy(hop):
+            return hop
     return peer
 
 

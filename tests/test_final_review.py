@@ -479,12 +479,15 @@ def _request(peer: str, xff: str | None):
                     "query_string": b""})
 
 
-def test_the_rate_limit_keys_on_the_first_forwarded_hop_only_behind_a_trusted_proxy(monkeypatch):
+def test_the_rate_limit_keys_on_the_nearest_untrusted_hop_only_behind_a_trusted_proxy(monkeypatch):
     from outbound.api import app as api
     monkeypatch.setattr(api, "CONFIG", dataclasses.replace(api.CONFIG, forwarded_allow_ips="10.0.0.0/8"))
     assert api.client_ip(_request("10.1.2.3", "203.0.113.9, 10.1.2.3")) == "203.0.113.9"
     assert api.client_ip(_request("198.51.100.7", "203.0.113.9")) == "198.51.100.7"  # a client cannot pick its key
     assert api.client_ip(_request("10.1.2.3", None)) == "10.1.2.3"
+    # A client that writes its own header cannot choose the key: the proxy appends the real address on the right.
+    assert api.client_ip(_request("10.1.2.3", "1.1.1.1, 203.0.113.9")) == "203.0.113.9"
+    assert api.client_ip(_request("10.1.2.3", "1.1.1.1, 203.0.113.9, 10.9.9.9")) == "203.0.113.9"
 
 
 def test_the_rate_limit_forgets_quiet_clients(monkeypatch):

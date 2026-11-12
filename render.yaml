@@ -10,3 +10,6 @@ services:
     envVars:
       - key: PUBLIC_DEMO
         value: "1"
+      # Render's proxies reach the service from its private network; their X-Forwarded-For is trusted.
+      - key: FORWARDED_ALLOW_IPS
+        value: "10.0.0.0/8"
