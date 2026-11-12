@@ -17,12 +17,14 @@ export function Today() {
   const [busy, run] = useBusy();
   const [skipping, setSkipping] = useState<number | null>(null);
   const [reason, setReason] = useState("");
+  const [leaving, setLeaving] = useState<number | null>(null);
   if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
   if (!data) return <div className="page"><div className="head"><h1>Today</h1></div><Loading /></div>;
-  const decide = (id: number, accept: boolean) => run(
+  // A decided row slides away before the list refreshes, so the change is seen, not just noticed.
+  const decide = (id: number, accept: boolean) => { setLeaving(id); return new Promise((r) => setTimeout(r, 260)).then(() => run(
     () => api(`/api/account-plays/${id}/decide`, { method: "POST", body: { accept, reason: accept ? null : reason } }),
     accept ? "Accepted. The desk is researching the account and drafting first emails." : "Skipped.",
-  ).then(() => { setSkipping(null); setReason(""); });
+  )).then(() => { setSkipping(null); setReason(""); setLeaving(null); }); };
   const overdue = data.replies.filter((r: any) => r.sla_due_at && new Date(r.sla_due_at).getTime() < new Date(data.now).getTime()).length;
   return (
     <div className="page rise">
@@ -62,8 +64,8 @@ export function Today() {
       <Section icon={Lightbulb} title={me?.user.role === "sdr" ? "Plays proposed to you" : "Plays proposed to the team"}>
         {data.proposals.length ? (
           <div className="ledger">
-            {data.proposals.map((p: any) => (
-              <div key={p.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1.1fr) minmax(0,2fr) 52px auto" }}>
+            {data.proposals.map((p: any, i: number) => (
+              <div key={p.id} className={`row prop-row${leaving === p.id ? " is-leaving" : ""}`} style={{ gridTemplateColumns: "28px minmax(0,1.1fr) minmax(0,2fr) 52px auto", animationDelay: `${i * 60}ms` }}>
                 <Logo domain={p.primary_domain} name={p.name} />
                 <button className="cell-main" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }} onClick={() => openSheet("account", p.account_id)}>
                   <span className="t prop-play">{p.play}</span><span className="s">at <span className="prop-acct">{p.name}</span>{p.urgent ? ", decide today" : ""}{me?.user.role !== "sdr" && p.owner ? `, ${p.owner}` : ""}</span><span className="s only-sm">{p.why_now.summary}</span>

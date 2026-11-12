@@ -706,3 +706,11 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 /* Today's proposals: the play is named in ink, so the row reads as "this play, at this account". */
 .prop-play { color: var(--ink); font-weight: 600; letter-spacing: -0.01em; }
 .prop-acct { color: var(--ink-2); font-weight: 500; }
+
+/* Today's proposals move: rows ease in one after another, lift a little on hover, and slide away once decided. */
+.prop-row { animation: enter .4s var(--ease) both; transition: background .15s var(--ease), opacity .26s var(--ease), transform .26s var(--ease); }
+.prop-row:hover { background: var(--well); }
+.prop-row .cell-main .prop-play { transition: color .15s var(--ease); }
+.prop-row:hover .prop-play { color: var(--accent); }
+.prop-row.is-leaving { opacity: 0; transform: translateX(16px); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .prop-row { animation: none; } .prop-row.is-leaving { transform: none; } }

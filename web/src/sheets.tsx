@@ -55,7 +55,7 @@ function Frame({ crumb, children, foot, kind }: { crumb: ReactNode; children: Re
     ref.current?.focus();
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeSheet(); };
     window.addEventListener("keydown", onKey);
-    return () => { window.removeEventListener("keydown", onKey); prev?.focus?.(); };
+    return () => { window.removeEventListener("keydown", onKey); prev?.focus?.({ focusVisible: false } as FocusOptions); };
   }, []);
   const back = () => {
     if (!from) return;
