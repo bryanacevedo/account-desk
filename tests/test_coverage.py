@@ -1,5 +1,5 @@
 """The built demo shows every scenario the app can show: every play state, reply label, signal type, autonomy stage,
-region outcome, committee gap, task kind and deal outcome. It reads the demo exactly as `python -m outbound demo`
+region outcome, committee gap, task kind and deal outcome, except those coverage.BY_CHANCE names. It reads the demo exactly as `python -m outbound demo`
 builds it (the `built_demo` fixture, shared with the other whole-demo test). A scenario at zero fails here; the fix
 belongs in the simulation, never in the data."""
 from __future__ import annotations

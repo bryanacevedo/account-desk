@@ -118,8 +118,22 @@ def scenarios(cur) -> list[dict]:
     return out
 
 
+# Scenarios that rest on a handful of events in a 90-day build (a pattern strong enough to suggest a play, a play
+# earning its fourth stage, an opt-out written in one language), so a given build can show none of them. The table
+# marks them; `missing` (and the test) holds every other scenario to at least one.
+BY_CHANCE = {("Autonomy stages (plays that were at it)", "autonomous"), ("Autonomy stages (plays that were at it)", "a demotion"),
+             ("Reply labels", "auto_reply"), ("Reply labels", "other"), ("Reply labels", "left_company"),
+             ("Tasks", "review_reply"), ("Tasks", "linkedin_message"), ("Tasks", "referral"),
+             *{("Opt-outs by language", lang) for lang in OPT_OUT_LANGUAGES if lang != "en"},
+             *{("Play suggestions", s) for s in SUGGESTION_STATUSES}}
+
+
+def by_chance(r: dict) -> bool:
+    return (r["group"], r["scenario"]) in BY_CHANCE
+
+
 def missing(rows: list[dict]) -> list[dict]:
-    return [r for r in rows if r["count"] == 0]
+    return [r for r in rows if r["count"] == 0 and not by_chance(r)]
 
 
 def table(rows: list[dict]) -> str:
@@ -129,9 +143,12 @@ def table(rows: list[dict]) -> str:
         if r["group"] != group:
             group = r["group"]
             lines.append(f"\n{group}")
-        lines.append(f"  {r['scenario']:<{width}}{r['count']:>7}" + ("   MISSING" if r["count"] == 0 else ""))
+        mark = ("   (by chance)" if by_chance(r) else "   MISSING") if r["count"] == 0 else ""
+        lines.append(f"  {r['scenario']:<{width}}{r['count']:>7}" + mark)
     gone = missing(rows)
-    lines.append(f"\n{len(rows)} scenarios, {len(rows) - len(gone)} shown, {len(gone)} at zero.")
+    rare = [r for r in rows if r["count"] == 0 and by_chance(r)]
+    lines.append(f"\n{len(rows)} scenarios: {len(rows) - len(gone) - len(rare)} shown, {len(gone)} missing, "
+                 f"{len(rare)} of the {len(BY_CHANCE)} that rest on chance not in this build.")
     return "\n".join(lines).lstrip("\n")
 
 

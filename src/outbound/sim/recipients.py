@@ -43,6 +43,10 @@ WRONG = ["I don't handle this, sorry.", "Wrong person, I'm in a different team n
 UNSUB = ["Please remove me from your list.", "Unsubscribe", "Stop emailing me.",
          "Bitte keine weiteren E-Mails.", "Por favor, no me envíen más correos.", "Merci de ne plus me contacter.",
          "Por favor, não quero receber mais e-mails."]
+# Kinds of reply other than interest, as cumulative shares of what is left: not now, not interested, a referral, the
+# wrong person, left the company, an automatic acknowledgement, a reply that says nothing usable, then an opt-out.
+OTHER_KINDS = [("not_now", 0.27), ("not_interested", 0.45), ("referral", 0.57), ("wrong_person", 0.65), ("left", 0.73),
+               ("auto", 0.78), ("other", 0.83)]
 # A shared inbox's automatic acknowledgement, and replies that say nothing a label can act on.
 AUTO = ["Thank you for your message. This is an automated message: this mailbox is not monitored. For billing questions "
         "please write to billing@{domain}."]
@@ -119,22 +123,13 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
     pos_share = 0.25 + 0.55 * need * (1.2 if p["is_champion"] else 1.0)
     if r < pos_share:
         kind = "positive"
-    elif r < pos_share + 0.16:
-        kind = "not_now"
-    elif r < pos_share + 0.26:
-        kind = "not_interested"
-    elif r < pos_share + 0.33:
-        kind = "referral"
-    elif r < pos_share + 0.38:
-        kind = "wrong_person"
-    elif r < pos_share + 0.43:
-        kind = "left"
-    elif r < pos_share + 0.45:
-        kind = "auto"
-    elif r < pos_share + 0.47:
-        kind = "other"
     else:
-        kind = "unsubscribe"
+        # The rest share what is left in fixed proportions, so a very interested company still sends the odd opt-out.
+        u, kind = (r - pos_share) / (1 - pos_share), "unsubscribe"
+        for k, edge in OTHER_KINDS:
+            if u < edge:
+                kind = k
+                break
     sender_first = mailbox["display_name"].split()[0]
     if kind == "positive":
         pool = POSITIVE + (ES_POS if p["country"] == "ES" else []) + (DE_POS if p["country"] == "DE" else [])
@@ -168,7 +163,14 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
     elif kind == "other":
         text = rng.choice(OTHER)
     else:
-        text = rng.choice(UNSUB)
+        # Mostly in English; otherwise in the language of where they work, or another they write in.
+        local = {"DE": "Bitte", "ES": "Por favor, no", "FR": "Merci", "BR": "Por favor, não"}.get(p["country"] or "")
+        if rng.random() < 0.6:
+            text = rng.choice(UNSUB[:3])
+        elif local and rng.random() < 0.7:
+            text = next(t for t in UNSUB if t.startswith(local))
+        else:
+            text = rng.choice(UNSUB[3:])
     sig = rng.choice(SIGS).format(name=p["full_name"], first=p["first_name"], title=p["title"], company=p["company"])
     body = text + sig + _quote(message["body"], mailbox["display_name"], at)
     delay = timedelta(hours=rng.uniform(1.5, 52))

@@ -181,7 +181,7 @@ than in the weeks before.
 
 The world holds together the way a real list does: a company's name and product fit its industry, its billing tool is the one its stack, its own docs and any competitor signal name, it has one finance leader, and a new finance leader the news announces exists, holds that title and starts that day, while the one they replaced leaves (mail to them bounces after). Job changes come from past champions and from people the desk has been in touch with, the people a job-change feed is set to watch.
 
-Planted so the demo shows every scenario the app can show (`python -m outbound coverage` counts them, and a test fails if any is at zero):
+Planted so the demo shows every scenario the app can show. `python -m outbound coverage` counts them and a test fails if one is at zero, except seventeen that rest on a handful of events in a 90-day build (a play earning its fourth stage, a pattern strong enough to suggest a play, an opt-out in one language), which a given build may not show; the table marks them (`BY_CHANCE` in `src/outbound/coverage.py`).
 
 - Simulated SDRs edit about one in six drafts they approve. On Monday mornings the simulated manager approves the next stage for any play at the draft stage or above whose checks all pass, the same rule the Plays page applies to a click; leaving the research stage stays the manager's own call, so the funded play stays there. Demotions are the desk's own (a complaint, bounces or edits).
 - On Tuesdays, once a suggestion has waited two weeks, the simulated GTM engineer turns the first into a draft play, and the manager sets the next aside for now and says no to the one after; one that comes back after a "not now" waits for a person (`SUGGESTION_ROUTINE` in `src/outbound/sim/runner.py`).
