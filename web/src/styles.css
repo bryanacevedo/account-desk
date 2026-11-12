@@ -701,4 +701,4 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .thesis-body .thesis-lead { font-size: 17px; line-height: 1.45; font-weight: 550; letter-spacing: -0.01em; color: var(--ink); margin-bottom: 2px; }
 .thesis-body b { font-weight: 600; color: var(--ink); }
 .thesis-sig { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: -2px; }
-.thesis-sig .sig-icon { width: auto; height: auto; background: none; color: var(--accent); }
+.thesis-sig .sig-icon { width: auto; height: auto; background: none; color: var(--mute); }
