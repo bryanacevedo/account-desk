@@ -754,8 +754,10 @@ def activate(cur, enrollment_id: int) -> None:
     # Each colleague's first email goes two business days, in their own time, after the last colleague's first email
     # at this account: the one actually sent, or the one scheduled. A start date alone is not enough, because a first
     # email can wait days behind a send window, a holiday or a full mailbox (found 2026-11-11). The account row lock
-    # keeps two approvals from picking the same day, and the send itself checks again (colleague_clear).
-    db.one(cur, "select id from accounts where id = %s for update", ap["account_id"])
+    # keeps two approvals from picking the same day, and the send itself checks again (colleague_clear). It is a
+    # no-key lock: a full one blocks the ledger rows that paid calls write about this account on their own connection,
+    # and the transaction holding it then waits on itself (found when the 3,000-account build hung).
+    db.one(cur, "select id from accounts where id = %s for no key update", ap["account_id"])
     last = last_colleague_first_email(cur, ap["account_id"], enrollment_id)
     now = db.val(cur, "select app_now()")
     start = now

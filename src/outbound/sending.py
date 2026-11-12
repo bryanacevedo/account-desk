@@ -86,7 +86,7 @@ def send_one(cur, payload: dict) -> None:
     if first:
         # Colleagues at one account hear from us two business days apart in their own time, however late the
         # earlier one went. The account lock makes two first emails there take turns.
-        db.one(cur, "select id from accounts where id = %s for update", ap["account_id"])
+        db.one(cur, "select id from accounts where id = %s for no key update", ap["account_id"])
         wait = outreach.colleague_clear(cur, e, person, now)
         if wait is not None:
             later(timeutil.next_slot(wait, timezone=person["timezone"], country=person["country"], window=window,
