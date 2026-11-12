@@ -922,6 +922,9 @@ class PlayChange(BaseModel):
     # The monthly cap the manager sets at launch (SPEC 22.16): credits per vendor, and AI in cents.
     monthly_cap: dict[Literal["people_search", "email_finder", "email_verifier", "phone_finder", "anthropic_cents"],
                       int] | None = None
+    # The legitimate-interest assessment the play rests on: a link or document reference, and its next review date.
+    lia_ref: str | None = Field(None, min_length=3, max_length=300)
+    lia_review_due: date | None = None
 
 
 @app.post("/api/plays/{play_id}")
@@ -931,7 +934,15 @@ def change_play(play_id: int, body: PlayChange, u: dict = Depends(writer)) -> di
         p = db.one(cur, "select * from plays where id = %s for update", play_id)
         if p is None:
             raise HTTPException(404, "No such play.")
+        if body.lia_ref is not None or body.lia_review_due is not None:
+            db.run(cur, "update plays set lia_ref = coalesce(%s, lia_ref), lia_review_due = coalesce(%s, lia_review_due) "
+                        "where id = %s", body.lia_ref, body.lia_review_due, play_id)
+            p = db.one(cur, "select * from plays where id = %s", play_id)
         if body.status:
+            if body.status == "live":
+                problem = plays.lia_problem(cur, p)
+                if problem:
+                    raise HTTPException(422, problem)
             if body.status == "live" and u["role"] != "manager":
                 raise HTTPException(403, "A manager launches plays.")
             if body.status == "live" and p["created_by"] == u["id"]:
@@ -959,7 +970,7 @@ def change_play(play_id: int, body: PlayChange, u: dict = Depends(writer)) -> di
             db.run(cur, "update plays set autonomy = %s where id = %s", body.autonomy, play_id)
             db.run(cur, "insert into play_stage_changes (play_id, from_stage, to_stage, reason, decided_by) "
                         "values (%s,%s,%s,%s,%s)", play_id, p["autonomy"], body.autonomy, body.reason, u["id"])
-        audit.log(cur, "person", "play_changed", "play", play_id, body.model_dump(), actor_id=u["id"])
+        audit.log(cur, "person", "play_changed", "play", play_id, body.model_dump(mode="json"), actor_id=u["id"])
     return {"ok": True}
 
 
@@ -994,14 +1005,15 @@ def create_play(body: play_editor.PlayIn, u: dict = Depends(writer)) -> dict:
         lia = db.val(cur, "select value #>> '{}' from settings where key = 'lia_ref'") or db.val(
             cur, "select lia_ref from plays where lia_ref is not null order by id desc limit 1")
         if not lia:
-            raise HTTPException(422, "The desk has no legitimate-interest reference yet. Set it at init.")
+            raise HTTPException(422, "The desk has no legitimate-interest reference yet. Set it when the desk is set up.")
+        review = db.val(cur, "select (value #>> '{}')::date from settings where key = 'lia_review_due'")
         pid = db.val(cur, """insert into plays (key, name, hypothesis, trigger, personas, max_people, sequence, angle, autonomy,
                                                 status, holdout_pct, owner_id, created_by, urgent, latency_hours, lia_ref,
-                                                suggested_from)
-                             values (%s,%s,%s,%s,%s,%s,%s,%s,'draft','draft',%s,%s,%s,%s,%s,%s,%s) returning id""",
+                                                lia_review_due, suggested_from)
+                             values (%s,%s,%s,%s,%s,%s,%s,%s,'draft','draft',%s,%s,%s,%s,%s,%s,%s,%s) returning id""",
                      key, body.name, body.hypothesis, db.J(body.trigger.model_dump()), body.personas, body.max_people,
                      db.J([s.model_dump() for s in body.sequence]), body.angle, body.holdout_pct, u["id"], u["id"],
-                     body.urgent, body.latency_hours, lia, body.suggested_from)
+                     body.urgent, body.latency_hours, lia, review, body.suggested_from)
         if body.suggested_from is not None:
             # Saved from a suggestion: its open suggestion becomes drafted with this play, in the same transaction.
             try:
@@ -1245,10 +1257,13 @@ def unsubscribe_page(person_id: int, token: str) -> str:
 def unsubscribe(person_id: int, token: str) -> str:
     _check_token(person_id, token)
     with db.tx() as cur:
-        email = db.val(cur, "select email from people where id = %s", person_id)
+        who = db.one(cur, "select email, phone, linkedin_url from people where id = %s", person_id) or {}
+        email = who.get("email")
         if email:
             db.run(cur, "insert into suppressions (kind, value, reason, source) values ('email', %s, 'One-click unsubscribe', 'link')",
                    email)
+        from ..privacy import suppress_other_channels
+        suppress_other_channels(cur, person_id, reason="One-click unsubscribe", source="link")
         db.run(cur, "insert into suppressions (kind, value, reason, source) values ('person', %s, 'One-click unsubscribe', 'link')",
                str(person_id))
         for e in db.all(cur, "select id from enrollments where person_id = %s and state in ('pending','active','paused')", person_id):

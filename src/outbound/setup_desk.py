@@ -56,6 +56,8 @@ class DeskConfig(BaseModel):
     users: list[User] = Field(min_length=1)
     sending_domains: list[SendingDomain] = []
     lia_ref: str = Field(min_length=3, max_length=60, description="Your legitimate-interest assessment's reference")
+    lia_review_due: date | None = Field(None, description="When the assessment is next reviewed. Without it, a play "
+                                                          "that relies on legitimate interest cannot launch.")
     region_rules: dict[str, Literal["allowed", "basis_required", "consent_required", "blocked"]] | None = None
     budgets: dict[str, int] | None = None
     sources: list[str] | None = Field(None, description="Signal sources you have; the rest start disabled")
@@ -78,6 +80,9 @@ def init(cur, cfg: DeskConfig) -> dict:
         db.run(cur, "insert into settings (key, value) values (%s, %s) on conflict (key) do nothing", k, J(v))
     db.run(cur, "insert into settings (key, value) values ('lia_ref', %s) on conflict (key) do update set value = excluded.value",
            J(cfg.lia_ref))
+    if cfg.lia_review_due:
+        db.run(cur, "insert into settings (key, value) values ('lia_review_due', %s) on conflict (key) do update "
+                    "set value = excluded.value", J(cfg.lia_review_due.isoformat()))
     ids: dict[str, int] = {}
     for u in cfg.users:
         ids[u.email.lower()] = db.val(cur, """insert into users (name, email, role, timezone, slack_id)
@@ -98,7 +103,9 @@ def init(cur, cfg: DeskConfig) -> dict:
     db.run(cur, "insert into icp_versions (rules, note, published_by, published_at) values (%s, %s, %s, app_now())",
            J(C.ICP), "Starting ICP: edit it in Settings", gtm)
     for country, rule in (cfg.region_rules or dict(C.REGION_RULES)).items():
-        db.run(cur, "insert into region_rules (country, rule) values (%s,%s) on conflict do nothing", country, rule)
+        call_rule, register = C.CALL_RULES.get(country, ("blocked", None))
+        db.run(cur, "insert into region_rules (country, rule, call_rule, dnc_register) values (%s,%s,%s,%s) "
+                    "on conflict do nothing", country, rule, call_rule, register)
     for vendor, cap in (cfg.budgets or dict(C.BUDGETS)).items():
         db.run(cur, "insert into budgets (vendor, monthly_cap_cents) values (%s,%s) on conflict do nothing", vendor, cap)
     for d in cfg.sending_domains:
@@ -118,9 +125,11 @@ def init(cur, cfg: DeskConfig) -> dict:
         for (key, name, hyp, trig, personas, maxp, seq, angle, _autonomy, urgent, latency) in C.PLAYS:
             # Drafts, written by GTM, in the most careful autonomy stage: a manager reads and launches each one.
             db.run(cur, """insert into plays (key, name, hypothesis, trigger, personas, max_people, sequence, angle, autonomy,
-                                              status, holdout_pct, owner_id, created_by, urgent, latency_hours, lia_ref)
-                           values (%s,%s,%s,%s,%s,%s,%s,%s,'draft','draft',20,%s,%s,%s,%s,%s)""",
-                   key, name, hyp, J(trig), personas, maxp, J(seq), angle, gtm, gtm, urgent, latency, cfg.lia_ref)
+                                              status, holdout_pct, owner_id, created_by, urgent, latency_hours, lia_ref,
+                                              lia_review_due)
+                           values (%s,%s,%s,%s,%s,%s,%s,%s,'draft','draft',20,%s,%s,%s,%s,%s,%s)""",
+                   key, name, hyp, J(trig), personas, maxp, J(seq), angle, gtm, gtm, urgent, latency, cfg.lia_ref,
+                   cfg.lia_review_due)
             plays += 1
     for country, day, name in C.HOLIDAYS:
         db.run(cur, "insert into holidays (country, day, name) values (%s,%s,%s) on conflict do nothing",
@@ -149,7 +158,8 @@ def _rows(text: str) -> list[dict]:
 
 def import_accounts(cur, text: str) -> dict:
     """Columns: name, domain (required); industry, employees, country, revenue_band, tech (separated by ';'),
-    lifecycle, owner_email, crm_id, parent_domain. Region comes from the country. A domain already on the desk is
+    lifecycle, owner_email, crm_id, parent_domain, subscriber_type (corporate for a limited company, individual for a
+    sole trader or partnership; UK email needs it). Region comes from the country. A domain already on the desk is
     updated, never duplicated; a blank cell keeps what the desk has."""
     done, refused, parents = 0, [], []
     for i, r in enumerate(_rows(text), start=2):
@@ -165,22 +175,27 @@ def import_accounts(cur, text: str) -> dict:
         if emp is not None and not emp.isdigit():
             refused.append({"row": i, "why": "employees must be a whole number"})
             continue
+        subscriber = (r.get("subscriber_type") or "").lower() or None
+        if subscriber is not None and subscriber not in ("corporate", "individual", "unknown"):
+            refused.append({"row": i, "why": "subscriber_type must be corporate, individual or unknown"})
+            continue
         owner = db.val(cur, "select id from users where email = %s", r["owner_email"].lower()) if r.get("owner_email") else None
         aid = db.val(cur, """
             insert into accounts (name, name_key, primary_domain, industry, employees, hq_country, lifecycle, owner_id, crm_id, source,
-                                  region, revenue_band, tech)
-            values (%s,%s,%s,%s,%s,%s,coalesce(%s, 'prospect'),%s,%s,'import',%s,%s,%s)
+                                  region, revenue_band, tech, subscriber_type)
+            values (%s,%s,%s,%s,%s,%s,coalesce(%s, 'prospect'),%s,%s,'import',%s,%s,%s,coalesce(%s, 'unknown'))
             on conflict (primary_domain) do update set name = excluded.name, name_key = excluded.name_key,
               industry = coalesce(excluded.industry, accounts.industry), employees = coalesce(excluded.employees, accounts.employees),
               hq_country = coalesce(excluded.hq_country, accounts.hq_country),
               lifecycle = case when %s::text is null then accounts.lifecycle else excluded.lifecycle end,
               owner_id = coalesce(excluded.owner_id, accounts.owner_id), crm_id = coalesce(excluded.crm_id, accounts.crm_id),
               region = coalesce(excluded.region, accounts.region), revenue_band = coalesce(excluded.revenue_band, accounts.revenue_band),
-              tech = case when cardinality(excluded.tech) > 0 then excluded.tech else accounts.tech end
+              tech = case when cardinality(excluded.tech) > 0 then excluded.tech else accounts.tech end,
+              subscriber_type = case when %s::text is null then accounts.subscriber_type else excluded.subscriber_type end
             returning id""", r["name"], normalize_name(r["name"]), domain, r.get("industry") or None,
                      int(emp) if emp else None, (r.get("country") or "").upper() or None, lifecycle, owner,
                      r.get("crm_id") or None, region_of(r.get("country")), r.get("revenue_band") or None,
-                     [t.strip() for t in (r.get("tech") or "").split(";") if t.strip()], lifecycle)
+                     [t.strip() for t in (r.get("tech") or "").split(";") if t.strip()], subscriber, lifecycle, subscriber)
         db.run(cur, "insert into account_domains (domain, account_id) values (%s,%s) on conflict do nothing", domain, aid)
         if r.get("parent_domain"):
             parents.append((aid, normalize_domain(r["parent_domain"])))
@@ -195,7 +210,8 @@ def import_accounts(cur, text: str) -> dict:
 
 
 def import_people(cur, text: str) -> dict:
-    """Columns: full_name, company_domain (required); title, email, linkedin_url, phone, country, timezone.
+    """Columns: full_name, company_domain (required); title, email, linkedin_url, phone, country, timezone, source
+    (where the list came from, kept as the person's provenance).
     Emails are imported unverified: the desk verifies before any send."""
     done, refused = 0, []
     for i, r in enumerate(_rows(text), start=2):
@@ -227,10 +243,11 @@ def import_people(cur, text: str) -> dict:
                    r.get("title") or None, r.get("phone") or None, email, existing)
         else:
             db.run(cur, """insert into people (account_id, full_name, first_name, last_name, title, email, linkedin_url,
-                                               linkedin_key, phone, country, timezone, source)
-                           values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'import')""",
+                                               linkedin_key, phone, country, timezone, source, source_origin)
+                           values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'import',%s)""",
                    aid, r["full_name"], first, last or None, r.get("title") or None, email, r.get("linkedin_url") or None,
                    linkedin_key(r.get("linkedin_url")),
-                   r.get("phone") or None, (r.get("country") or "").upper() or None, r.get("timezone") or None)
+                   r.get("phone") or None, (r.get("country") or "").upper() or None, r.get("timezone") or None,
+                   (r.get("source") or "").strip()[:200] or "CSV import")
         done += 1
     return {"imported": done, "refused": refused}

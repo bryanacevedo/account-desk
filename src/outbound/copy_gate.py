@@ -193,14 +193,19 @@ def assemble(draft: dict, *, sender_name: str, footer: str, company: str | None 
     return body.strip() + f"\n\n{signature}\n\n{footer}"
 
 
-def footer(*, company: str, address: str, unsubscribe_url: str, privacy_url: str | None) -> str:
+def footer(*, company: str, address: str, unsubscribe_url: str, privacy_url: str | None,
+           data_source: str | None = None) -> str:
     """Two short lines under a signature break: who is writing and where (anti-spam law asks for a postal address),
-    then how to stop hearing from us. "No thanks" means not interested, so the way out is named plainly instead."""
+    then how to stop hearing from us. "No thanks" means not interested, so the way out is named plainly instead.
+    Where a privacy notice is owed at first contact (GDPR art. 14, UK GDPR, Swiss FADP, LGPD), two more lines say
+    where the details came from, that the person may object, and where the full notice is."""
     where = address if address.lower().startswith(company.lower()) else f"{company}, {address}"
     lines = ["--", where,
              f"To stop hearing from us, reply \"unsubscribe\" or use {unsubscribe_url}"]
     if privacy_url:
-        lines.append(f"Where we found your details: {privacy_url}")
+        lines.append(f"We found your work details in {data_source or 'public business sources'}. "
+                     "You may object to their use at any time.")
+        lines.append(f"How we use them: {privacy_url}")
     return "\n".join(lines)
 
 

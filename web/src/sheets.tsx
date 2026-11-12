@@ -338,6 +338,7 @@ export function TaskSheet({ id }: { id: number }) {
               value={t.phone && !t.phone_dnc ? <a className="tap" href={`tel:${t.phone.replace(/[^+\d]/g, "")}`}>{t.phone}</a> : t.phone}
               state={t.phone ? (t.phone_dnc ? ["stop", "Do not call"] : t.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(t.phone_status)]) : null} /></div>
             {t.note ? <div className="small mute">{t.note}</div> : null}
+            {t.call_hours ? <div className="small mute">{t.dnc_register ? `Screened against ${t.dnc_register}. ` : ""}Calling hours: {t.call_hours} their time, weekdays.</div> : null}
           </Section>
           {t.why ? (
             <Section title="Why now">

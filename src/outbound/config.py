@@ -10,6 +10,13 @@ def _flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+# The demo seller's details. A live desk that still carries them would put an invented company and address in the
+# footer of every real email, so live mode refuses to start with them.
+DEMO_SENDER_COMPANY = "Lumen Ledger"
+DEMO_SENDER_ADDRESS = "Lumen Ledger, 400 Market Street, Suite 210, Philadelphia, PA 19106, USA"
+DEMO_PRIVACY_URL = "https://lumenledger.example/privacy"
+
+
 @dataclass(frozen=True)
 class Config:
     # A mailbox that really receives mail and forwards it to the reply webhook; without one, only the https
@@ -31,10 +38,10 @@ class Config:
     access_team_domain: str = field(default_factory=lambda: os.environ.get("CF_ACCESS_TEAM_DOMAIN", ""))
     access_aud: str = field(default_factory=lambda: os.environ.get("CF_ACCESS_AUD", ""))
     public_url: str = field(default_factory=lambda: os.environ.get("PUBLIC_URL", "http://localhost:8800"))
-    sender_company: str = field(default_factory=lambda: os.environ.get("SENDER_COMPANY", "Lumen Ledger"))
+    sender_company: str = field(default_factory=lambda: os.environ.get("SENDER_COMPANY", DEMO_SENDER_COMPANY))
     sender_address: str = field(default_factory=lambda: os.environ.get(
-        "SENDER_ADDRESS", "Lumen Ledger, 400 Market Street, Suite 210, Philadelphia, PA 19106, USA"))
-    privacy_url: str = field(default_factory=lambda: os.environ.get("PRIVACY_URL", "https://lumenledger.example/privacy"))
+        "SENDER_ADDRESS", DEMO_SENDER_ADDRESS))
+    privacy_url: str = field(default_factory=lambda: os.environ.get("PRIVACY_URL", DEMO_PRIVACY_URL))
     anthropic_live: bool = field(default_factory=lambda: _flag("ANTHROPIC_LIVE"))
     evals_strict: bool = field(default_factory=lambda: _flag("EVALS_STRICT"))
     slack_token: str = field(default_factory=lambda: os.environ.get("SLACK_BOT_TOKEN", ""))
@@ -54,6 +61,14 @@ class Config:
             raise SystemExit("The public demo never sends. Unset LIVE_SEND.")
         if self.mode == "live" and not self.webhook_secret_set:
             raise SystemExit("MODE=live needs WEBHOOK_SECRET set. Refusing to start.")
+        if self.mode == "live" and self.auth_mode != "header":
+            raise SystemExit("MODE=live needs AUTH_MODE=header, so every request is signed in. Refusing to start.")
+        if self.mode == "live":
+            for name, value, demo in (("SENDER_COMPANY", self.sender_company, DEMO_SENDER_COMPANY),
+                                      ("SENDER_ADDRESS", self.sender_address, DEMO_SENDER_ADDRESS),
+                                      ("PRIVACY_URL", self.privacy_url, DEMO_PRIVACY_URL)):
+                if not value.strip() or value.strip() == demo:
+                    raise SystemExit(f"MODE=live needs {name} set to your own company's details. Refusing to start.")
         if self.auth_mode == "header" and not (self.access_team_domain and self.access_aud):
             raise SystemExit("AUTH_MODE=header needs CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD to verify the signed token.")
 

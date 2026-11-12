@@ -422,6 +422,12 @@ def telemetry(cur, payload: dict) -> None:
             alerts.raise_alert(cur, kind="spam_rate", severity="urgent", channel="#outbound-ops",
                                title=title, body="Every mailbox on it is paused.",
                                dedup_key=f"spam:{t.domain}:{db.val(cur, 'select app_now()::date')}")
+        elif t.spam_rate is not None and t.spam_rate >= 0.001:
+            # Google's own line is 0.1%: the mailboxes are held at 10 a day from here, and pause at 0.3%.
+            alerts.raise_alert(cur, kind="spam_rate_warn", severity="warn", channel="#outbound-ops",
+                               title=f"{t.domain} spam rate {t.spam_rate:.2%}",
+                               body="Its mailboxes are held at 10 a day. At 0.3% they pause.",
+                               dedup_key=f"spamwarn:{t.domain}:{db.val(cur, 'select app_now()::date')}")
 
 
 def resolve_unknown(cur, message_id: int, *, sent: bool, provider_id: str | None = None) -> None:

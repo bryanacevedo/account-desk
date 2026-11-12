@@ -92,15 +92,18 @@ def person_reasons(cur, person_id: int, channel: str, *, account_play_id: int | 
           (kind = 'email_hash' and value = encode(sha256(convert_to(coalesce(%s, ''), 'UTF8')), 'hex')) or
           (kind = 'domain' and value = split_part(coalesce(%s, ''), '@', 2)) or
           (kind = 'person' and value = %s) or
-          (kind = 'phone' and value = %s and %s = 'call')) limit 1""",
-        p["email"] or "", p["email"], p["email"], str(person_id), p["phone"] or "", channel)
+          (kind = 'phone' and value = %s and %s = 'call') or
+          (kind = 'phone_hash' and value = %s and %s = 'call')) limit 1""",
+        p["email"] or "", p["email"], p["email"], str(person_id), p["phone"] or "", channel,
+        _phone_hash(p["phone"]), channel)
     if sup:
         out.append(Reason("suppressed", True, f"Do not contact: {sup['reason']}"))
     elif p["linkedin_url"]:
         from .privacy import linkedin_hash
-        if db.val(cur, """select exists (select 1 from suppressions where kind = 'linkedin_hash' and value = %s
-                          and (expires_at is null or expires_at > app_now()))""", linkedin_hash(p["linkedin_url"])):
-            out.append(Reason("suppressed", True, "Do not contact: erased on request"))
+        why = db.val(cur, """select reason from suppressions where kind = 'linkedin_hash' and value = %s
+                             and (expires_at is null or expires_at > app_now()) limit 1""", linkedin_hash(p["linkedin_url"]))
+        if why:
+            out.append(Reason("suppressed", True, f"Do not contact: {why}"))
     hold = db.one(cur, """select reason, until from holds where person_id = %s and until > app_now()
                           order by until desc limit 1""", person_id)
     if hold:
@@ -152,7 +155,101 @@ def person_reasons(cur, person_id: int, channel: str, *, account_play_id: int | 
             out.append(Reason("no_consent", True, "This country needs consent before a cold email"))
         elif rule == "basis_required" and basis is None:
             out.append(Reason("no_basis", False, "No recorded basis for contact yet"))
+        pecr = pecr_reason(cur, p, basis)
+        if pecr:
+            out.append(pecr)
+    if channel == "call":
+        out += call_reasons(cur, p)
     return out
+
+
+def pecr_reason(cur, p: dict, basis: str | None) -> Reason | None:
+    """UK PECR: a sole trader or partnership is an individual subscriber, so cold email to them needs consent. Only
+    a limited company (corporate) may be emailed without it; not knowing which counts as individual."""
+    a = db.one(cur, "select hq_country, subscriber_type from accounts where id = %s", p["account_id"]) or {}
+    if "GB" not in (p.get("country"), a.get("hq_country")) or basis == "consent":
+        return None
+    kind = a.get("subscriber_type") or "unknown"
+    if kind == "corporate":
+        return None
+    if kind == "individual":
+        return Reason("pecr_individual", True, "A UK sole trader or partnership needs consent before a cold email")
+    return Reason("pecr_unknown", True, "Not known whether this UK company is a limited company, so no cold email "
+                                        "without consent")
+
+
+# Time zones for a country, used when the person's own is not known. A country spanning several has its extremes,
+# so a call is placed only when it is within calling hours in all of them.
+COUNTRY_ZONES = {"US": ["America/New_York", "America/Los_Angeles"], "CA": ["America/Halifax", "America/Vancouver"],
+                 "BR": ["America/Sao_Paulo", "America/Manaus"], "AU": ["Australia/Sydney", "Australia/Perth"],
+                 "GB": ["Europe/London"], "IE": ["Europe/Dublin"], "DE": ["Europe/Berlin"], "FR": ["Europe/Paris"],
+                 "NL": ["Europe/Amsterdam"], "ES": ["Europe/Madrid"], "IT": ["Europe/Rome"], "BE": ["Europe/Brussels"],
+                 "SE": ["Europe/Stockholm"], "DK": ["Europe/Copenhagen"], "PL": ["Europe/Warsaw"], "AT": ["Europe/Vienna"],
+                 "PT": ["Europe/Lisbon"], "FI": ["Europe/Helsinki"], "CH": ["Europe/Zurich"], "NO": ["Europe/Oslo"],
+                 "SG": ["Asia/Singapore"], "IN": ["Asia/Kolkata"], "JP": ["Asia/Tokyo"], "NZ": ["Pacific/Auckland"]}
+
+
+def call_zones(p: dict) -> list[str] | None:
+    if p.get("timezone"):
+        return [p["timezone"]]
+    return COUNTRY_ZONES.get((p.get("country") or "").upper())
+
+
+def call_reasons(cur, p: dict) -> list[Reason]:
+    """Calls follow the country's call rule, which names the do-not-call register screened first. An unknown
+    country, a country with no call rule, or an unknown time zone means no call."""
+    if not p.get("country"):
+        return [Reason("no_call_rule", True, "Their country is not known, so no calls until it is")]
+    rule = db.one(cur, "select call_rule, dnc_register from region_rules where country = %s", p["country"])
+    if rule is None:
+        return [Reason("no_call_rule", True, f"Calls to {country_name(p['country'])} need a region rule first")]
+    if rule["call_rule"] != "allowed":
+        return [Reason("call_blocked", True, f"The desk does not call {country_name(p['country'])}")]
+    if call_zones(p) is None:
+        return [Reason("call_time_unknown", True, "Their time zone is not known, so the desk cannot keep to calling hours")]
+    return []
+
+
+def call_window(cur) -> tuple[str, str]:
+    w = _setting(cur, "call_window", ["09:00", "18:00"])
+    return w[0], w[1]
+
+
+def in_call_hours(cur, p: dict, at: datetime, *, _days_off: set | None = None) -> bool:
+    """Whether `at` falls within calling hours on a weekday that is not a public holiday, in every zone the person
+    could be in."""
+    from zoneinfo import ZoneInfo
+    zones = call_zones(p)
+    if not zones:
+        return False
+    start, end = call_window(cur)
+    if _days_off is None:
+        _days_off = {r["day"] for r in db.all(cur, "select day from holidays where country = %s", p.get("country"))}
+    for z in zones:
+        local = at.astimezone(ZoneInfo(z))
+        if local.weekday() >= 5 or not (start <= local.strftime("%H:%M") < end) or local.date() in _days_off:
+            return False
+    return True
+
+
+def next_call_time(cur, p: dict, at: datetime) -> datetime | None:
+    """The first moment from `at`, in half-hour steps over the next ten days, that is within calling hours."""
+    from datetime import timedelta
+    days_off = {r["day"] for r in db.all(cur, "select day from holidays where country = %s", p.get("country"))}
+    t = at
+    for _ in range(2 * 24 * 10):
+        if in_call_hours(cur, p, t, _days_off=days_off):
+            return t
+        t = (t + timedelta(minutes=30)).replace(second=0, microsecond=0)
+        t = t.replace(minute=0 if t.minute < 30 else 30)
+    return None
+
+
+def _phone_hash(phone: str | None) -> str:
+    if not phone:
+        return ""
+    from .privacy import phone_hash
+    return phone_hash(phone)
 
 
 def blocking(reasons: list[Reason]) -> bool:

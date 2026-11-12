@@ -233,8 +233,8 @@ def build(cur, *, seed: int = 7, n_accounts: int = 260, start: datetime) -> dict
         desc = f"{name} builds {product}."
         aid = db.val(cur, """
             insert into accounts (name_key, name, primary_domain, industry, employees, revenue_band, hq_country, region, tech,
-                                  description, lifecycle, owner_id, crm_id, source, created_at)
-            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'crm',%s) returning id""",
+                                  description, lifecycle, owner_id, crm_id, source, created_at, subscriber_type)
+            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'crm',%s,'corporate') returning id""",
             normalize_name(name), name, domain, industry, employees, _band(employees, rng), country, region, tech, desc,
             lifecycle, owner, f"CRM-A{1000 + i}", start - timedelta(days=rng.randint(60, 900)))
         accounts.append(aid)

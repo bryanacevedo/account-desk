@@ -159,9 +159,10 @@ def seat_from_announcement(cur, account_id: int, person: dict, observed_at, sour
         if url and db.val(cur, "select exists (select 1 from people where linkedin_key = %s)", linkedin_key(url)):
             url = None  # someone else on record has this profile; the name and seat are still worth keeping
         pid = db.val(cur, """insert into people (account_id, full_name, first_name, last_name, title, seniority, linkedin_url,
-                                                 linkedin_key, role_started_at, source)
-                             values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) returning id""",
-                     account_id, name, first, last or None, title, seniority, url, linkedin_key(url), started, source_key)
+                                                 linkedin_key, role_started_at, source, source_origin)
+                             values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) returning id""",
+                     account_id, name, first, last or None, title, seniority, url, linkedin_key(url), started, source_key,
+                     source_key)
         source(cur, "person", pid, "role_started_at", started.isoformat(), source_key)
     else:
         p = db.one(cur, "select title, role_started_at from people where id = %s", pid)

@@ -29,17 +29,23 @@ def load_catalog(cur, *, start: datetime) -> dict:
                     "values (%s,%s,%s,%s,%s,%s) on conflict (key) do nothing", key, label, adapter, cadence, paid, provider)
     db.run(cur, "insert into icp_versions (rules, note, published_by, published_at) values (%s, %s, %s, %s)",
            J(C.ICP), "Starting ICP", gtm, start - timedelta(days=30))
+    # The demo's legitimate-interest assessment was written a month before the start and is reviewed a year later.
+    lia_review = (start + timedelta(days=335)).date()
     for (key, name, hyp, trig, personas, maxp, seq, angle, autonomy, urgent, latency) in C.PLAYS:
         db.run(cur, """insert into plays (key, name, hypothesis, trigger, personas, max_people, sequence, angle, autonomy,
                                           status, holdout_pct, owner_id, created_by, launched_by, launched_at, urgent,
-                                          latency_hours, lia_ref, monthly_cap)
-                       values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'live',20,%s,%s,%s,%s,%s,%s,'LIA-2026-07',%s)""",
+                                          latency_hours, lia_ref, lia_review_due, monthly_cap)
+                       values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'live',20,%s,%s,%s,%s,%s,%s,'LIA-2026-07',%s,%s)""",
                key, name, hyp, J(trig), personas, maxp, J(seq), angle, autonomy, gtm, gtm, manager,
-               start - timedelta(days=21), urgent, latency, J(C.PLAY_CAP))
+               start - timedelta(days=21), urgent, latency, lia_review, J(C.PLAY_CAP))
+    db.run(cur, "insert into settings (key, value) values ('lia_ref', %s), ('lia_review_due', %s) "
+                "on conflict (key) do update set value = excluded.value", J("LIA-2026-07"), J(lia_review.isoformat()))
     for country, day, name in C.HOLIDAYS:
         db.run(cur, "insert into holidays (country, day, name) values (%s,%s,%s)", country, date.fromisoformat(day), name)
     for country, rule in C.REGION_RULES:
-        db.run(cur, "insert into region_rules (country, rule) values (%s,%s)", country, rule)
+        call_rule, register = C.CALL_RULES.get(country, ("blocked", None))
+        db.run(cur, "insert into region_rules (country, rule, call_rule, dnc_register) values (%s,%s,%s,%s)",
+               country, rule, call_rule, register)
     for vendor, cap in C.BUDGETS:
         db.run(cur, "insert into budgets (vendor, monthly_cap_cents) values (%s,%s)", vendor, cap)
     for key, cents, per, note in C.SUBSCRIPTIONS:

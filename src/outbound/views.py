@@ -232,6 +232,9 @@ def task(cur, task_id: int) -> dict | None:
                                  where e.account_play_id = %s and e.person_id = %s and m.status = 'sent'
                                  order by m.sent_at""", t["account_play_id"], t["person_id"]) if t["account_play_id"] else []
     t["max_chars"] = note_limit(cur) if t["kind"] == "linkedin_connect" else None
+    if t["kind"] == "call":
+        from .gate import call_window
+        t["call_hours"] = "{} to {}".format(*call_window(cur))
     return t
 
 

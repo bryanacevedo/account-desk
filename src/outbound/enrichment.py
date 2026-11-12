@@ -97,6 +97,8 @@ def apply_person(cur, person_id: int, c: dict, vendor: str, *, refresh: bool = F
         "timezone": p["timezone"] or c.get("timezone"),
         "country": p["country"] or c.get("country"),
         "enriched_at": db.val(cur, "select app_now()"),
+        # Provenance: who first told the desk about this person, kept once known.
+        "source_origin": p["source_origin"] or vendor,
     }
     if refresh and c.get("title") and c["title"] != p["title"]:
         updates["title"] = c["title"]
