@@ -1,5 +1,10 @@
 """Simulated signal sources. Each type has a base daily rate and a link to the company's hidden need, so some
-signals predict meetings well and some are mostly noise, as in real life."""
+signals predict meetings well and some are mostly noise, as in real life.
+
+Signals agree with the world they come from: a new finance leader is announced on the day they start, naming the person
+who took the seat; only a company on a billing tool we replace reviews it or drops it, and it names that tool; and the
+people who change jobs are champions and people we have been in touch with, the ones a job-change feed is set to watch.
+"""
 from __future__ import annotations
 
 import random
@@ -7,9 +12,9 @@ from datetime import datetime, timedelta
 
 from .. import db
 
-# type: (source, base rate per account-day, extra rate per unit of need, person-level)
+# type: (source, base rate per account-day, extra rate per unit of need, person-level). A new finance leader is not
+# drawn here: it comes from the world's planned seat changes (sim_seat_changes), announced on the day.
 RATES = {
-    "new_exec": ("news_feed", 0.0006, 0.0035, False),
     "hiring_function": ("jobs_feed", 0.0018, 0.0090, False),
     "funding": ("funding_feed", 0.0014, 0.0016, False),
     "pricing_visit": ("web_visits", 0.0008, 0.0110, False),
@@ -24,13 +29,23 @@ RATES = {
     "event_attended": ("events", 0.0008, 0.0018, True),
     "news_negative": ("news_feed", 0.0009, 0.0, False),
 }
+# Every rate above is multiplied by this. It sets how much the world says per account and day, so a list of 3,000
+# accounts gives six SDRs a week's work they can do, not a pile (README "At production size").
+SCALE = 0.5
+# A review or a removal comes only from a company on that tool, so their rate there is higher than the all-account
+# rate above, which keeps their share of the world's signals close to what it was before they had to agree.
+COMPETITOR_BOOST = {"competitor_review": 2.5, "tech_removed": 2.0}
+# Who reviews a tool: users of Chargewise, who in first calls say they are also looking at Meterline.
+REVIEWED = ("Chargewise",)
+REPLACED = ("Chargewise", "Meterline")
+# Job changes a day, and the share of them that are past champions. The rest are people we have been in touch with.
+MOVES_A_DAY = 0.35
+CHAMPION_SHARE = 0.4
 
 OUTSIDE_A = "Alder Basalt Cobalt Delta Ember Fjord Garnet Halcyon Iris Jasper Kelp Lattice Morrow Nimbus Onyx Prism".split()
 OUTSIDE_B = "Freight Foods Studio Robotics Media Clinics Logistics Retail Energy Travel Insurance Labs".split()
 ROLES = ["Revenue Accountant", "Billing Specialist", "Finance Systems Analyst", "Billing Operations Manager",
          "Senior Revenue Accountant", "Accounts Receivable Lead"]
-COMPETITORS = ["Chargewise", "Meterline"]
-EXEC_TITLES = ["Chief Financial Officer", "VP Finance", "Corporate Controller"]
 TOPICS = ["usage-based billing", "revenue recognition automation", "ASC 606 for usage pricing", "metered billing"]
 PRICING = ["moved its API product to pay-as-you-go pricing", "announced credit-based pricing for its platform",
            "launched usage tiers alongside seat plans"]
@@ -56,9 +71,10 @@ def evidence(rng: random.Random, kind: str, acct: dict, at: datetime, person: di
     name, slug, dom = acct["name"], _slug(acct["name"]), acct["primary_domain"]
     n = rng.randint(1000, 9999)
     if kind == "new_exec":
-        title = rng.choice(EXEC_TITLES)
-        return {"summary": f"Appointed a new {title} on {day_month(at)}.", "url": f"https://news.example.net/{slug}-names-{_slug(title)}-{n}",
-                "quote": f"{name} today announced the appointment of a new {title}."}
+        who, title = person["full_name"], person["title"]
+        return {"summary": f"Appointed {who} as {title} on {day_month(at)}.",
+                "url": f"https://news.example.net/{slug}-names-{_slug(title)}-{n}",
+                "quote": f"{name} today announced the appointment of {who} as {title}."}
     if kind == "hiring_function":
         role = rng.choice(ROLES)
         return {"summary": f"Posted a job for {article(role)} {role}.", "url": f"https://jobs.example.net/{slug}/{_slug(role)}-{n}",
@@ -81,14 +97,14 @@ def evidence(rng: random.Random, kind: str, acct: dict, at: datetime, person: di
         return {"summary": f"Research on {t} above their usual level.", "url": f"https://intent.example.net/{dom}/{n}",
                 "quote": f"Topic surge: {t}"}
     if kind == "competitor_review":
-        c = rng.choice(COMPETITORS)
+        c = acct["billing"]
         return {"summary": f"Left a review of {c} that mentions invoice errors.", "url": f"https://reviews.example.net/{_slug(c)}/review-{n}",
                 "quote": f"{c} works until usage pricing, then the invoices need fixing by hand."}
     if kind == "tech_added":
         t = rng.choice(["Snowflake", "NetSuite", "Databricks"])
         return {"summary": f"Started using {t}.", "url": f"https://stack.example.net/{dom}/{_slug(t)}", "quote": f"Detected: {t}"}
     if kind == "tech_removed":
-        c = rng.choice(COMPETITORS)
+        c = acct["billing"]
         return {"summary": f"Stopped using {c}.", "url": f"https://stack.example.net/{dom}/{_slug(c)}-removed",
                 "quote": f"No longer detected: {c}"}
     if kind == "pricing_change":
@@ -111,14 +127,26 @@ def evidence(rng: random.Random, kind: str, acct: dict, at: datetime, person: di
     raise ValueError(kind)
 
 
+def _eligible(kind: str, acct: dict) -> bool:
+    if kind == "competitor_review":
+        return acct["billing"] in REVIEWED and not acct["billing_dropped"]
+    if kind == "tech_removed":
+        return acct["billing"] in REPLACED and not acct["billing_dropped"]
+    return True
+
+
 def day_signals(cur, rng: random.Random, day_start: datetime) -> dict[str, list[dict]]:
     """Raw signals per source for one simulated day."""
     out: dict[str, list[dict]] = {}
-    accts = db.all(cur, """select a.id, a.name, a.primary_domain, sa.need::float as need from accounts a
-                           join sim_accounts sa on sa.account_id = a.id where a.lifecycle <> 'competitor'""")
+    accts = db.all(cur, """select a.id, a.name, a.primary_domain, sa.need::float as need, sa.billing, sa.billing_dropped
+                           from accounts a join sim_accounts sa on sa.account_id = a.id
+                           where a.lifecycle <> 'competitor' order by a.id""")
     for acct in accts:
         for kind, (source, base, link, person_level) in RATES.items():
-            if rng.random() >= 1.5 * (base + link * acct["need"]):
+            if not _eligible(kind, acct):
+                continue
+            rate = 1.5 * SCALE * COMPETITOR_BOOST.get(kind, 1.0) * (base + link * acct["need"])
+            if rng.random() >= rate:
                 continue
             at = day_start + timedelta(minutes=rng.randint(0, 24 * 60 - 1))
             person = None
@@ -135,7 +163,21 @@ def day_signals(cur, rng: random.Random, day_start: datetime) -> dict[str, list[
             if rng.random() < 0.04:  # some sources only know the company name, sometimes with a suffix
                 raw.pop("domain")
                 raw["company"] = acct["name"] + rng.choice(["", " Inc.", " Ltd"])
+            if kind == "tech_removed":  # a tool is dropped once; nobody reviews a tool they no longer use
+                db.run(cur, "update sim_accounts set billing_dropped = true where account_id = %s", acct["id"])
+                acct["billing_dropped"] = True
             out.setdefault(source, []).append(raw)
+    # A new finance leader: announced by the news on the day they start, naming them and the seat.
+    for c in db.all(cur, """select c.at, a.id, a.name, a.primary_domain, h.full_name, h.title, h.linkedin_url
+                            from sim_seat_changes c join accounts a on a.id = c.account_id
+                            join sim_hidden_people h on h.id = c.hidden_person_id
+                            where c.announced and c.at >= %s and c.at < %s order by c.id""",
+                    day_start, day_start + timedelta(days=1)):
+        who = {"full_name": c["full_name"], "title": c["title"], "linkedin_url": c["linkedin_url"]}
+        out.setdefault("news_feed", []).append({
+            "type": "new_exec", "external_id": f"news_feed-new_exec-{c['id']}-{c['at']:%Y%m%d}", "observed_at": c["at"],
+            "domain": c["primary_domain"], "strength": round(rng.uniform(0.75, 0.95), 2),
+            "evidence": evidence(rng, "new_exec", c, c["at"], who), "person": who})
     # Noise every real feed has: companies outside the account list, from several sources.
     for _ in range(rng.randint(0, 3)):
         name = f"{rng.choice(OUTSIDE_A)} {rng.choice(OUTSIDE_B)}"
@@ -147,13 +189,19 @@ def day_signals(cur, rng: random.Random, day_start: datetime) -> dict[str, list[
         out.setdefault(source, []).append({
             "type": kind, "external_id": f"{source}-outside-{rng.randint(10**8, 10**9)}", "observed_at": at,
             "domain": dom, "strength": 0.5, "evidence": evidence(rng, kind, fake, at, None)})
-    # Job changes: a known person moves. Most are reported by two sources a few days apart.
-    if rng.random() < 0.35:
+    # Job changes: a job-change feed watches the people it is given, the past champions and the people we have been in
+    # touch with, so those are the ones it reports moving. Most are reported by two sources a few days apart.
+    if rng.random() < MOVES_A_DAY:
         # Picks use the sim's seeded generator, never SQL random(), so the same seeds replay the same world.
-        movers = db.all(cur, """select p.id, p.full_name, p.linkedin_url, p.email, p.is_champion, p.account_id
-                               from people p join accounts a on a.id = p.account_id
-                               where p.status = 'active' and p.title ~* '(cfo|finance|controller|accounting|revenue|billing)'
-                               order by p.id""")
+        if rng.random() < CHAMPION_SHARE:
+            movers = db.all(cur, """select p.id, p.full_name, p.linkedin_url, p.email, p.is_champion, p.account_id
+                                   from people p where p.status = 'active' and p.is_champion and p.linkedin_url is not null
+                                   order by p.id""")
+        else:
+            movers = db.all(cur, """select p.id, p.full_name, p.linkedin_url, p.email, p.is_champion, p.account_id
+                                   from people p where p.status = 'active' and p.linkedin_url is not null and exists (
+                                     select 1 from touches t where t.person_id = p.id and t.direction = 'out')
+                                   order by p.id""")
         mover = rng.choice(movers) if movers else None
         targets = db.all(cur, """select a.id, a.primary_domain, a.name from accounts a join sim_accounts sa on sa.account_id = a.id
                                 where a.lifecycle = 'prospect' and a.id <> %s order by a.id""",

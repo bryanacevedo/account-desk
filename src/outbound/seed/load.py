@@ -52,9 +52,12 @@ def load_catalog(cur, *, start: datetime) -> dict:
                        values (%s, true, true, true, %s, true, %s, %s, %s, %s, %s)""",
                domain, "quarantine", (start - timedelta(days=age_days)).date(), start,
                None if young else 0.0004, None if young else start - timedelta(days=1), None if young else "compliant")
-        # At most 3 mailboxes per domain; each rep gets two mailboxes on the seasoned domains.
-        slots = {0: [0, 1, 2], 1: [3, 0, 1], 2: [2, 3], 3: [0, 1]}[d_i]
+        # At most 3 mailboxes per domain; each rep gets two mailboxes on the seasoned domains. The last two domains
+        # serve the two SDRs added later, so the first four keep their mailboxes as they were.
+        slots = {0: [0, 1, 2], 1: [3, 0, 1], 2: [2, 3], 3: [0, 1], 4: [4, 5], 5: [4, 5]}[d_i]
         for r_i in slots:
+            if r_i >= len(reps):
+                continue
             rep = reps[r_i]
             first, last = rep["name"].split()[0].lower(), rep["name"].split()[1].lower()
             addr = f"{first}@{domain}" if d_i % 2 == 0 else f"{first}.{last}@{domain}"

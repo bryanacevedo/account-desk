@@ -49,12 +49,13 @@ def _today(cur) -> date:
     return db.val(cur, "select app_now()::date")
 
 
-def _person_extras(cur, key: str, title: str, country: str | None) -> dict:
-    """What a people-data vendor adds: departments, when the role started, city, headline, how sure the match is."""
+def _person_extras(cur, key: str, title: str, country: str | None, started: date | None = None) -> dict:
+    """What a people-data vendor adds: departments, when the role started, city, headline, how sure the match is.
+    The start date is the world's own (sim_people, sim_hidden_people), so people data agrees with any announcement."""
     rng = random.Random(f"person-extras:{key}")
-    # Fixed to the world, not to today: someone who started in October is still the one who started in October next
-    # month. A few start inside the simulated months, which is what a new-in-seat signal is for.
-    started = WORLD_EPOCH - timedelta(days=int(rng.choice([rng.randint(-10, 60), rng.randint(120, 1400), rng.randint(200, 2400)])))
+    if started is None:
+        # Someone the world did not seat (a test's own person): fixed to the world, not to today.
+        started = WORLD_EPOCH - timedelta(days=int(rng.choice([rng.randint(120, 1400), rng.randint(200, 2400)])))
     started = min(started, _today(cur))
     city = {"US": ["New York", "Chicago", "Austin", "Denver"], "GB": ["London", "Manchester"], "DE": ["Berlin", "Munich"],
             "CA": ["Toronto"], "FR": ["Paris"]}.get(country or "", ["Remote"])
@@ -65,31 +66,46 @@ def _person_extras(cur, key: str, title: str, country: str | None) -> dict:
 
 class SimPeopleSearch:
     def search(self, cur, account: dict, title_patterns: list[str], limit: int) -> list[Candidate]:
-        rows = db.all(cur, "select * from sim_hidden_people where account_id = %s and found_person_id is null", account["id"])
+        # Only people at the company today: not a leader who starts next month, not one who has left.
+        rows = db.all(cur, """select * from sim_hidden_people where account_id = %s and found_person_id is null
+                              and (role_started is null or role_started <= app_now()::date)
+                              and (left_at is null or left_at > app_now()) order by id""", account["id"])
         pat = re.compile("|".join(re.escape(t) for t in title_patterns), re.I) if title_patterns else None
         hits = [r for r in rows if pat is None or pat.search(r["title"])]
         return [Candidate(full_name=r["full_name"], first_name=r["first_name"], last_name=r["last_name"], title=r["title"],
                           seniority=r["seniority"], linkedin_url=r["linkedin_url"], country=r["country"],
                           timezone=r["timezone"], vendor_ref=str(r["id"]), photo_url=r["photo_url"],
-                          **_person_extras(cur, f"h{r['id']}", r["title"], r["country"])) for r in hits[:limit]]
+                          **_person_extras(cur, f"h{r['id']}", r["title"], r["country"], r["role_started"]))
+                for r in hits[:limit]]
 
     def enrich(self, cur, person: dict) -> Candidate | None:
-        """A people match on someone the desk already has: same person, fresher details."""
+        """A people match on someone the desk already has: same person, fresher details. Someone known only by name (an
+        announcement, a referral) is matched to the world's person of that name at the company."""
         if not person.get("full_name"):
             return None
+        truth = db.one(cur, "select role_started from sim_people where person_id = %s", person["id"]) if person.get("id") else None
+        h = None
+        if truth is None and person.get("account_id"):
+            h = db.one(cur, """select * from sim_hidden_people where account_id = %s and lower(full_name) = lower(%s)
+                               order by id limit 1""", person["account_id"], person["full_name"])
         first, _, last = person["full_name"].partition(" ")
+        title = person.get("title") or (h["title"] if h else "")
+        country = person.get("country") or (h["country"] if h else None)
+        started = (truth or {}).get("role_started") or (h["role_started"] if h else None)
         return Candidate(full_name=person["full_name"], first_name=person.get("first_name") or first, last_name=last,
-                         title=person.get("title") or "", seniority=person.get("seniority"),
-                         linkedin_url=person.get("linkedin_url"), country=person.get("country"),
-                         timezone=person.get("timezone"), photo_url=person.get("photo_url"),
-                         **_person_extras(cur, f"p{person['id']}", person.get("title") or "", person.get("country")))
+                         title=title, seniority=person.get("seniority") or (h["seniority"] if h else None),
+                         linkedin_url=person.get("linkedin_url"), country=country,
+                         timezone=person.get("timezone") or (h["timezone"] if h else None), photo_url=person.get("photo_url"),
+                         **_person_extras(cur, f"p{person['id']}", title, country, started))
 
     def saved(self, cur, candidate: Candidate, person_id: int) -> None:
         h = db.one(cur, "select * from sim_hidden_people where id = %s", int(candidate.vendor_ref))
         db.run(cur, "update sim_hidden_people set found_person_id = %s where id = %s", person_id, h["id"])
-        db.run(cur, """insert into sim_people (person_id, true_email, email_truth, responsiveness, phone_truth)
-                       values (%s,%s,%s,%s,%s) on conflict do nothing""",
-               person_id, h["true_email"], h["email_truth"], h["responsiveness"], h["phone_truth"])
+        db.run(cur, """insert into sim_people (person_id, true_email, email_truth, responsiveness, phone_truth, role_started,
+                                               left_at)
+                       values (%s,%s,%s,%s,%s,%s,%s) on conflict do nothing""",
+               person_id, h["true_email"], h["email_truth"], h["responsiveness"], h["phone_truth"], h["role_started"],
+               h["left_at"])
         if h["is_champion"]:
             db.run(cur, "update people set is_champion = true where id = %s", person_id)
 
@@ -107,9 +123,11 @@ class SimFinder:
             if h is None:
                 return None
             db.run(cur, "update sim_hidden_people set found_person_id = %s where id = %s", person["id"], h["id"])
-            db.run(cur, """insert into sim_people (person_id, true_email, email_truth, responsiveness, phone_truth)
-                           values (%s,%s,%s,%s,%s) on conflict do nothing""",
-                   person["id"], h["true_email"], h["email_truth"], h["responsiveness"], h["phone_truth"])
+            db.run(cur, """insert into sim_people (person_id, true_email, email_truth, responsiveness, phone_truth,
+                                                   role_started, left_at)
+                           values (%s,%s,%s,%s,%s,%s,%s) on conflict do nothing""",
+                   person["id"], h["true_email"], h["email_truth"], h["responsiveness"], h["phone_truth"],
+                   h["role_started"], h["left_at"])
             truth = {"true_email": h["true_email"]}
         rng = random.Random(f"find:{person['id']}")
         if rng.random() < 0.12:
@@ -188,7 +206,8 @@ class SimCompany:
     """Company data. Headcount, open roles and tools drift with the account's hidden need, so two reads apart show
     a team growing, a role opening or a tool arriving where the need is real, and little where it is not."""
     name = "sim_company"
-    TOOLS = ["Snowflake", "NetSuite", "Stripe", "Salesforce", "HubSpot", "BigQuery", "Chargebee", "Zuora"]
+    # Tools that arrive over time are ones we connect to; a company does not quietly add a second billing system.
+    TOOLS = ["Snowflake", "NetSuite", "Stripe", "Salesforce", "HubSpot", "BigQuery"]
 
     def enrich(self, cur, account: dict) -> CompanyData | None:
         need = db.val(cur, "select need from sim_accounts where account_id = %s", account["id"])

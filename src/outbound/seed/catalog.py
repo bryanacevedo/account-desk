@@ -26,6 +26,8 @@ SETTINGS = {
     "placement_max_age_days": 10,
     # LinkedIn caps connection notes, lower on free accounts; set this to what the SDRs' accounts allow.
     "linkedin_note_max_chars": 200,
+    # Billing tools we replace. One arriving is not a reason to call; one leaving is ("Dropped a tool we replace").
+    "competing_tools": ["Chargewise", "Meterline", "Chargebee", "Zuora"],
 }
 
 USERS = [
@@ -36,6 +38,9 @@ USERS = [
     ("Tom Whitaker", "tom.whitaker@lumenledger.example", "sdr", "America/Los_Angeles"),
     ("Elena Duarte", "elena.duarte@lumenledger.example", "manager", "America/New_York"),
     ("Sam Kowalski", "sam.kowalski@lumenledger.example", "gtm", "America/New_York"),
+    # Added when the demo grew to about 3,000 accounts: after the first six, so every earlier id stays the same.
+    ("Jonas Weber", "jonas.weber@lumenledger.example", "sdr", "Europe/Berlin"),
+    ("Grace Osei", "grace.osei@lumenledger.example", "sdr", "America/Denver"),
 ]
 
 PERSONAS = [
@@ -73,7 +78,7 @@ SIGNAL_TYPES = [
     ("pricing_change", "Changed their pricing model", "Moving to usage-based pricing breaks seat-based billing systems.",
      "account", 20, 45),
     ("social_engaged", "Engaged with the topic", "A person engaged with posts about usage-based billing.", "person", 7, 14),
-    ("job_change", "Someone we know moved", "A person we have spoken to joined this company.", "person", 12, 60),
+    ("job_change", "Someone we know moved", "A person we have been in touch with joined this company.", "person", 12, 60),
     ("closed_lost_revisit", "Closed-lost, time to revisit", "We lost a deal here over timing, and the timing has passed.",
      "account", 14, 60),
     ("product_signup", "Signed up for the free tier", "Trying the product means they already have the problem.", "account", 20, 14),
@@ -164,29 +169,46 @@ PLAYS = [
 ]
 
 HOLIDAYS = [
+    ("US", "2026-09-07", "Labor Day"),
     ("US", "2026-11-26", "Thanksgiving"), ("US", "2026-11-27", "Day after Thanksgiving"),
     ("US", "2026-12-25", "Christmas Day"), ("US", "2027-01-01", "New Year's Day"),
     ("US", "2027-01-18", "Martin Luther King Jr. Day"), ("US", "2026-10-12", "Columbus Day"),
+    ("GB", "2026-08-31", "Summer bank holiday (England, Wales and Northern Ireland)"),
     ("GB", "2026-12-25", "Christmas Day"), ("GB", "2026-12-28", "Boxing Day (substitute)"),
     ("GB", "2027-01-01", "New Year's Day"), ("DE", "2026-10-03", "German Unity Day"),
     ("DE", "2026-12-25", "Christmas Day"), ("DE", "2026-12-26", "St Stephen's Day"),
     ("DE", "2027-01-01", "New Year's Day"), ("FR", "2026-11-11", "Armistice Day"),
     ("FR", "2026-12-25", "Christmas Day"), ("FR", "2027-01-01", "New Year's Day"),
     ("NL", "2026-12-25", "Christmas Day"), ("NL", "2026-12-26", "Second Christmas Day"),
-    ("CA", "2026-10-12", "Thanksgiving"), ("CA", "2026-11-11", "Remembrance Day"),
+    # Remembrance Day (11 November) is not a statutory holiday in Ontario or Quebec, where most of the demo's Canadian
+    # contacts work, so it is not a day off here.
+    ("CA", "2026-09-07", "Labour Day"), ("CA", "2026-10-12", "Thanksgiving"),
     ("CA", "2026-12-25", "Christmas Day"), ("CA", "2026-12-26", "Boxing Day"),
     ("ES", "2026-10-12", "National Day"), ("ES", "2026-12-08", "Immaculate Conception"),
     ("ES", "2026-12-25", "Christmas Day"),
+    ("IE", "2026-10-26", "October bank holiday"), ("IE", "2026-12-25", "Christmas Day"),
+    ("IE", "2026-12-28", "St Stephen's Day (substitute)"), ("IE", "2027-01-01", "New Year's Day"),
+    # Brazil's national holidays (Lei 662/1949, Lei 6.802/1980, Lei 14.759/2023).
+    ("BR", "2026-09-07", "Independence Day"), ("BR", "2026-10-12", "Our Lady of Aparecida"),
+    ("BR", "2026-11-02", "All Souls' Day"), ("BR", "2026-11-20", "Black Consciousness Day"),
+    ("BR", "2026-12-25", "Christmas Day"), ("BR", "2027-01-01", "New Year's Day"),
 ]
 
+# A country not listed here gets no cold email at all until a manager adds its rule (gate.no_rule_message).
 REGION_RULES = [
     ("US", "allowed"), ("CA", "consent_required"), ("GB", "basis_required"), ("DE", "consent_required"),
     ("FR", "basis_required"), ("NL", "basis_required"), ("ES", "basis_required"), ("IE", "basis_required"),
+    # Brazil's LGPD allows legitimate interest (art. 7 IX) with a recorded assessment (art. 10). Counsel to confirm.
+    ("BR", "basis_required"),
+    # Not a legal rule: the demo's seller does not sell in Singapore yet, so it does not email there. Australia has no
+    # rule at all, so nobody there is cold-emailed until a manager adds one.
+    ("SG", "blocked"),
 ]
 
 SENDING_DOMAINS = [
     # domain, registered days before start, mailboxes per (user index)
     ("getlumenledger.com", 220), ("lumenledger-hq.com", 210), ("trylumenledger.com", 190), ("lumenledgerapp.com", 25),
+    ("hellolumenledger.com", 200), ("meetlumenledger.com", 180),
 ]
 
 # The monthly cap each demo play was launched with (credits per vendor, AI in cents).

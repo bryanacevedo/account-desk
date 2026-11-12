@@ -22,7 +22,7 @@ def reset(url: str | None = None) -> None:
     db.migrate(url)
 
 
-def setup(*, start: datetime, seed: int = 7, n_accounts: int = 700) -> dict:
+def setup(*, start: datetime, seed: int = 7, n_accounts: int = 3000) -> dict:
     clock.set_sim(start)
     from .. import llm
     llm.SIM_CHARGE = True  # the demo's AI work costs what it would
@@ -150,23 +150,111 @@ def _working(at: datetime, tzname: str) -> bool:
     return local.weekday() < 5 and 9 <= local.hour < 18
 
 
+# How often SDRs approve a draft without touching it, below the 0.92 of drafts they approve at all. A planted
+# difference (README, "What is real and what is simulated"): the new finance leader play's drafts need fewer edits, so it
+# is the play that earns autonomy, the way one play usually earns it first on a real desk.
+UNEDITED = {"new_finance_leader": 0.885}
+
+
+def sdr_edit(body: str) -> str:
+    """An SDR's edit: their own ask in place of the drafted one. A draft with no ask (a break-up note) is approved as
+    it was."""
+    from ..sim_llm import ASK
+    for ask in ASK:
+        if ask in body:
+            return body.replace(ask, "Would 20 minutes next week be useful?", 1)
+    return body
+
+
+def manager_reviews_autonomy(cur, at: datetime) -> None:
+    """Monday mornings the manager looks at each live play's checks and approves the next stage when the desk says it
+    is earned: the same rule the Plays page applies to a person's click (a manager, one stage, every check passed)."""
+    from .. import audit, views
+    manager = db.one(cur, "select id from users where role = 'manager' and active order by id limit 1")
+    if manager is None:
+        return
+    for p in db.all(cur, "select * from plays where status = 'live' order by id"):
+        check = views.promotion_check(cur, p)
+        if not (check["ready"] and check["next"]):
+            continue
+        reason = "Met every check: " + "; ".join(f"{c['label']} {c['value']}" for c in check["checks"])
+        db.run(cur, "update plays set autonomy = %s where id = %s", check["next"], p["id"])
+        db.run(cur, "insert into play_stage_changes (play_id, from_stage, to_stage, reason, decided_by) values (%s,%s,%s,%s,%s)",
+               p["id"], p["autonomy"], check["next"], reason, manager["id"])
+        audit.log(cur, "person", "play_changed", "play", p["id"], {"autonomy": check["next"], "reason": reason},
+                  actor_id=manager["id"])
+
+
+# What the manager and GTM do with play suggestions, in the order they are opened: GTM makes the first a draft play,
+# the manager sets the next aside for now, and says no to the one after. A planted routine (README).
+SUGGESTION_ROUTINE = ["draft", "not_now", "dismissed"]
+
+
+def review_suggestions(at: datetime) -> None:
+    """Tuesdays, on its own transactions through the same code the web app calls (the API's own functions)."""
+    from pydantic import ValidationError
+
+    from .. import play_editor, suggestions
+    from ..api import app as api
+    from ..seed import catalog
+    with db.tx() as cur:
+        gtm = db.one(cur, "select id, role from users where role = 'gtm' and active order by id limit 1")
+        manager = db.one(cur, "select id, role from users where role = 'manager' and active order by id limit 1")
+        decided = db.val(cur, "select count(*) from play_suggestions where status in ('drafted', 'not_now', 'dismissed')")
+        waiting = db.all(cur, """select id, theme_id from play_suggestions where status = 'open'
+                                 and created_at < %s - interval '3 days' order by created_at, id""", at)
+    for s in waiting:
+        if decided >= len(SUGGESTION_ROUTINE):
+            return
+        step = SUGGESTION_ROUTINE[decided]
+        if step == "draft" and gtm:
+            with db.tx() as cur:
+                full = suggestions.one(cur, s["id"])
+            d = full["draft"]
+            body = play_editor.PlayIn(
+                name=d["name"], hypothesis=d["hypothesis"],
+                trigger={"any_of": d["trigger"]["any_of"], "fit_tiers": ["A", "B"], "min_priority": 40, "within_days": 30},
+                personas=d["personas"], max_people=3, sequence=catalog.STANDARD, angle=d["angle"], holdout_pct=20,
+                latency_hours=48, suggested_from=s["theme_id"])
+            try:
+                api.create_play(body, gtm)
+            except (ValidationError, api.HTTPException) as exc:
+                log.info("suggestion %s not drafted: %s", s["id"], exc)
+                continue
+        elif step in ("not_now", "dismissed") and manager:
+            with db.tx() as cur:
+                suggestions.decide(cur, s["id"], decision=step, user_id=manager["id"],
+                                   reason="Revisit after Q1 planning" if step == "not_now" else "An existing play already covers it")
+        decided += 1
+
+
+def skip_reasons(employees: int | None) -> list[str]:
+    """Why an SDR passes on a proposal, in words that fit the account: nobody calls a 300-person company too small."""
+    out = ["Already talking to them through a partner", "Wrong timing for this account"]
+    if employees is not None and employees < 150:
+        out.append("Too small for us right now")
+    if employees is not None and employees >= 2000:
+        out.append("The enterprise team works this account")
+    return out
+
+
 def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None:
     reps = db.all(cur, "select * from users where role in ('sdr', 'manager')")
     for u in reps:
         if not _working(at, u["timezone"]) or rng.random() > eagerness:
             continue
         # Proposals: accept most, skip some with a reason.
-        for ap in db.all(cur, "select id from account_plays where owner_id = %s and state = 'proposed' order by proposed_at limit 3",
+        for ap in db.all(cur, """select ap.id, a.employees from account_plays ap join accounts a on a.id = ap.account_id
+                                 where ap.owner_id = %s and ap.state = 'proposed' order by ap.proposed_at limit 3""",
                          u["id"]):
             if rng.random() < 0.82:
                 plays.decide(cur, ap["id"], accept=True, user_id=u["id"])
             elif rng.random() < 0.5:
-                plays.decide(cur, ap["id"], accept=False, user_id=u["id"],
-                             reason=rng.choice(["Already talking to them through a partner", "Wrong timing for this account",
-                                                "Too small for us right now"]))
+                plays.decide(cur, ap["id"], accept=False, user_id=u["id"], reason=rng.choice(skip_reasons(ap["employees"])))
         # Drafts: approve most, edit a few, reject a few.
-        for m in db.all(cur, """select m.id, m.body, m.status from messages m join enrollments e on e.id = m.enrollment_id
-                                join account_plays ap on ap.id = e.account_play_id
+        for m in db.all(cur, """select m.id, m.body, m.status, pl.key as play from messages m
+                                join enrollments e on e.id = m.enrollment_id
+                                join account_plays ap on ap.id = e.account_play_id join plays pl on pl.id = ap.play_id
                                 where ap.owner_id = %s and m.status in ('awaiting_approval', 'failed_gate') and m.channel = 'email'
                                 order by m.created_at limit 6""", u["id"]):
             roll = rng.random()
@@ -175,12 +263,10 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
                     if roll < 0.5:
                         outreach.reject(cur, m["id"], user_id=u["id"], reason="Did not pass the checks; skipping")
                     continue
-                if roll < 0.80:
+                if roll < UNEDITED.get(m["play"], 0.80):
                     outreach.approve(cur, m["id"], user_id=u["id"])
                 elif roll < 0.92:
-                    outreach.approve(cur, m["id"], user_id=u["id"],
-                                     body=m["body"].replace("Would a short call next week be useful?",
-                                                            "Would 20 minutes next week be useful?"))
+                    outreach.approve(cur, m["id"], user_id=u["id"], body=sdr_edit(m["body"]))
                 else:
                     outreach.reject(cur, m["id"], user_id=u["id"], reason=rng.choice(
                         ["Tone is off for this person", "I know them, I'll write myself", "Wrong person for this"]))
@@ -192,7 +278,7 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
             truth = (r["extracted"] or {}).get("_sim_kind")
             label = {"positive": "interested", "not_now": "not_now", "not_interested": "not_interested",
                      "referral": "referral", "wrong_person": "wrong_person", "unsubscribe": "unsubscribe",
-                     "ooo": "out_of_office"}.get(truth, "other")
+                     "ooo": "out_of_office", "auto": "auto_reply"}.get(truth, "other")
             replies.handle(cur, r["id"], user_id=u["id"], outcome="labelled", label=label)
         # Hot replies: answer, and book a meeting when the buyer wants one.
         for r in db.all(cur, """select r.* from replies r join tasks t on t.reply_id = r.id and t.kind = 'reply'
@@ -251,7 +337,20 @@ SAID = ["{}", "Controller: {}", "CFO said it twice: {}", "{} Came up before we a
         "{} It was the first thing they raised.", "Head of billing, unprompted: {}"]
 
 
-def call_notes(rng: random.Random, signal_type: str | None = None) -> str:
+# Reasons a buyer gives for not buying, and lines worth keeping word for word.
+NOT_BUYING = ["No budget until the new fiscal year.", "They just renewed their billing tool and signed for two years."]
+SAID_ON_CALLS = ["Month-end is three people and a spreadsheet.", "Every usage invoice gets touched by hand twice.",
+                 "Our auditors ask the same question every quarter.", "Sales and finance never agree on the number."]
+
+# What a buyer says about the billing they run today: always the account's own tool (sim_accounts.billing).
+ON_TODAY = {"Chargewise": "Currently on Chargewise, contract ends in June.",
+            "Meterline": "Currently on Meterline; the renewal comes up in the spring.",
+            "Stripe Billing": "Billing runs on Stripe Billing today.",
+            "an in-house billing system": "Built an in-house billing script that one engineer maintains.",
+            "spreadsheets and Stripe invoices": "Billing runs on spreadsheets and Stripe invoices."}
+
+
+def call_notes(rng: random.Random, signal_type: str | None = None, billing: str | None = None) -> str:
     def pick(pool, k):
         return [rng.choice(x) if isinstance(x, tuple) else x
                 for x in rng.choices([x for x, _ in pool], weights=[w for _, w in pool], k=k)]
@@ -259,7 +358,16 @@ def call_notes(rng: random.Random, signal_type: str | None = None) -> str:
     if signal_type in PLANTED and rng.random() < PLANTED_SHARE:
         said = rng.choice(PLANTED[signal_type])
         lines.append(rng.choice(SAID).format(said))
-    lines += pick(OBJECTIONS, rng.randint(0, 2)) + pick(TOOLS, rng.randint(0, 1))
+    tools = pick(TOOLS, rng.randint(0, 1))
+    if billing in ON_TODAY:
+        # A line about the tool they run is about their own tool; a Meterline user is not "also looking at Meterline".
+        tools = [t if t in TOOLS[1][0] and billing != "Meterline" else ON_TODAY[billing] for t in tools]
+    lines += pick(OBJECTIONS, rng.randint(0, 2)) + tools
+    # Drawn last, so the lines above are what they were before these were added.
+    if rng.random() < 0.15:
+        lines.append(rng.choice(NOT_BUYING))
+    if rng.random() < 0.2:
+        lines.append(f'In their words: "{rng.choice(SAID_ON_CALLS)}"')
     return "\n".join(dict.fromkeys(lines))
 
 
@@ -278,8 +386,13 @@ def _crm_deal(cur, rng: random.Random, at: datetime, account_id: int, need: floa
            at + timedelta(days=rng.randint(20, 70)), rng.random() < 0.2 + 0.45 * need)
 
 
+def _open_deal(cur, account_id: int) -> bool:
+    return db.val(cur, "select exists (select 1 from sim_crm_deals where account_id = %s and closed_at is null)", account_id)
+
+
 def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
-    for m in db.all(cur, """select m.*, sa.need::float as need, p.email, s.type_key, coalesce(m.owner_id, a.owner_id) as writer
+    for m in db.all(cur, """select m.*, sa.need::float as need, sa.billing, p.email, s.type_key,
+                                   coalesce(m.owner_id, a.owner_id) as writer
                             from meetings m join sim_accounts sa on sa.account_id = m.account_id
                             join accounts a on a.id = m.account_id left join people p on p.id = m.person_id
                             left join account_plays ap on ap.id = m.account_play_id left join signals s on s.id = ap.trigger_signal_id
@@ -288,7 +401,7 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
         pipeline.set_meeting_status(cur, m["id"], status)
         if status == "held":
             # What was said on the call has its own random stream, so the notes never shift the rest of the world.
-            notes = call_notes(random.Random(f"notes:{m['id']}"), m["type_key"])
+            notes = call_notes(random.Random(f"notes:{m['id']}"), m["type_key"], m["billing"])
             nid = pipeline.record_call_notes(cur, m["id"], notes, m["writer"])
             if rng.random() < 0.9:
                 pipeline.learn_from(cur, nid, m["writer"])
@@ -298,7 +411,10 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
     for ev in db.all(cur, "select * from sim_events where kind = 'opportunity' and not done and at <= %s", at):
         p = ev["payload"]
         need = db.val(cur, "select need::float from sim_accounts where account_id = %s", p["account_id"]) or 0.3
-        _crm_deal(cur, rng, ev["at"], p["account_id"], need, p.get("email"))
+        # One open new-business deal per company: a second good meeting moves the open deal along, it does not open
+        # another (found 2026-11-11: two deals from one meeting at one account).
+        if not _open_deal(cur, p["account_id"]):
+            _crm_deal(cur, rng, ev["at"], p["account_id"], need, p.get("email"))
         db.run(cur, "update sim_events set done = true where id = %s", ev["id"])
     # Deals move: a stage every week or two, then they close on their hidden date.
     for d in db.all(cur, "select * from sim_crm_deals where closed_at is null and updated_at < %s - interval '9 days'", at):
@@ -312,6 +428,8 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
                    STAGES[STAGES.index(d["stage"]) + 1], at, d["id"])
     if at.hour == 15:
         _organic(cur, rng, at)
+    if at.hour == 14 and at.weekday() == 0:
+        manager_reviews_autonomy(cur, at)
     if at.hour == 16 and at.weekday() == 0 and rng.random() < 0.5:
         _rebalance(cur, rng, at)
 
@@ -336,7 +454,7 @@ def _organic(cur, rng: random.Random, at: datetime) -> None:
                 pipeline.book_meeting(cur, account_id=a["id"], person_id=person["id"],
                                       starts_at=at + timedelta(days=rng.randint(2, 6)), source="inbound",
                                       external_id=f"sim-inbound-{a['id']}-{at:%Y%m%d}")
-        elif rng.random() < 0.0004 * a["need"]:
+        elif rng.random() < 0.0004 * a["need"] and not _open_deal(cur, a["id"]):
             _crm_deal(cur, rng, at, a["id"], a["need"], None)
 
 
@@ -350,6 +468,8 @@ def _hour(cur_rng: random.Random, at: datetime, eagerness: float, totals: dict) 
     with db.tx() as cur:
         act_as_reps(cur, cur_rng, at, eagerness)
         meetings_and_deals(cur, cur_rng, at)
+    if at.hour == 15 and at.weekday() == 1 and eagerness > 0:
+        review_suggestions(at)
     totals["jobs"] += jobs.run_ready(limit=2000)
 
 
