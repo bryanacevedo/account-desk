@@ -84,7 +84,7 @@ make setup
 make demo
 ```
 
-That builds an invented company with 700 accounts, simulates 90 days of signals, SDRs, buyers and vendors (about two minutes), and serves the desk at http://localhost:8800. Pick who you are acting as in the sidebar. "Move a day ahead" runs the world forward a day.
+That builds an invented company with 3,000 accounts and about 24,700 people (eight or so a company, with a real finance and revenue operations bench), six SDRs, a manager and GTM engineering, simulates 90 days of signals, SDRs, buyers and vendors (about ten minutes on a laptop), and serves the desk at http://localhost:8800. Pick who you are acting as in the sidebar. "Move a day ahead" runs the world forward a day. `make coverage` then counts every scenario the demo shows.
 
 ```bash
 make test

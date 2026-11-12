@@ -1,6 +1,7 @@
 #!/bin/sh
 # Runs once while the image is built: creates the demo database inside the image, so a start (or a wake from
-# sleep) only boots Postgres. The simulation itself takes minutes on a small machine.
+# sleep) only boots Postgres. The 3,000-account, 90-day simulation takes about ten minutes on a laptop and longer on
+# a small builder; the database it leaves is about 125 MB.
 set -e
 PGBIN=$(ls -d /usr/lib/postgresql/*/bin | tail -1)
 su postgres -c "$PGBIN/initdb -D /data -U postgres --auth=trust -E UTF8" >/dev/null

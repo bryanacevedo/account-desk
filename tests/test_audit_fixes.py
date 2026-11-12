@@ -199,6 +199,21 @@ def test_reading_a_website_is_logged_as_free_with_no_ledger_row(cur):
     assert "research" not in spend.RATES
 
 
+def test_a_referral_whose_address_cannot_be_confirmed_leaves_a_task(cur, scene, monkeypatch):  # noqa: F811
+    """Found when the 3,000-account demo's referral job died: the finder can answer catch_all."""
+    db.run(cur, "update plays set sequence = %s where id = %s",
+           J([{"day": 0, "channel": "email", "job": "open", "by": "desk"}]), scene["play"])
+    monkeypatch.setattr(outreach, "_ensure_email", lambda cur, person, account: "catch_all")
+    monkeypatch.setattr(enrichment, "locate_person",  # people data says where they work from
+                        lambda cur, pid: db.run(cur, "update people set country = 'US' where id = %s", pid))
+    rid = db.val(cur, """insert into replies (message_id, person_id, account_id, received_at, from_addr, raw, cleaned, label,
+                                              extracted, handled_at) values (%s, %s, %s, now(), 'ana@x.example',
+                                              'Talk to Rui Lopes', 'Talk to Rui Lopes', 'referral', %s, now()) returning id""",
+                 scene["message"], scene["person"], scene["account"], J({"referral": {"name": "Rui Lopes"}}))
+    outreach.enroll_referral(cur, {"reply_id": rid})
+    assert "accepts every address" in db.val(cur, "select note from tasks where reply_id = %s", rid)
+
+
 def test_a_research_stage_play_stays_open_while_the_sdr_writes(cur, scene):  # noqa: F811
     db.run(cur, "update plays set sequence = %s where id = %s",
            J([{"day": 0, "channel": "email", "job": "open", "by": "desk"}, {"day": 10, "channel": "email", "job": "break_up",

@@ -205,8 +205,10 @@ def enroll_referral(cur, payload: dict) -> None:
     if _first_channel(play) == "email":
         status = _ensure_email(cur, person, account)
         if status != "valid":
+            # _ensure_email says catch_all for an unconfirmed address (found when a referral's job died on it).
             return task({"missing": "No email address found for them", "risky": "Their email could not be confirmed",
-                         "invalid": "Their email address does not work"}[status])
+                         "catch_all": "Their company accepts every address, so theirs could not be confirmed",
+                         "invalid": "Their email address does not work"}.get(status, "Their email could not be confirmed"))
     persona = _persona_for(cur, person["title"]) or db.val(
         cur, "select persona_key from enrollments where person_id = %s order by created_at desc limit 1", r["person_id"]) or "cfo"
     db.run(cur, "update people set persona_key = coalesce(persona_key, %s) where id = %s", persona, pid)
