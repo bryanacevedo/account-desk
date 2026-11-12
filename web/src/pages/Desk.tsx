@@ -9,6 +9,19 @@ import { SignalLabel } from "../signalIcons";
 
 // ---------------------------------------------------------------- Deliverability
 
+/** What Google Postmaster Tools says about a domain: its verdict and spam rate, or that it has no data yet. */
+function postmaster(d: any) {
+  const verdict = d.postmaster_status && d.postmaster_status !== "unknown" ? d.postmaster_status.replace("_", " ") : null;
+  if (!verdict && d.spam_rate === null) return "Google Postmaster: no data yet";
+  return `Google Postmaster: ${verdict ?? "no verdict"}, spam rate ${d.spam_rate === null ? "none yet" : pct(d.spam_rate, 2)}`;
+}
+
+/** A mailbox's warm-up vendor status; the desk's own ramp is separate. */
+function warmup(w: any) {
+  if (!w) return "Warm-up: no vendor connected";
+  return w.state === "warming" ? `Warm-up: warming, day ${w.day + 1} of 14` : `Warm-up: maintaining${w.score == null ? "" : `, score ${w.score}`}`;
+}
+
 export function Deliverability() {
   const { data, error, reload } = useData<any>("/api/deliverability");
   const me = useData<any>("/api/me").data;
@@ -34,7 +47,7 @@ export function Deliverability() {
             const auth = d.spf && d.dkim && d.dmarc && d.dmarc_aligned;
             return (
               <div key={d.domain} className="row" style={{ gridTemplateColumns: D_COLS }}>
-                <div className="cell-main"><span className="t">{d.domain}</span><span className="s">{d.dmarc_policy ? `DMARC ${d.dmarc_policy}` : "No DMARC policy"}{d.blocklisted ? ", on a blocklist" : ""}{d.checked_at ? `, DNS read ${ago(d.checked_at)}` : ", DNS not read yet"}</span></div>
+                <div className="cell-main"><span className="t">{d.domain}</span><span className="s">{d.dmarc_policy ? `DMARC ${d.dmarc_policy}` : "No DMARC policy"}{d.blocklisted ? ", on a blocklist" : ""}{d.checked_at ? `, DNS read ${ago(d.checked_at)}` : ", DNS not read yet"}</span><span className="s">{postmaster(d)}</span></div>
                 <Status kind={auth ? "ok" : "stop"}>{auth ? "SPF, DKIM, DMARC aligned" : `${[!d.spf && "SPF", !d.dkim && "DKIM", !d.dmarc && "DMARC", d.dmarc && !d.dmarc_aligned && "alignment"].filter(Boolean).join(", ")} failing`}</Status>
                 <span className="num">{d.age_days} days</span>
                 <span className="num">{d.spam_rate === null ? <span className="mute">Not reported yet</span> : pct(d.spam_rate, 2)}</span>
@@ -49,7 +62,7 @@ export function Deliverability() {
           <div className="row head" style={{ gridTemplateColumns: isManager ? M_COLS_ADMIN : M_COLS }}><span>Mailbox</span><span>Status</span><span className="num">Today</span><span className="num">Sent, 14 days</span><span className="num">Bounced</span>{isManager ? <span /> : null}</div>
           {data.mailboxes.map((m: any) => (
             <div key={m.id} className="row" style={{ gridTemplateColumns: isManager ? M_COLS_ADMIN : M_COLS }}>
-              <div className="cell-main"><span className="t">{m.address}</span><span className="s">{m.owner}, {cap(m.provider)}</span></div>
+              <div className="cell-main"><span className="t">{m.address}</span><span className="s">{m.owner}, {cap(m.provider)}</span><span className="s">{warmup(m.warmup)}</span></div>
               <Status kind={m.blocked ? (m.status === "paused" ? "stop" : "wait") : "ok"}>{m.blocked || "Sending"}</Status>
               <span className="num">{m.today} <span className="faint">of {m.cap}</span></span>
               <span className="num">{m.sent}</span>
