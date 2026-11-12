@@ -237,7 +237,25 @@ def get() -> Adapters:
         if CONFIG.mode == "live":
             from . import live
             _cached = live.adapters(_cached)
+        _cached.crm = choose_crm(_cached.crm)
     return _cached
+
+
+def choose_crm(current):
+    """CRM picks the desk's CRM. Unset keeps today's: the simulated CRM in demo mode, a refusing one in live mode.
+    `crmdesk` is CRM Desk. `salesforce` is refused until a Salesforce adapter exists, rather than run on a stand-in."""
+    import os
+    choice = os.environ.get("CRM", "").strip().lower()
+    if choice in ("", "default"):
+        return current
+    if choice == "crmdesk":
+        from .crmdesk import CrmDeskCrm
+        return CrmDeskCrm.from_env()
+    if choice == "sim" and CONFIG.mode != "live":
+        return current
+    if choice == "salesforce":
+        raise SystemExit("CRM=salesforce: this desk has no Salesforce adapter yet. Leave CRM unset or use CRM=crmdesk.")
+    raise SystemExit(f"CRM={choice} is not a CRM this desk knows. Use crmdesk, or leave it unset.")
 
 
 def override(a: Adapters | None) -> None:
