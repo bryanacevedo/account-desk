@@ -7,7 +7,7 @@
 **Signal-based, account-based outbound for a small B2B sales team, with a person on every send until a play earns more.**
 
 [![CI](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-318%20passing%20on%20Postgres%2018-2B47C9)
+![tests](https://img.shields.io/badge/tests-325%20passing%20on%20Postgres%2018-2B47C9)
 ![python](https://img.shields.io/badge/python-3.13-2B47C9)
 [![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial-5E6A62)](LICENSE.md)
 
@@ -189,7 +189,7 @@ That builds the invented company and simulates 90 days of signals, SDRs, buyers 
 make test
 ```
 
-The tests run on real Postgres, including a 21-day simulation of the whole desk followed by every promise checked against what happened (nobody held back was contacted, nothing was sent after a reply, every sent email matches what was approved and carries its legal footer, no email cites tracking data) and one full 90-day demo build.
+The tests run on real Postgres, including a 21-day simulation of the whole desk followed by every promise checked against what happened (nobody held back was contacted, nothing was sent after a reply, every sent email matches what was approved and carries its legal footer, no email cites tracking data) and one full 90-day demo build. On 2026-11-12: 325 passed, and 2 skipped, the CRM Desk half of the contract tests, which needs a running CRM Desk.
 
 ### A real desk, not the demo
 
@@ -211,6 +211,10 @@ python -m outbound import people examples/people.example.csv
 
 Set `LINKEDIN_TOOL_TOKEN` to a long random string, then in HeyReach add a webhook to `https://<your desk>/api/webhooks/linkedin/<token>` for "Connection request accepted" and "Message reply received". The desk finds the person by their LinkedIn profile; events for people it does not know are acknowledged and noted. HeyReach reports only the first reply in a conversation, so later messages are pasted on the person's page. Read the terms note under [Compliance](#compliance) first.
 
+### Choosing the CRM
+
+`CRM` picks the desk's CRM. Unset, nothing changes: the demo keeps its simulated CRM, and live mode keeps a CRM that refuses. `CRM=crmdesk` makes [CRM Desk](https://crm-desk-sevh.onrender.com) the CRM through `src/outbound/adapters/crmdesk.py`: the CRM outbox writes emails, SDR steps, meetings, tasks and opt-outs there, and the desk reads deals and account owners from its change feeds. It needs `CRM_DESK_URL` and `CRM_DESK_KEY`. Every call fails closed: a timeout, a refused connection, a 429 or a 5xx leaves the outbox row queued to try again, up to five tries, after which it is marked dead and raises an alert. `CRM=salesforce` is refused with an error, because there is no Salesforce adapter yet, and so is any value the desk does not know (`default` means the same as unset). The contract tests (`tests/test_crm_contract.py`) run on both CRMs where they apply; the CRM Desk half needs a running CRM Desk named by `CRM_DESK_URL`, `CRM_DESK_KEY` and `CRM_DESK_ADMIN_KEY`, and is skipped without them. The public CRM Desk demo refuses API keys, so it needs your own install.
+
 ### At production size
 
 Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts simulated for 30 days in 71 seconds with no failed job, then 2 million signals loaded on top. Every page answered in under 50 ms except Signals (under 0.2 s); rescoring took 10 ms an account and 0.8 s per nightly batch of 500; every monitor ran in 50 ms or less. At that size the monitors found the real limit: four SDRs cannot approve first emails fast enough for 5,000 accounts, so 38 accepted accounts passed their play's time limit before a first email. The fix is people or autonomy, not code.
@@ -228,6 +232,8 @@ Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts 
 | `POSTMASTER_CLIENT_ID`, `POSTMASTER_CLIENT_SECRET`, `POSTMASTER_REFRESH_TOKEN` | Google Postmaster Tools; any unset means no Postmaster data, said so |
 | `LINKEDIN_TOOL_TOKEN` | Turns on the HeyReach webhook |
 | `ANTHROPIC_LIVE` | Live Claude instead of the stand-in |
+| `CRM` | Which CRM the desk uses. Unset keeps today's: the simulated CRM in demo mode, and in live mode one that refuses. `crmdesk` uses CRM Desk; `salesforce` is refused, since no Salesforce adapter exists yet (decision 61) |
+| `CRM_DESK_URL`, `CRM_DESK_KEY` | Needed with `CRM=crmdesk`: the CRM Desk install and a key made there with `--desk account_desk` |
 
 Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/catalog.py`): `retention_months` (12), `call_window` (09:00 to 18:00, weekdays, in the person's own time). Each play also carries `lia_ref` and `lia_review_due`, its legitimate-interest assessment and when it is next reviewed.
 
@@ -239,6 +245,7 @@ Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/cata
 
 - Every AI task is measured on real Claude answers; the demo and tests use a deterministic stand-in. The eval cases are written to be realistic, but none is a real buyer's reply.
 - Only the DNS check has a live adapter that has run against the real service. The Postmaster Tools adapter has never called Google: its endpoints and field names come from the v2 reference, and Postmaster returns nothing until a domain is verified there and sends enough mail to Gmail. The warm-up vendor has no live adapter. There is no mail provider adapter, so a live desk cannot send email; the other vendor contracts are in `src/outbound/adapters/__init__.py`. Yahoo's feedback loop and Microsoft SNDS are not built.
+- The CRM Desk adapter has run only against a CRM Desk holding invented data, and there is no Salesforce adapter, so a team on Salesforce cannot connect its CRM yet.
 - The HeyReach webhook has not seen a real HeyReach event; the accepted event's field names come from third-party guides.
 - Cloudflare Access sign-in has not been run against a real Access app, and contention was measured with one server process. Rate limits are held in memory, for one instance.
 - Prices on the cost page are demo assumptions until a manager enters real ones.
@@ -266,12 +273,14 @@ Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/cata
 
 ## Portfolio
 
-| Project | What it does |
-|---|---|
-| [Events Desk](https://github.com/bryanacevedo/events-desk) | For someone who runs events all year: seat requests and approvals, attendee lists turned into the companies and people worth meeting, with checked emails, handed back as a sheet for sales |
-| Account Desk (this repository) | Signal-based, account-based outbound with a person on the send decision |
-| [Market Desk](https://github.com/bryanacevedo/market-desk) ([live](https://market-desk-3kou.onrender.com)) | Decides who a B2B team sells to from its own deals |
-| CRM (in progress) | Not yet public |
+| Project | What it does | Links |
+|---|---|---|
+| Account Desk (this repository) | Signal-based, account-based outbound with a person on the send decision | [Live demo](https://account-desk-x4ko.onrender.com) · [Film](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4) |
+| Events Desk | For someone who runs events all year: seat requests and approvals, attendee lists turned into the companies and people worth meeting, with checked emails, handed back as a sheet for sales | [Code](https://github.com/bryanacevedo/events-desk) · [Live demo](https://events-desk.onrender.com) · [Film](https://bryanacevedo.github.io/project-videos/video/events-desk.mp4) |
+| Market Desk | Decides who a B2B team sells to from its own deals, sizes that market and splits it into territories | [Code](https://github.com/bryanacevedo/market-desk) · [Live demo](https://market-desk-3kou.onrender.com) · [Film](https://bryanacevedo.github.io/project-videos/video/market-desk.mp4) |
+| CRM Desk | A CRM for teams of one to fifty with Salesforce's data model and a simpler experience; Account Desk and Events Desk can use it as their CRM | [Live demo](https://crm-desk-sevh.onrender.com) · [Film](https://bryanacevedo.github.io/project-videos/video/crm-desk.mp4) (code private) |
+
+All four films: https://bryanacevedo.github.io/project-videos/
 
 ## License
 
