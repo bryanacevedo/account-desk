@@ -11,6 +11,7 @@ import pytest
 from outbound import db
 
 BASE = os.environ.get("TEST_DATABASE_URL", "postgres://postgres@127.0.0.1:54329/postgres")
+PREFIX = os.environ.get("TEST_DB_PREFIX", "outbound_")  # a session sharing the server sets its own, for example p3a_
 START = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
 
 
@@ -20,7 +21,7 @@ def _admin(url: str) -> str:
 
 @pytest.fixture(scope="session")
 def database():
-    name = f"outbound_test_{uuid.uuid4().hex[:8]}"
+    name = f"{PREFIX}test_{uuid.uuid4().hex[:8]}"
     with psycopg.connect(_admin(BASE), autocommit=True) as c:
         c.execute(f'create database "{name}"')
     url = BASE.rsplit("/", 1)[0] + "/" + name
@@ -53,7 +54,7 @@ def built_demo(database):
     if reuse:
         yield reuse
         return
-    name = f"outbound_demo_{uuid.uuid4().hex[:8]}"
+    name = f"{PREFIX}demo_{uuid.uuid4().hex[:8]}"
     url = BASE.rsplit("/", 1)[0] + "/" + name
     with psycopg.connect(_admin(BASE), autocommit=True) as c:
         c.execute(f'create database "{name}"')

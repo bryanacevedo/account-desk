@@ -1,0 +1,54 @@
+{
+  "deals": {
+    "dropped_after_cut": 102,
+    "generated_expansion": 166,
+    "generated_new": 1575,
+    "kept": 1639
+  },
+  "format_version": "1",
+  "note": "Every company, person and domain is invented. truth/ is for simulated vendors and simulators only.",
+  "now": "2026-11-12T14:00:00+00:00",
+  "portraits": "missing: the release has none",
+  "rows": {
+    "public/companies.csv": 3000,
+    "public/events.csv": 18,
+    "public/team.csv": 15,
+    "truth/attendance.csv": 1021,
+    "truth/call_notes.csv": 610,
+    "truth/companies.csv": 3000,
+    "truth/company_data.csv": 3000,
+    "truth/customers.csv": 110,
+    "truth/deal_roles.csv": 1487,
+    "truth/deals.csv": 475,
+    "truth/people.csv": 25504,
+    "truth/seat_changes.csv": 213,
+    "truth/signals.csv": 12127
+  },
+  "seed": 7,
+  "seller": "Lumen Ledger",
+  "sha256": {
+    "guard.mjs": "dc434a9c00964522e54566f80b70961a6a7d8fc43941cbd868b7f96ec3a662ef",
+    "guard.py": "820d79f23820cee9072c128e24e0f5e34d0cb6d809befef2c6524e95228f7c97",
+    "public/clock.json": "4d480c7654856043b6d03743c90c27ff8c1594729bb1b06442c5b253702ee17b",
+    "public/companies.csv": "50b6e25465a2ef3d3ea1e9e9aabe0c09c04b6af67e70d89f3f0e4eec6185a0cf",
+    "public/events.csv": "ec979a835a609090dd76479ee8913317db2e7085a0ba6a41c9f298dbd581eaa5",
+    "public/seller.json": "5cc021e26bb6e5f37bf6c0cc8250ced9892751657c1f256d66d41d7c2e131ed2",
+    "public/team.csv": "2957fdd7e4379c687c2aed7e5fbe7d876e04c78e96fe4be8c1d0fae91bc9ad25",
+    "truth/attendance.csv": "367a98f419d6520219a61967b27bb246dbbda2f961cf84922373b9b1346436cb",
+    "truth/behavior.json": "49d879cfe3f66ff865bc6ad23af6aeee958bd9bbe5036c2cc3f089150ea7b44e",
+    "truth/call_notes.csv": "6043905f9e3898b7b05e0d534bdbfca0601e2ff7dfc7c7e057ae98eebf067cef",
+    "truth/companies.csv": "a34379a6c5a0b37304de12f17a6de77375621ace51ae9f61221b1f0ec1463705",
+    "truth/company_data.csv": "54b414336150d2fa667a1df91720204cd2f08932e2aac248e00efba189696507",
+    "truth/customers.csv": "94c2ca52d09cf576199f7373191fb3dffc3c5052f85bb55a6680404c1d321cae",
+    "truth/deal_roles.csv": "370fff2b87a11bf8844a0f81fe84cfbc8ccfd71de29524ec73d9dd27ef2a42f6",
+    "truth/deals.csv": "9d45e4a943edabcf8b5bc3fd0b439052e3a64f6e33568216c815c3473f4afbf9",
+    "truth/people.csv": "e940b58fb592479aed88bcf5dde890b70e53aef85baa9423106db28b2459886a",
+    "truth/seat_changes.csv": "dc09f3d3be0bd9ccadcb8878e0fb92852e4fcec2ee4867034182ed283a9c5c38",
+    "truth/signals.csv": "183c99af56012ac226348b25772cd145c3eb3894e32912eca9515c4bdad38908"
+  },
+  "slice_of": {
+    "desk": "account_desk",
+    "world_version": "1.1.0"
+  },
+  "world_version": "1.1.0"
+}

@@ -1,0 +1,40 @@
+{
+  "event_meeting": {
+    "base": 0.04,
+    "note": "an attendee the team reaches after an event books a meeting",
+    "per_need": 0.12
+  },
+  "meeting_from_positive": {
+    "base": 0.45,
+    "note": "a positive reply becomes a held meeting",
+    "per_need": 0.35
+  },
+  "no_show": {
+    "base": 0.18,
+    "note": "a booked meeting does not happen"
+  },
+  "opportunity_from_meeting": {
+    "base": 0.2,
+    "note": "an AE opens an opportunity after a held meeting",
+    "per_need": 0.45
+  },
+  "positive_reply": {
+    "note": "the share of replies that are positive",
+    "share_of_replies": {
+      "base": 0.15,
+      "per_need": 0.55
+    }
+  },
+  "reply": {
+    "base": 0.015,
+    "note": "a person replies to one outbound email, any reply",
+    "per_need": 0.09
+  },
+  "unsubscribe": {
+    "base": 0.004,
+    "note": "a person opts out on one outbound email"
+  },
+  "win": {
+    "note": "an opportunity's outcome uses Market Desk's win model (market_model.py: BASE_BY_BAND, PRICE_MULT, INDUSTRY_MULT, SOURCE_MULT), so wins in the rehearsal follow the planted relationships"
+  }
+}
