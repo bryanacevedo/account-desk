@@ -68,7 +68,7 @@ def _person_extras(cur, key: str, title: str, country: str | None, started: date
 class SimPeopleSearch:
     def search(self, cur, account: dict, title_patterns: list[str], limit: int) -> list[Candidate]:
         # Only people at the company today: not a leader who starts next month, not one who has left.
-        rows = db.all(cur, """select * from sim_hidden_people where account_id = %s and found_person_id is null
+        rows = db.all(cur, """select * from sim_hidden_people where account_id = %s and found_person_id is null and vendor_findable
                               and (role_started is null or role_started <= app_now()::date)
                               and (left_at is null or left_at > app_now()) order by id""", account["id"])
         pat = re.compile("|".join(re.escape(t) for t in title_patterns), re.I) if title_patterns else None
@@ -109,6 +109,8 @@ class SimPeopleSearch:
                h["left_at"])
         if h["is_champion"]:
             db.run(cur, "update people set is_champion = true where id = %s", person_id)
+        if h.get("world_id"):  # the vendor's person id travels with the person (shared-world DESIGN.md 6.1)
+            db.run(cur, "update people set world_id = %s where id = %s and world_id is null", h["world_id"], person_id)
 
 
 class SimFinder:

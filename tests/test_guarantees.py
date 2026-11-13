@@ -337,6 +337,9 @@ def test_production_settings_refuse_unsafe_defaults(monkeypatch):
     for k in ("WEBHOOK_SECRET", "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD", "LIVE_SEND", "PUBLIC_DEMO"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("MODE", "live")
+    with pytest.raises(SystemExit, match="ERASURE_KEY"):
+        Config().validate()
+    monkeypatch.setenv("ERASURE_KEY", "k" * 24)
     with pytest.raises(SystemExit, match="WEBHOOK_SECRET"):
         Config().validate()
     monkeypatch.setenv("MODE", "demo")

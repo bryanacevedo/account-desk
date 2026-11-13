@@ -54,6 +54,12 @@ def make_task(cur, e: dict, step: dict, now) -> int | None:
         register = db.val(cur, "select dnc_register from region_rules where country = %s", p["country"])
     if channel == "linkedin" and not p["linkedin_url"]:
         reasons.append(gate.Reason("no_linkedin", True, "No LinkedIn profile on record"))
+    if not reasons:  # a configured CRM is asked before a person's first touch; it fails closed (shared-world DESIGN.md 7, step 4)
+        from . import pipeline
+        verdict = pipeline.crm_first_touch(cur, e["person_id"], channel)
+        if verdict != "ok":
+            reasons.append(gate.Reason("crm_check", True, "The CRM flags this person" if verdict == "stopped"
+                                       else "The CRM did not answer, so nothing is sent on a guess"))
     if reasons:
         audit.log(cur, "desk", "step_skipped", "enrollment", e["id"], {"step": e["step_index"], "why": reasons[0].message})
         return None
