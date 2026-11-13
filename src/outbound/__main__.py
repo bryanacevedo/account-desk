@@ -33,6 +33,7 @@ def demo_crm(journal_path=WORLD_JOURNAL):
     """The CRM for a world demo build: the journal's account_desk steps replayed, or None (keep the simulated CRM) when
     the journal is absent or holds no step from this desk."""
     from pathlib import Path
+
     from .adapters import recorded
     if not Path(journal_path).exists() or not recorded.read_steps(journal_path):
         return None
@@ -62,8 +63,18 @@ def main(argv: list[str]) -> int:
         with db.tx() as cur:
             print(json.dumps(fn(cur, open(path, encoding="utf-8-sig").read()), indent=1))
     elif cmd == "demo":
-        from . import monitors, outreach, pipeline, replies, scheduler, scoring, sending, suggestions, themes  # noqa: F401 register handlers
-        from . import integration
+        from . import (  # noqa: F401 register handlers
+            integration,
+            monitors,
+            outreach,
+            pipeline,
+            replies,
+            scheduler,
+            scoring,
+            sending,
+            suggestions,
+            themes,
+        )
         from .sim import runner
         mode = integration.world_mode()
         start, days, extra_hours = DEMO_START, int(argv[2]) if len(argv) > 2 else 90, 0

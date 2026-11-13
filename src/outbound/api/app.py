@@ -29,6 +29,7 @@ from .. import (  # noqa: F401
     audit,
     db,
     gate,
+    integration,
     jobs,
     linkedin_tool,
     monitors,
@@ -47,7 +48,6 @@ from .. import (  # noqa: F401
     vendors,
     views,
 )
-from .. import integration
 from ..config import CONFIG
 
 log = logging.getLogger("outbound.api")

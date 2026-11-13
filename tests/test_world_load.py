@@ -118,7 +118,7 @@ def test_a_build_on_a_bad_slice_loads_nothing(built, tmp_path):
 # ---------------------------------------------------------------------------------------------------- what was loaded
 
 def test_the_counts_match_the_slice(built):
-    sl, ids, start = wl.load_slice(), taken(), built["start"]
+    sl, ids, _start = wl.load_slice(), taken(), built["start"]
     info = built["info"]
     assert v("select count(*) from accounts") == N == info["accounts"]
     assert v("select count(*) from sim_accounts") == N

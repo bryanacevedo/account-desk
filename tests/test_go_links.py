@@ -8,12 +8,11 @@ import pytest
 
 os.environ.setdefault("NO_WORKER", "1")
 
-from fastapi.testclient import TestClient  # noqa: E402
-
 import uuid  # noqa: E402
 
 import psycopg  # noqa: E402
 from conftest import BASE, PREFIX, _admin  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 from outbound import db  # noqa: E402
 from outbound.config import CONFIG  # noqa: E402

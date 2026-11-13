@@ -5,8 +5,8 @@ import json
 import httpx
 import pytest
 
-from outbound.__main__ import demo_crm
 from outbound import adapters
+from outbound.__main__ import demo_crm
 from outbound.adapters import choose_crm
 from outbound.adapters.crmdesk import CrmDeskCrm
 from outbound.adapters.recorded import JournalMismatch, RecordedCrm, RecordingCrm

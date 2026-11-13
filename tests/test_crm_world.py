@@ -9,10 +9,9 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
-
 from test_guarantees import scene  # noqa: F401  (an account, a person, an active play, a scheduled message)
 
-from outbound import adapters, alerts, db, pipeline, plays, scoring, sending
+from outbound import adapters, db, pipeline, plays, scoring, sending
 from outbound.adapters import CrmAccount, CrmCampaignMember, crmdesk
 from outbound.db import J
 from outbound.seed import catalog as C

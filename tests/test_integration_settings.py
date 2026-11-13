@@ -8,7 +8,6 @@ import pytest
 os.environ.setdefault("NO_WORKER", "1")
 
 from fastapi.testclient import TestClient  # noqa: E402
-
 from test_go_links import own_database  # noqa: E402,F401
 
 from outbound import db, integration, setup_desk, views  # noqa: E402
@@ -103,7 +102,7 @@ def test_with_market_desk_the_api_refuses_both_with_a_409_naming_it(client, who,
     assert ok.status_code == 200
 
 
-def test_the_command_line_path_refuses_too(own_database, monkeypatch):
+def test_the_command_line_path_refuses_too(own_database, monkeypatch):  # noqa: F811
     monkeypatch.setenv("INTEGRATED_WITH", "market_desk")
     with db.tx() as cur:
         with pytest.raises(setup_desk.KeptElsewhere, match="Market Desk"):
