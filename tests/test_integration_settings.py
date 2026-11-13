@@ -14,13 +14,13 @@ from outbound import db, integration, setup_desk, views  # noqa: E402
 
 
 @pytest.fixture(scope="module")
-def client(own_database):
+def client(own_database):  # noqa: F811
     from outbound.api.app import app
     return TestClient(app)
 
 
 @pytest.fixture(scope="module")
-def who(own_database):
+def who(own_database):  # noqa: F811
     with db.tx() as cur:
         ids = {}
         for role in ("gtm", "sdr"):
