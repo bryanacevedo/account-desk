@@ -82,9 +82,10 @@ def test_1_every_outbox_kind_lands_once_on_a_retry(cur, name):
         for _ in range(5):
             try:
                 return crm.push(cur, k, p, key)
-            except Exception:
+            except Exception as exc:
+                last = exc
                 db.run(cur, "update crm_outbox set attempts = attempts + 1 where idempotency_key = %s", key)
-        raise AssertionError(f"{key} failed five times")
+        raise AssertionError(f"{key} failed five times: {last}")
     first = [push(k, p, f"contract:{w['tag']}:{i}") for i, (k, p) in enumerate(outbox)]
     again = [push(k, p, f"contract:{w['tag']}:{i}") for i, (k, p) in enumerate(outbox)]
     assert first == again and all(first)

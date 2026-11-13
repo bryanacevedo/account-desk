@@ -5,6 +5,8 @@ Every call fails closed: a timeout, a refused connection, a 429 or a 5xx raises,
 again later. A 409 `erased` from CRM Desk is a finished write with nothing written."""
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from datetime import datetime
 
@@ -136,11 +138,15 @@ class CrmDeskCrm:
         body = {k: v for k, v in {"first_name": first, "last_name": last, "title": p["title"], "linkedin_url": p["linkedin_url"],
                                   "country": p["country"], "company_name": p["company"], "email": p["email"],
                                   "domain": p["primary_domain"]}.items() if v}
+        # The key carries a digest of what is written: a retry sends the same key, while a person whose details changed
+        # since (or a rebuilt desk reusing a number) is a different write to the CRM, not a conflicting one.
+        digest = hashlib.sha256(json.dumps([p["world_id"], p["email"], body], sort_keys=True).encode()).hexdigest()[:10]
+        headers = {"idempotency-key": f"{idempotency_key}:{digest}"}
         if p["world_id"]:
-            r = self._call("PUT", f"/contacts/by-ext/world_people/{p['world_id']}", json=body, headers={"idempotency-key": idempotency_key})
+            r = self._call("PUT", f"/contacts/by-ext/world_people/{p['world_id']}", json=body, headers=headers)
         else:
             body.pop("email", None)
-            r = self._call("PUT", f"/contacts/by-email/{p['email']}", json=body, headers={"idempotency-key": idempotency_key})
+            r = self._call("PUT", f"/contacts/by-email/{p['email']}", json=body, headers=headers)
         if r.status_code == 409 and r.json().get("code") == "erased":
             return "refused:erased"
         return self._ok(r)["id"]
