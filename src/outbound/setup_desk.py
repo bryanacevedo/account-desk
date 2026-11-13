@@ -167,13 +167,13 @@ PROFILE_KEPT_MESSAGE = "The ideal customer profile is kept in Market Desk. Publi
 
 
 def import_accounts(cur, text: str) -> dict:
-    from . import integration
-    if integration.has("market_desk"):
-        raise KeptElsewhere(ACCOUNTS_KEPT_MESSAGE)
     """Columns: name, domain (required); industry, employees, country, revenue_band, tech (separated by ';'),
     lifecycle, owner_email, crm_id, parent_domain, subscriber_type (corporate for a limited company, individual for a
     sole trader or partnership; UK email needs it). Region comes from the country. A domain already on the desk is
     updated, never duplicated; a blank cell keeps what the desk has."""
+    from . import integration
+    if integration.has("market_desk"):
+        raise KeptElsewhere(ACCOUNTS_KEPT_MESSAGE)
     done, refused, parents = 0, [], []
     for i, r in enumerate(_rows(text), start=2):
         domain = normalize_domain(r.get("domain"))

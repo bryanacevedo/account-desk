@@ -44,7 +44,7 @@ Checked by running them on 2026-11-13: the full suite 438 tests, all passing on 
 Not done, and why:
 - The links' placement is direction C of three drawn by a design agent (`~/Developer/account-desk-review/p3/README.md`); built provisionally, Bryan picks. Two open points there: INTEGRATED_WITH set while DESK_LINKS is unset shows the words with no link, and "registered, did not attend" has its own signal type.
 - The three-desk rehearsal has not run, so `world/journal.jsonl` holds no account_desk steps and the demo build still uses the simulated CRM. The rehearsal must write each account_desk step as method, path, query, idempotency_key, body, status and answer (`docs/WORLD.md`).
-- About 12 percent of world accounts sit in countries with no email rule in the catalog (IT, CH, SE, MX, DK, BE, AT, NO, FI, PT): the desk does not email them until a manager adds a rule. Legal; counsel to confirm any rule.
+- About 15 percent of world accounts (438 of 3,000) sit in countries with no email rule in the catalog (IT, CH, SE, MX, DK, BE, AT, NO, FI, PT): the desk does not email them until a manager adds a rule. Legal; counsel to confirm any rule.
 - Reply probabilities in world mode keep the legacy numbers (`sim/recipients.py` does not read `behavior.json` for them); calibration is for the rehearsal.
 - CRM Desk has no `/go/contact` route yet, so the person sheet's CRM link lands on its not-found page until it does.
 - Events Desk turning its own sequencer off (`INTEGRATED_WITH=account_desk`) is its Phase 4 work.

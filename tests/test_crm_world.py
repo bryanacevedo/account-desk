@@ -475,3 +475,24 @@ def test_the_event_play_is_added_once_and_needs_two_people_to_launch(cur, desk):
     assert first and plays.ensure_event_play(cur) == first
     row = db.one(cur, "select created_by, launched_by, status from plays where id = %s", first)
     assert row["created_by"] != row["launched_by"] and row["status"] == "live"
+
+
+def test_a_person_erased_in_the_crm_after_the_first_touch_is_found_the_next_day(cur, desk, crm):  # noqa: F811
+    c = crm(Fake())
+    assert pipeline.crm_first_touch(cur, desk["person"]) == "ok"
+    c.answer = {"can_email": False, "can_call": False, "flags": [], "suppressed": True, "erased": True}
+    assert pipeline.crm_first_touch(cur, desk["person"]) == "ok"          # the answer is good for a day
+    db.run(cur, "update crm_contact_checks set checked_at = app_now() - interval '2 days'")
+    assert pipeline.crm_first_touch(cur, desk["person"]) == "stopped"     # asked again, and erased here
+    assert db.val(cur, "select count(*) from people where id = %s", desk["person"]) == 0
+
+
+def test_a_write_the_crm_answers_erased_erases_the_person_here(cur, desk, crm):  # noqa: F811
+    class Refusing(Fake):
+        def push(self, cur, kind, payload, key):
+            return "refused:erased"
+    crm(Refusing())
+    db.run(cur, "insert into crm_outbox (kind, payload, idempotency_key) values ('activity', %s, 'activity:erased:1')",
+           J({"type": "email_sent", "person_id": desk["person"], "message_id": 1, "subject": "s"}))
+    pipeline.crm_push(cur, {})
+    assert db.val(cur, "select count(*) from people where id = %s", desk["person"]) == 0

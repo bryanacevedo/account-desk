@@ -120,7 +120,7 @@ def test_a_mismatch_the_desk_swallowed_still_fails_the_build(journal):
     crm = RecordedCrm.from_journal(journal)
     try:
         crm.deals_changed(None, None, 10)
-    except Exception:
+    except (Exception, JournalMismatch):
         pass
     with pytest.raises(JournalMismatch):
         crm.finish()

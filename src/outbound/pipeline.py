@@ -194,6 +194,10 @@ def crm_push(cur, payload: dict) -> None:
         try:
             with cur.connection.transaction():
                 ref = _push(cur, adapters.get().crm, item)
+                pid = item["payload"].get("person_id")
+                if str(ref).startswith("refused:erased") and pid and db.val(cur, "select exists (select 1 from people where id = %s)", pid):
+                    from . import privacy  # the CRM says this person was erased there: erase them here too
+                    privacy.erase(cur, pid, actor_id=None)
                 db.run(cur, "update crm_outbox set status = 'done', done_at = app_now(), last_error = null, "
                             "payload = payload || %s where id = %s", J({"crm_ref": ref}), item["id"])
         except Exception as exc:
@@ -557,8 +561,10 @@ def crm_first_touch(cur, person_id: int, channel: str = "email") -> str:
     if ask is None or not getattr(crm, "configured", False):
         enqueue_contact(cur, person_id)
         return "ok"
-    row = db.one(cur, "select * from crm_contact_checks where person_id = %s", person_id)
-    answer = row["answer"] if row and row["state"] == "ok" else None
+    row = db.one(cur, "select *, checked_at > app_now() - interval '1 day' as fresh from crm_contact_checks where person_id = %s",
+                 person_id)
+    # An ok answer is good for a day: someone flagged or erased in the CRM after their first touch is found the next day.
+    answer = row["answer"] if row and row["state"] == "ok" and row["fresh"] else None
     if answer is None:
         p = db.one(cur, """select p.email, p.world_id, p.full_name, a.primary_domain from people p
                            left join accounts a on a.id = p.account_id where p.id = %s""", person_id)

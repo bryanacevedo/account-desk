@@ -29,7 +29,7 @@ OPTIONAL = {"accounts_changed": "/changes/accounts", "campaign_members_changed":
             "contactability": "/contacts/contactability"}
 
 
-class JournalMismatch(Exception):
+class JournalMismatch(BaseException):  # not an Exception: the outbox and the syncs catch those and carry on, and a replay that differs must stop the run
     """The build asked the CRM for something the journal does not have next."""
 
 
