@@ -234,7 +234,36 @@ REGION_RULES = [
     # Not a legal rule: the demo's seller does not sell in Singapore yet, so it does not email there. Australia has no
     # rule at all, so nobody there is cold-emailed until a manager adds one.
     ("SG", "blocked"),
+    # The ten countries the shared world has and the list above lacked (decision 72, 2026-11-13; sources and the
+    # reading of each are in REGION_NOTES and docs/DECISIONS.md). Where a source left a point open, the stricter reading
+    # is used. Risk: legal. Counsel to confirm any of them before real sending.
+    ("IT", "consent_required"), ("CH", "consent_required"), ("SE", "consent_required"), ("DK", "consent_required"),
+    ("BE", "consent_required"), ("AT", "consent_required"), ("NO", "consent_required"),
+    ("FI", "basis_required"), ("PT", "basis_required"),
+    # Mexico is blocked, not consent-only: no source found says what a cold email to a named business contact needs
+    # (the 2025 privacy law's tacit consent may or may not reach it), so the desk does not email there until counsel says.
+    ("MX", "blocked"),
 ]
+
+# Where a sole trader or partnership is a natural person with the stricter rule even when a company is not, a cold email
+# to one needs consent, as in the UK (PECR): only a limited company (a corporate subscriber) may be emailed on the
+# rule's own basis, and not knowing which counts as an individual (gate.pecr_reason, and the database's send guard).
+# Finland (Act 917/2014 s. 200 and 202) and Portugal (Lei 41/2004 art. 13-A) split subscribers the same way.
+INDIVIDUAL_CONSENT = {"GB", "FI", "PT"}
+
+# What the note on each new rule says (kept on the rule, `region_rules.note`, and returned with the settings). Short; the full reading is in docs/DECISIONS.md, decision 72.
+REGION_NOTES = {
+    "IT": "Opt-in for email (Codice privacy art. 130(1)-(2)); the soft opt-in of art. 130(4) covers customers only. Counsel to confirm.",
+    "CH": "Opt-in for mass email (UWG art. 3(1)(o)), companies included; opt-out link and correct sender in each email. Counsel to confirm.",
+    "SE": "Opt-in for a natural person (Marknadsforingslagen 19 s.); a named work address read as a natural person. Counsel to confirm.",
+    "DK": "Opt-in for anyone, companies included (Markedsforingsloven 10(1)); an address to stop messages in each email. Counsel to confirm.",
+    "BE": "Opt-in (CDE art. XII.13); only an impersonal company address (info@) is exempt (Royal Decree 4 April 2003). Counsel to confirm.",
+    "AT": "Opt-in for any recipient (TKG 2021 s. 174(3)), no B2B exception; a real address to stop messages (s. 174(5)). Counsel to confirm.",
+    "NO": "Opt-in for every natural person, a work address in a person's name included (Markedsforingsloven 15 s.). Counsel to confirm.",
+    "FI": "Opt-out for companies (Act 917/2014 s. 202), opt-in for natural persons, sole traders included (s. 200). Counsel to confirm.",
+    "PT": "Opt-out for companies, with the DGC list (Lei 41/2004 art. 13-A(2), 13-B); opt-in for natural persons. Counsel to confirm.",
+    "MX": "Blocked: no source settles what a cold B2B email needs under the 2025 privacy law. Counsel to confirm, then set a rule.",
+}
 
 # Calls, per country: whether the SDRs call there, and the do-not-call register screened first. A country not listed
 # is not called. Germany needs presumed consent for a business call (UWG section 7) and the Netherlands keeps no

@@ -1,4 +1,6 @@
-# The hosted demo: one container with Postgres inside it, holding a 90-day simulated desk built when the image is.
+# The hosted demo: one container with Postgres inside it, holding the simulated desk built when the image is: by default
+# the shared world's 91 days (WORLD=world, from the slice in world/), or with `--build-arg DEMO_WORLD=legacy` the desk's
+# own 90-day generator. The setting stays on at run time, because the demo's "move time forward" uses the same source.
 FROM node:26-slim AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
@@ -15,8 +17,11 @@ COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 COPY migrations ./migrations
+COPY world ./world
 COPY scripts/docker-start.sh scripts/docker-build-demo.sh ./scripts/
 COPY --from=web /web/dist ./web/dist
+ARG DEMO_WORLD=world
+ENV WORLD=$DEMO_WORLD
 ENV DATABASE_URL=postgres://postgres@127.0.0.1:5432/outbound PUBLIC_DEMO=1 HOST=0.0.0.0 PORT=8800 \
     PUBLIC_URL=https://account-desk-x4ko.onrender.com
 # The demo database is built here, once, so starting the container takes seconds instead of minutes.

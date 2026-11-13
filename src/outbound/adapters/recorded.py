@@ -133,12 +133,13 @@ class RecordedCrm:
 
 
 class _RecordingClient:
-    def __init__(self, inner: httpx.Client, journal: Path, actor: str):
-        self.inner, self.journal, self.actor = inner, journal, actor
+    def __init__(self, inner: httpx.Client, journal: Path, actor: str, clock=None):
+        self.inner, self.journal, self.actor, self.clock = inner, journal, actor, clock
 
     def request(self, method: str, url: str, **kw) -> httpx.Response:
         r = self.inner.request(method, url, **kw)
-        step = {"actor": self.actor, "at": datetime.now(timezone.utc).isoformat(), "status": r.status_code,
+        at = self.clock() if self.clock else datetime.now(timezone.utc)
+        step = {"actor": self.actor, "at": at.isoformat(), "status": r.status_code,
                 **{k: v for k, v in _request_parts(method, url, kw).items() if v not in (None, {})}}
         try:
             step["answer"] = r.json()
@@ -152,9 +153,11 @@ class _RecordingClient:
 class RecordingCrm:
     """Writes the journal steps for the calls an inner CrmDeskCrm makes, then returns its answers unchanged. The rehearsal
     does this on the CRM Desk side; tests use it to produce a journal to replay."""
-    def __init__(self, inner: CrmDeskCrm, journal_path, actor: str = ACTOR):
+    def __init__(self, inner: CrmDeskCrm, journal_path, actor: str = ACTOR, clock=None):
+        """`clock` says what time a step happened: the desk's own (simulated) clock in a rehearsal, so the journal is the
+        same file every run; the wall clock when it is not given."""
         self._inner = inner
-        inner.c = _RecordingClient(inner.c, Path(journal_path), actor)
+        inner.c = _RecordingClient(inner.c, Path(journal_path), actor, clock)
 
     def __getattr__(self, name):
         return getattr(self._inner, name)

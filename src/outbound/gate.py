@@ -167,17 +167,24 @@ def person_reasons(cur, person_id: int, channel: str, *, account_play_id: int | 
 
 
 def pecr_reason(cur, p: dict, basis: str | None) -> Reason | None:
-    """UK PECR: a sole trader or partnership is an individual subscriber, so cold email to them needs consent. Only
-    a limited company (corporate) may be emailed without it; not knowing which counts as individual."""
+    """A sole trader or partnership is a natural person: where the country's rule says so (region_rules.individual_consent:
+    the UK's PECR, Finland, Portugal), cold email to one needs consent. Only a limited company (corporate) may be emailed
+    on the rule's own basis; not knowing which counts as individual."""
     a = db.one(cur, "select hq_country, subscriber_type from accounts where id = %s", p["account_id"]) or {}
-    if "GB" not in (p.get("country"), a.get("hq_country")) or basis == "consent":
+    if basis == "consent":
+        return None
+    countries = [c for c in (p.get("country"), a.get("hq_country")) if c]
+    country = db.val(cur, """select country from region_rules where individual_consent and country = any(%s)
+                             order by country = %s desc, country limit 1""", countries, p.get("country"))
+    if country is None:
         return None
     kind = a.get("subscriber_type") or "unknown"
     if kind == "corporate":
         return None
+    where = "the UK" if country == "GB" else country_name(country)
     if kind == "individual":
-        return Reason("pecr_individual", True, "A UK sole trader or partnership needs consent before a cold email")
-    return Reason("pecr_unknown", True, "Not known whether this UK company is a limited company, so no cold email "
+        return Reason("pecr_individual", True, f"A sole trader or partnership in {where} needs consent before a cold email")
+    return Reason("pecr_unknown", True, f"Not known whether this company in {where} is a limited company, so no cold email "
                                         "without consent")
 
 

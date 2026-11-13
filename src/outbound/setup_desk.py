@@ -104,8 +104,9 @@ def init(cur, cfg: DeskConfig) -> dict:
            J(C.ICP), "Starting ICP: edit it in Settings", gtm)
     for country, rule in (cfg.region_rules or dict(C.REGION_RULES)).items():
         call_rule, register = C.CALL_RULES.get(country, ("blocked", None))
-        db.run(cur, "insert into region_rules (country, rule, call_rule, dnc_register) values (%s,%s,%s,%s) "
-                    "on conflict do nothing", country, rule, call_rule, register)
+        db.run(cur, "insert into region_rules (country, rule, call_rule, dnc_register, note, individual_consent) "
+                    "values (%s,%s,%s,%s,%s,%s) on conflict do nothing", country, rule, call_rule, register,
+               C.REGION_NOTES.get(country, "Counsel to confirm."), country in C.INDIVIDUAL_CONSENT)
     for vendor, cap in (cfg.budgets or dict(C.BUDGETS)).items():
         db.run(cur, "insert into budgets (vendor, monthly_cap_cents) values (%s,%s) on conflict do nothing", vendor, cap)
     for d in cfg.sending_domains:

@@ -24,7 +24,9 @@ REGION_OUTCOMES = {
     "basis required: legitimate interest recorded": "select count(*) from contact_basis where basis like 'legitimate_interest:%%'",
     "consent required: not cold-emailed": """select count(*) from committee_gaps where reason like '%%needs consent%%'""",
     "blocked: not emailed in this country": "select count(*) from committee_gaps where reason = 'Not emailed in this country'",
-    "no rule: needs a region rule first": "select count(*) from committee_gaps where reason like '%%needs a region rule first%%'",
+    # No rule for the person's country, or no country to look a rule up for: the gate treats both the same way (gate.py).
+    "no rule: needs a region rule first": """select count(*) from committee_gaps where reason like '%%needs a region rule first%%'
+        or reason like '%%country is not known%%'""",
 }
 SUGGESTION_STATUSES = ["open", "drafted", "not_now", "dismissed", "lapsed"]
 GAP_KINDS = {
@@ -33,7 +35,7 @@ GAP_KINDS = {
     "catch-all address": "accepts every address",
     "address does not work": "Email address does not work",
     "needs consent": "needs consent",
-    "needs a region rule": "needs a region rule first",
+    "needs a region rule": ("needs a region rule first", "country is not known"),
 }
 TASK_KINDS = ["call", "linkedin_connect", "linkedin_message", "research", "reply", "referral", "review_reply"]
 LEARNING_KINDS = ["objection", "competitor", "reason_to_buy", "reason_not", "quote"]
@@ -115,7 +117,8 @@ def scenarios(cur) -> list[dict]:
 
     gaps = db.all(cur, "select reason from committee_gaps")
     for name, words in GAP_KINDS.items():
-        add("Buying committee gaps", name, sum(1 for g in gaps if words in g["reason"]))
+        wanted = (words,) if isinstance(words, str) else words
+        add("Buying committee gaps", name, sum(1 for g in gaps if any(w in g["reason"] for w in wanted)))
 
     tasks = {r["kind"]: r["n"] for r in db.all(cur, "select kind, count(*) as n from tasks group by 1")}
     for k in TASK_KINDS:

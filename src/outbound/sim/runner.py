@@ -92,6 +92,12 @@ def _queue_day_signals(cur, rng: random.Random, day: datetime) -> int:
             db.run(cur, "insert into sim_events (at, kind, payload) values (%s, 'signal', %s)", it["observed_at"] + lag,
                    J(payload))
             n += 1
+            second = world_load.second_report(it) if world_on() else None
+            if second is not None:
+                delay = second.pop("delay_days")
+                db.run(cur, "insert into sim_events (at, kind, payload) values (%s, 'second_move_source', %s)",
+                       day.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=delay),
+                       J({k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in second.items()}))
     return n
 
 
@@ -182,6 +188,10 @@ def _working(at: datetime, tzname: str) -> bool:
 # How often SDRs approve a draft without touching it, below the 0.92 of drafts they approve at all: the rest of those
 # they approve after an edit (a draft with no ask to rewrite, a break-up note, goes as it was).
 UNEDITED = 0.72
+# World mode only (decision 74): the plays whose angle is concrete (the roles they are hiring for, the pricing change
+# itself) need fewer edits, so one of them can earn the next stage on the checks, the way one play usually does first on a
+# real desk. The two with the most volume in the world, so the 50-draft check is reached early in the run.
+UNEDITED_WORLD = {"finance_ops_hiring": 0.885, "pricing_model_change": 0.885}
 
 
 def sdr_edit(body: str) -> str:
@@ -300,7 +310,7 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
                     if roll < 0.5:
                         outreach.reject(cur, m["id"], user_id=u["id"], reason="Did not pass the checks; skipping")
                     continue
-                if roll < UNEDITED:
+                if roll < (UNEDITED_WORLD.get(m["play"], UNEDITED) if world_on() else UNEDITED):
                     outreach.approve(cur, m["id"], user_id=u["id"])
                 elif roll < 0.92:
                     outreach.approve(cur, m["id"], user_id=u["id"], body=sdr_edit(m["body"]))
@@ -399,6 +409,21 @@ MORE_PLANTED = [
     ("pricing_visit", TOOLS[1][0], 0.9, None, None),                                 # a competitor
     ("hiring_function", EINVOICE, 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
 ]
+# World mode (decision 74): the same plants on the signals the world's first calls come in on. A world build books about
+# a third of the legacy desk's first calls on a web visit and a tenth as many on a new executive, and the pattern rule
+# needs five accounts in one segment (and, to come back, eight), so each reason sits where there are enough calls: the
+# reason heard for a while and then not and the two open ones on web visits, the dismissed one with the hiring reason on
+# the signal with the most calls, the API pricing launch and the annual commits on a pricing change.
+MORE_PLANTED_WORLD = [
+    ("pricing_change", REASONS[5][0], 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
+    ("pricing_change", REASONS[5][0], 0.95, datetime(2026, 10, 1, tzinfo=UTC), None),
+    ("pricing_visit", ERP, 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),           # heard for a while, then not
+    ("hiring_function", PORTAL, 0.8, None, None),
+    ("pricing_change", COMMITS, 0.8, None, None),
+    ("pricing_visit", CREDITS, 0.7, None, None),
+    ("pricing_visit", TOOLS[1][0], 0.9, None, None),                                 # a competitor
+    ("hiring_function", EINVOICE, 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
+]
 # The same e-invoicing reason, once the rules are announced, on first calls everywhere: the pattern it made goes away.
 SPREAD = (EINVOICE, 0.6, datetime(2026, 10, 1, tzinfo=UTC))
 # Who said it and how, so the same reason from ten companies reads like ten people, not one line pasted ten times.
@@ -440,7 +465,7 @@ def call_notes(rng: random.Random, signal_type: str | None = None, billing: str 
     if rng.random() < 0.2:
         lines.append(f'In their words: "{rng.choice(SAID_ON_CALLS)}"')
     more = []
-    for seg, ways, share, since, until in MORE_PLANTED:
+    for seg, ways, share, since, until in (MORE_PLANTED_WORLD if world_on() else MORE_PLANTED):
         if signal_type == seg and rng.random() < share and _within(at, since, until):
             more.append(rng.choice(ways))
     ways, share, since = SPREAD

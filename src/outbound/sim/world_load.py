@@ -104,6 +104,7 @@ class Slice:
     deals: list[dict]
     customers: list[dict]
     behavior: dict
+    champions: frozenset[str]        # people who were the champion on a deal we won (deal_roles, history era)
 
 
 _CACHE: dict[tuple, Slice] = {}
@@ -123,6 +124,10 @@ def load_slice(root: Path | str | None = None) -> Slice:
     by_day: dict[str, list[dict]] = defaultdict(list)
     for s in sorted(_csv(root, TRUTH + "signals.csv"), key=lambda r: (r["at"], r["signal_id"])):
         by_day[s["at"][:10]].append(s)
+    deals = _csv(root, TRUTH + "deals.csv")
+    won = {d["deal_id"] for d in deals if d["era"] == "history" and d["outcome_at_cut"] == "won"}
+    champions = frozenset(r["person_id"] for r in _csv(root, TRUTH + "deal_roles.csv")
+                          if r["is_champion"] == "true" and r["deal_id"] in won)
     sl = Slice(
         root=root, manifest=manifest,
         clock=json.loads((root / PUBLIC / "clock.json").read_text(encoding="utf-8")),
@@ -132,8 +137,8 @@ def load_slice(root: Path | str | None = None) -> Slice:
         data={r["world_id"]: r for r in _csv(root, TRUTH + "company_data.csv")},
         people={p["person_id"]: p for p in people}, people_by_company=dict(by_company),
         seat_changes=sorted(_csv(root, TRUTH + "seat_changes.csv"), key=lambda r: (r["at"], r["person_id"])),
-        signals_by_day=dict(by_day), deals=_csv(root, TRUTH + "deals.csv"), customers=_csv(root, TRUTH + "customers.csv"),
-        behavior=json.loads((root / TRUTH / "behavior.json").read_text(encoding="utf-8")))
+        signals_by_day=dict(by_day), deals=deals, customers=_csv(root, TRUTH + "customers.csv"),
+        behavior=json.loads((root / TRUTH / "behavior.json").read_text(encoding="utf-8")), champions=champions)
     _CACHE.clear()
     _CACHE[key] = sl
     return sl
@@ -327,7 +332,8 @@ def build(cur, *, start: datetime, n_accounts: int | None = None, root: Path | s
             if known and (email in used_email or p["linkedin_url"] in used_linkedin):
                 known = False                      # one row per address and per profile; the other copy waits to be found
             photo = portrait_url(p["portrait"])
-            champion = p["is_champion"] == "true"
+            # The file's own flag is empty in this release; a champion is whoever championed a deal we won (decision 71).
+            champion = p["is_champion"] == "true" or p["person_id"] in sl.champions
             phone = p["phone"] or None
             if known:
                 used_email.add(email)
@@ -464,13 +470,15 @@ def day_signals(cur, day_start: datetime, root: Path | str | None = None) -> dic
     (a build of fewer accounts) is skipped. Same raw shape the sources ingest from signals_gen."""
     sl = load_slice(root)
     todays = [s for s in sl.signals_by_day.get(day_start.date().isoformat(), []) if day_start <= _ts(s["at"]) < day_start + timedelta(days=1)]
+    out: dict[str, list[dict]] = {}
+    for move in champion_moves(cur, day_start):
+        out.setdefault("people_moves", []).append(move)
     if not todays:
-        return {}
+        return out
     wids = sorted({s["company_world_id"] for s in todays})
     accts = {r["world_id"]: r for r in db.all(cur, """select a.world_id, a.name, a.primary_domain, sa.billing
                                                       from accounts a join sim_accounts sa on sa.account_id = a.id
                                                       where a.world_id = any(%s)""", wids)}
-    out: dict[str, list[dict]] = {}
     for s in todays:
         acct = accts.get(s["company_world_id"])
         if acct is None:
@@ -496,6 +504,47 @@ def day_signals(cur, day_start: datetime, root: Path | str | None = None) -> dic
                 raw["person"] = {"linkedin_url": who["linkedin_url"], "email": who["email"].lower()}
         out.setdefault(source, []).append(raw)
     return out
+
+
+# A past champion who changes company. The release has no champion who moves (its job changes are people with no seat
+# on record elsewhere), so the build adds the move a job-change feed would report, in the way signals_gen does: some
+# day, one of the desk's champions starts at a prospect. Which day, who and where are fixed by hash, never by the shared
+# random stream. Whether the desk acts on it is the desk's own rule (two sources agree, then the champion play).
+CHAMPION_MOVES_A_DAY = 0.14   # signals_gen.MOVES_A_DAY * CHAMPION_SHARE
+
+
+def champion_moves(cur, day_start: datetime) -> list[dict]:
+    """The day's planted champion moves, in the raw shape the people_moves source ingests."""
+    key = f"champion-move:{day_start.date().isoformat()}"
+    if frac(key) >= CHAMPION_MOVES_A_DAY:
+        return []
+    movers = db.all(cur, """select p.id, p.full_name, p.linkedin_url, p.email, p.account_id from people p
+                           where p.status = 'active' and p.is_champion and p.linkedin_url is not null order by p.id""")
+    if not movers:
+        return []
+    mover = movers[int(frac(key + ":who") * len(movers))]
+    targets = db.all(cur, """select a.id, a.primary_domain, a.name from accounts a join sim_accounts sa on sa.account_id = a.id
+                            where a.lifecycle = 'prospect' and a.id <> %s order by a.id""", mover["account_id"])
+    if not targets:
+        return []
+    target = targets[int(frac(key + ":where") * len(targets))]
+    return [{"type": "champion_moved", "external_id": f"moves-{mover['id']}-{target['id']}",
+             "observed_at": day_start + timedelta(hours=8 + int(frac(key + ":hour") * 11)),
+             "domain": target["primary_domain"], "strength": 0.9,
+             "evidence": {"summary": f"{mover['full_name']} joined {target['name']}.",
+                          "url": f"https://social.example.net/in/{mover['id']}",
+                          "quote": f"Started a new position at {target['name']}"},
+             "person": {"linkedin_url": mover["linkedin_url"], "email": mover["email"]}}]
+
+
+def second_report(raw: dict) -> dict | None:
+    """Most job changes are reported by a second source a few days after the first (signals_gen does the same), and the
+    desk moves a person only when two sources agree. Returns (as the raw signal, with `delay_days`) that second report,
+    or None when the second source does not carry it. Fixed by the signal's id."""
+    if raw["type"] not in ("job_change", "champion_moved") or frac("echo:" + raw["external_id"]) >= 0.8:
+        return None
+    return {**raw, "external_id": "social-" + raw["external_id"],
+            "delay_days": 1 + int(frac("echo-days:" + raw["external_id"]) * 5)}
 
 
 def sim_event_lag(signal_external_id: str) -> timedelta:

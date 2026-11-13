@@ -313,7 +313,9 @@ def test_no_signal_is_invented_in_world_mode(ran):
     # Everything a source reported comes from the file: nothing from a company outside the account list, no noise.
     assert v("select count(*) from signals where status <> 'matched' and external_id ~ '-sg_'") == 0
     assert v("select count(*) from signals where raw_company is not null") == 0
-    assert v("select count(*) from sim_events where kind = 'second_move_source'") == 0
+    # The only thing added is the second report of a job change, which the desk needs before it moves a person.
+    assert v("select count(*) from sim_events where kind = 'second_move_source' and payload->>'type' not in "
+             "('job_change', 'champion_moved')") == 0
 
 
 def test_the_desk_did_real_work_on_the_worlds_signals(ran):
@@ -340,6 +342,66 @@ def test_the_run_can_end_at_the_worlds_now(ran):
 def test_the_meeting_functions_come_from_the_worlds_behavior_file():
     b = wl.behavior()
     assert b["no_show"]["base"] == 0.18 and b["opportunity_from_meeting"]["per_need"] == 0.45
+
+
+def test_a_champion_is_whoever_championed_a_deal_we_won(built):
+    sl = wl.load_slice()
+    assert sl.champions
+    got = {r["world_id"] for r in q("select world_id from people where is_champion")}
+    known = {r["world_id"] for r in q("select world_id from people")}
+    assert got and got <= sl.champions and got == sl.champions & known
+    assert v("select count(*) from sim_hidden_people where is_champion") == len(
+        sl.champions & {r["world_id"] for r in q("select world_id from sim_hidden_people")})
+
+
+def test_champion_moves_are_fixed_by_the_day_and_start_at_a_prospect(built):
+    start = built["start"].replace(hour=0, minute=0, second=0, microsecond=0)
+    found = []
+    with db.tx() as cur:
+        for d in range(60):
+            day = start + timedelta(days=d)
+            a, b = wl.champion_moves(cur, day), wl.champion_moves(cur, day)
+            assert a == b
+            found += a
+    assert found, "60 days at 14% a day"
+    for m in found:
+        assert m["type"] == "champion_moved" and m["person"]["linkedin_url"] and m["observed_at"] >= start
+        assert wl.second_report({**m}) is None or wl.second_report({**m})["external_id"] == "social-" + m["external_id"]
+        mover = m["external_id"].split("-")[1]
+        assert v("select is_champion from people where id = %s", int(mover))
+        assert v("select lifecycle from accounts where primary_domain = %s", m["domain"]) == "prospect"
+
+
+def test_the_second_report_is_only_for_job_changes_and_is_fixed_by_the_signal():
+    raw = {"type": "job_change", "external_id": "moves-1-2"}
+    assert wl.second_report({"type": "funding", "external_id": "x"}) is None
+    shown = [wl.second_report({"type": "job_change", "external_id": f"moves-{i}"}) for i in range(200)]
+    share = sum(1 for s in shown if s) / 200
+    assert 0.65 < share < 0.95
+    assert wl.second_report(raw) == wl.second_report(raw)
+    assert all(1 <= s["delay_days"] <= 5 for s in shown if s)
+
+
+def test_the_world_countries_have_rules_and_mexico_is_blocked_by_a_real_one(built):
+    # Decision 72: the rules for the ten countries come from the catalog in every mode, not from a world-only list.
+    assert v("select rule from region_rules where country = 'MX'") == "blocked"
+    assert v("select rule from region_rules where country = 'IT'") == "consent_required"
+    assert v("select rule from region_rules where country = 'FI'") == "basis_required"
+    assert v("select individual_consent from region_rules where country = 'PT'") is True
+    assert v("select count(distinct hq_country) from accounts where hq_country not in (select country from region_rules)") == 0
+
+
+def test_the_world_call_note_plants_are_the_legacy_reasons_on_real_signals():
+    from outbound.seed import catalog
+    from outbound.sim import runner
+    types = {t[0] for t in catalog.SIGNAL_TYPES}
+    assert all(seg in types for seg, *_ in runner.MORE_PLANTED_WORLD)
+    # The same reasons, so what the Tuesday routine does with each (set aside, dismiss, draft) still finds it.
+    assert {r[1] for r in runner.MORE_PLANTED_WORLD} == {r[1] for r in runner.MORE_PLANTED}
+    assert len(runner.MORE_PLANTED_WORLD) == len(runner.MORE_PLANTED)
+    assert runner.MORE_PLANTED_WORLD[-1][0] == runner.MORE_PLANTED[-1][0]     # the spread's own signal is the same
+    assert set(runner.UNEDITED_WORLD) <= {p[0] for p in catalog.PLAYS}
+    assert all(runner.UNEDITED < r < 0.92 for r in runner.UNEDITED_WORLD.values())
 
 
 # ---------------------------------------------------------------------------------------------------- the same build twice

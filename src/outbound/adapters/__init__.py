@@ -293,7 +293,15 @@ def choose_crm(current):
         return current
     if choice == "crmdesk":
         from .crmdesk import CrmDeskCrm
-        return CrmDeskCrm.from_env()
+        crm = CrmDeskCrm.from_env()
+        journal = os.environ.get("CRM_JOURNAL", "").strip()
+        if journal and CONFIG.mode != "live":
+            # The shared-world rehearsal: every request this desk makes of CRM Desk and the answer, as the journal's
+            # account_desk steps (docs/WORLD.md). Never in live mode: it would write customer data to a file.
+            from .. import clock
+            from .recorded import RecordingCrm
+            return RecordingCrm(crm, journal, clock=clock.now)
+        return crm
     if choice == "sim" and CONFIG.mode != "live":
         return current
     if choice == "recorded":

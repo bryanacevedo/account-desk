@@ -33,11 +33,28 @@ only module that opens the slice's `truth/` folder, and `tests/test_truth_guard.
 | `public/seller.json` | Sending domains (all `.example`) and the billing tools the desk treats as ones it replaces (`competing_tools`: the five competitors, plus Chargebee and Zuora). |
 | `public/clock.json` | The window the demo runs over. |
 
+## What the build plants, and why
+
+The release says nothing that makes some scenarios happen, so the build adds data and lets the desk's own rules decide
+(decisions 71 to 75). Nothing sets a final state: no stage, suggestion, gap or signal is written by hand, and no scenario
+is special-cased in code.
+
+| Scenario | Planted | Decided by the desk |
+|---|---|---|
+| `champion_moved` | A champion is whoever championed a deal we won (`truth/deal_roles.csv`; the release's own `is_champion` flag is empty). On about 14% of days one of the desk's champions starts at a prospect, reported by the job-change feed and, 80% of the time, by a second source one to five days later (`world_load.champion_moves`, `second_report`; fixed by hash of the day and the signal). The second report is also added to the world's own job changes. | Two sources agreeing move the person; the `champion_moved` play needs them confirmed at the new company. |
+| Blocked: not emailed in this country | Nothing: the email rules for Italy, Switzerland, Sweden, Denmark, Belgium, Austria, Norway, Finland, Portugal and Mexico are in the catalog for every mode (decision 72), and Mexico's is "blocked" because no source settles what a cold email there needs. | The contact gate's `region_blocked` reason, written as a committee gap, for Mexican contacts. |
+| Consent required, basis required | Nothing: the world's own countries. | The same gate, with the rules above. |
+| No rule: needs a region rule first | Nothing: the people the release gives no country (about 0.4%). | The gate treats no country as no rule (decision 75). |
+| Supervised, a promotion | SDRs edit fewer drafts of the finance operations hiring and pricing change plays (`runner.UNEDITED_WORLD`, 88.5% unedited against 72%). | The Monday promotion check (50 drafts, 90% unedited, bounces under 2%, positive replies, complaint data) and the manager's click. |
+| Every suggestion state, "came back after a not now", "set aside and still set aside" | The call-note plants of decision 62, placed on the signals where the world's first calls are (`runner.MORE_PLANTED_WORLD`, decision 74). | The pattern rule in `suggestions.py` and the Tuesday routine of people deciding. |
+
+Which of these depend on the CRM: see decision 75. Legacy mode has none of these plants and none of the ten countries.
+
 ## What it ignores
 
-- `truth/people.csv` `phone_dnc`, `phone_type`, `human_id` (a job mover keeps one LinkedIn profile, which the desk already uses to match them).
-- `deals.csv` deals of the `scheduled` era, `deal_roles.csv`, `call_notes.csv`, `attendance.csv`, `customers.csv` churn dates in the rehearsal, `public/events.csv`.
-- The legacy generator's extras: signals about companies outside the account list, the second source for a job change, the random rate tables. The world's signals are the whole supply.
+- `truth/people.csv` `phone_dnc`, `phone_type`, `human_id` (a job mover keeps one LinkedIn profile, which the desk already uses to match them), and `is_champion` (empty in this release; see above).
+- `deals.csv` deals of the `scheduled` era, `deal_roles.csv` except its champions of won history deals, `call_notes.csv`, `attendance.csv`, `customers.csv` churn dates in the rehearsal, `public/events.csv`.
+- The legacy generator's extras: signals about companies outside the account list, the random rate tables. The world's signals are the whole supply, plus the second report of a job change and the champion moves above.
 - Reply behaviour (`behavior.json` `reply`, `positive_reply`, `unsubscribe`): it is decided in `sim/recipients.py`, which is not part of this change, so replies still use the desk's own numbers. The `no_show` and `opportunity_from_meeting` functions are read.
 - Call-note wording in `runner.py` still names the old competitors (Chargewise, Meterline) in some lines.
 

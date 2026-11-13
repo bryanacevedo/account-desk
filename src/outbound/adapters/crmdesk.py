@@ -98,12 +98,17 @@ class CrmDeskCrm:
             return "opt_out"
         if not email:
             raise CrmDeskUnresolved(f"{kind} {idempotency_key} names a person with no address")
+        # When it happened is when the desk queued it, never when the CRM happens to hear: a retry after an outage, or a
+        # CRM that is behind, must not move a send to another day.
+        queued = (db.val(cur, "select created_at from crm_outbox where idempotency_key = %s", idempotency_key)
+                  if cur is not None else None)
+        when = {"occurred_at": queued.isoformat()} if queued else {}
         if kind == "activity" and payload.get("type") == "email_sent":
             body = {"type": "email", "direction": "out", "contact": email, "subject": payload.get("subject"),
-                    "external_id": f"message:{payload['message_id']}"}
+                    "external_id": f"message:{payload['message_id']}", **when}
         elif kind == "activity":
             body = {"type": SDR_TYPES[payload["kind"]], "contact": email, "outcome": payload.get("outcome"),
-                    "external_id": f"task:{payload['task_id']}"}
+                    "external_id": f"task:{payload['task_id']}", **when}
         elif kind == "meeting":
             domain = db.val(cur, "select primary_domain from accounts where id = %s", payload["account_id"])
             body = {"type": "meeting", "meeting_status": "booked", "meeting_at": payload["starts_at"], "contact": email,
@@ -116,6 +121,11 @@ class CrmDeskCrm:
             raise ValueError(f"Unknown outbox kind {kind}")
         r = self._call("POST", "/tasks" if kind == "task" else "/activities", json=body,
                        headers={"idempotency-key": idempotency_key})
+        if r.status_code == 404 and kind == "meeting" and "account" in body:
+            # The CRM holds no account for this domain (it holds only the accounts its other desks sent), and an activity
+            # never creates one: the meeting goes on the contact, which the CRM does hold.
+            body.pop("account")
+            r = self._call("POST", "/activities", json=body, headers={"idempotency-key": idempotency_key})
         if r.status_code == 409 and r.json().get("code") == "erased":
             return "refused:erased"
         return self._ok(r)["id"]

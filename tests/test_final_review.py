@@ -85,7 +85,8 @@ def test_the_app_validates_settings_when_it_starts(monkeypatch):
 
 
 def _uk(cur, scene, subscriber):
-    db.run(cur, "insert into region_rules (country, rule) values ('GB', 'basis_required') on conflict do nothing")
+    db.run(cur, "insert into region_rules (country, rule, individual_consent) values ('GB', 'basis_required', true) "
+                "on conflict (country) do update set individual_consent = true")
     db.run(cur, "update people set country = 'GB', timezone = 'Europe/London' where id = %s", scene["person"])
     db.run(cur, "update accounts set hq_country = 'GB', subscriber_type = %s where id = %s", subscriber, scene["account"])
     db.run(cur, "insert into contact_basis (person_id, basis) values (%s, 'legitimate_interest:LIA-1') "
@@ -96,7 +97,7 @@ def _uk(cur, scene, subscriber):
 def test_uk_individual_or_unknown_subscribers_are_not_cold_emailed(cur, scene, subscriber, code):
     _uk(cur, scene, subscriber)
     assert code in [r.code for r in gate.person_reasons(cur, scene["person"], "email")]
-    refused(cur, scene["message"], "UK subscriber")
+    refused(cur, scene["message"], "not a limited company")
 
 
 def test_a_uk_limited_company_may_be_emailed_and_consent_lifts_the_rule(cur, scene):
