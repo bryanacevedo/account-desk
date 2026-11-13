@@ -145,3 +145,7 @@ Not done:
 ## Live result 2026-11-14 (d0f8426)
 
 The 79e60de image failed the coverage gate on "needs a region rule" (decision 78: the CRM now leaves a country blank on about 1% of contacts), the next one (449eef6) on "spam complaint" and "mailbox paused" (decision 79: complaint rate 0.15% to 0.35%). d0f8426 built and is live at https://account-desk-x4ko.onrender.com, serving the same web bundle as a fresh build of the branch (`index-DwUCsULu.js`). Lesson: Render's world differs slightly from a laptop's (24 hard bounces against 26 to 28), so any scenario resting on fewer than about five events can flip in the image build; a laptop pass is not proof. `/api/health` reports `monitors_failing: 1` in the demo, not looked into. Screenshots of Today and an account sheet at 1440x900 and 375x812 are in `~/Developer/p3-review/live/`.
+
+## Prompt caching (2026-11-13, Backlog bl_117, branch `cache/prompt-caching`)
+
+Cache markers, tests and cache-aware cost accounting are in; most prompts are under the 512-token cache minimum, and the live before and after measurement waits on an Anthropic key. See the newest decision.
