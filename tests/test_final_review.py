@@ -39,7 +39,7 @@ def _live_env(monkeypatch, **extra):
     for k in ("LIVE_SEND", "PUBLIC_DEMO", "SENDER_COMPANY", "SENDER_ADDRESS", "PRIVACY_URL"):
         monkeypatch.delenv(k, raising=False)
     env = {"MODE": "live", "WEBHOOK_SECRET": "s" * 40, "AUTH_MODE": "header", "CF_ACCESS_TEAM_DOMAIN": "t.example",
-           "CF_ACCESS_AUD": "aud", **extra}
+           "CF_ACCESS_AUD": "aud", "ERASURE_KEY": "an-install-key-for-tests", **extra}
     for k, v in env.items():
         monkeypatch.setenv(k, v)
 
@@ -163,8 +163,8 @@ def test_retention_deletes_stale_prospects_and_keeps_opt_outs_as_hashes(cur, sce
     left = {r["id"] for r in db.all(cur, "select id from people where id = any(%s)", [quiet, gone, recent])}
     assert left == {recent} and out["opt_outs_kept"] >= 1
     assert privacy.erased(cur, email=f"optout{id(cur)}@x.example", linkedin_url=None)
-    assert db.val(cur, "select exists (select 1 from suppressions where kind = 'phone_hash' and value = %s)",
-                  privacy.phone_hash("+442079460000"))
+    assert db.val(cur, "select exists (select 1 from suppressions where kind = 'phone_hmac' and value = %s)",
+                  privacy.phone_hmac("+442079460000"))
     assert not db.val(cur, "select exists (select 1 from suppressions where kind = 'email' and value = %s)",
                       f"optout{id(cur)}@x.example")
     # The hashed number still blocks a call to the same number on someone new.
@@ -241,8 +241,8 @@ def test_an_opt_out_also_blocks_the_phone_and_the_linkedin_profile(cur, scene):
     db.run(cur, "update people set phone = '+1 215 555 0101', linkedin_url = %s where id = %s", url, scene["person"])
     privacy.suppress_other_channels(cur, scene["person"], reason="Unsubscribed by reply", source="reply")
     assert db.val(cur, "select exists (select 1 from suppressions where kind = 'phone' and value = '+1 215 555 0101')")
-    assert db.val(cur, "select exists (select 1 from suppressions where kind = 'linkedin_hash' and value = %s)",
-                  privacy.linkedin_hash(url))
+    assert db.val(cur, "select exists (select 1 from suppressions where kind = 'linkedin_hmac' and value = %s)",
+                  privacy.linkedin_hmac(url))
     assert "suppressed" in [r.code for r in gate.person_reasons(cur, scene["person"], "linkedin")]
 
 

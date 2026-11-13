@@ -200,6 +200,37 @@ def expire_proposals(cur, payload: dict) -> None:
             set_state(cur, r["id"], "expired", reason="expired", cooldown_key="expired")
 
 
+def ensure_event_play(cur) -> int | None:
+    """Event follow-up as a play, when Events Desk is beside this desk (INTEGRATED_WITH). Alone it does not exist. The
+    signal types and the play are added once and live, written by a GTM user and launched by a manager (a play needs two
+    people); with no such pair of users nothing is added and None comes back. Returns the play's id."""
+    from .seed import catalog as C
+    for key, label, because, level, weight, half in C.EVENT_SIGNAL_TYPES:
+        db.run(cur, """insert into signal_types (key, label, because, level, weight, half_life_days)
+                       values (%s,%s,%s,%s,%s,%s) on conflict (key) do nothing""", key, label, because, level, weight, half)
+    db.run(cur, """insert into signal_sources (key, label, adapter, cadence_minutes, paid) values ('crm', 'CRM', 'sim', 360, false)
+                   on conflict (key) do nothing""")
+    key, name, hyp, trig, personas, maxp, seq, angle, autonomy, urgent, latency = C.EVENT_PLAY
+    have = db.val(cur, "select id from plays where key = %s", key)
+    if have:
+        return have
+    author = db.val(cur, "select id from users where role = 'gtm' and active order by id limit 1")
+    launcher = db.val(cur, "select id from users where role = 'manager' and active and id is distinct from %s order by id limit 1", author)
+    if author is None or launcher is None:
+        return None
+    pid = db.val(cur, """insert into plays (key, name, hypothesis, trigger, personas, max_people, sequence, angle, autonomy, status,
+                                            holdout_pct, owner_id, created_by, launched_by, launched_at, urgent, latency_hours,
+                                            lia_ref, lia_review_due, monthly_cap)
+                         values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'live',20,%s,%s,%s,app_now(),%s,%s,
+                                 (select value #>> '{}' from settings where key = 'lia_ref'),
+                                 (select (value #>> '{}')::date from settings where key = 'lia_review_due'), %s)
+                         returning id""",
+                 key, name, hyp, J(trig), personas, maxp, J(seq), angle, autonomy, author, author, launcher, urgent, latency,
+                 J(C.PLAY_CAP))
+    audit.log(cur, "desk", "play_added", "play", pid, {"key": key, "why": "events_desk is integrated"})
+    return pid
+
+
 def close_if_empty(cur, account_play_id: int) -> None:
     """The moment the last person in a play stops, the play closes, instead of waiting for the next sweep: nobody
     approved (still approving), or the sequence ran out (active, no open SDR task)."""

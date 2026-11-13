@@ -6,6 +6,7 @@ import {
 } from "../lib";
 import { Comparison, LABEL, openSheet } from "../sheets";
 import { SignalLabel } from "../signalIcons";
+import { KeptInMarketDesk } from "../elsewhere";
 
 // ---------------------------------------------------------------- Deliverability
 
@@ -502,8 +503,8 @@ function IcpSection({ icp, canEdit, onDone }: { icp: any; canEdit: boolean; onDo
 }
 
 /** Accounts and people from a CSV. Rows the desk refuses come back with the reason, row by row. */
-function ImportBox() {
-  const [kind, setKind] = useState<"accounts" | "people">("accounts");
+function ImportBox({ peopleOnly }: { peopleOnly?: boolean }) {
+  const [kind, setKind] = useState<"accounts" | "people">(peopleOnly ? "people" : "accounts");
   const [result, setResult] = useState<any>(null);
   const [busy, run] = useBusy();
   const pick = (file: File | undefined) => {
@@ -514,11 +515,11 @@ function ImportBox() {
     });
   };
   return (
-    <Section title="Import CSV" right={<span className="mute small">CSV. Accounts first, then people.</span>}>
+    <Section title={peopleOnly ? "Import people" : "Import CSV"} right={peopleOnly ? <span className="mute small">CSV</span> : <span className="mute small">CSV. Accounts first, then people.</span>}>
       <div className="actions" style={{ flexWrap: "wrap" }}>
-        <select className="select" style={{ width: 160 }} value={kind} onChange={(e) => setKind(e.target.value as any)} aria-label="What to import">
+        {peopleOnly ? null : <select className="select" style={{ width: 160 }} value={kind} onChange={(e) => setKind(e.target.value as any)} aria-label="What to import">
           <option value="accounts">Accounts</option><option value="people">People</option>
-        </select>
+        </select>}
         <label className="btn line sm" style={{ cursor: "pointer" }}>
           Choose a file<input type="file" accept=".csv,text/csv" className="sr-only" disabled={busy} onChange={(e) => pick(e.target.files?.[0])} />
         </label>
@@ -591,16 +592,16 @@ export function Settings() {
         </dl>
       </Section>
       {me?.user.role === "manager" ? <Team /> : null}
-      <IcpSection icp={data.icp} canEdit={canEdit} onDone={reload} />
-      {me && me.user.role !== "sdr" ? <ImportBox /> : null}
+      {data.kept ? <KeptInMarketDesk kept={data.kept} links={data.integration?.links ?? {}} /> : <IcpSection icp={data.icp} canEdit={canEdit} onDone={reload} />}
+      {me && me.user.role !== "sdr" ? <ImportBox peopleOnly={!!data.kept} /> : null}
       <Section title="Do not contact">
         <AddSuppression onDone={reload} />
         {data.suppressions.length ? (
           <div className="ledger">
             {data.suppressions.slice(0, 20).map((x: any) => (
               <div key={x.id} className="row" style={{ gridTemplateColumns: "100px minmax(0,1fr) minmax(0,1fr) 90px 70px", minHeight: 36 }}>
-                <span className="mute">{cap(x.kind === "email_hash" ? "erased" : x.kind)}</span>
-                <span className="clip">{x.kind === "email_hash" ? "Address kept only as a scrambled copy" : x.value}</span>
+                <span className="mute">{cap(/_(hash|hmac)$/.test(x.kind) ? "erased" : x.kind)}</span>
+                <span className="clip">{/_(hash|hmac)$/.test(x.kind) ? "Kept only as a scrambled copy" : x.value}</span>
                 <span className="mute clip">{x.reason}</span>
                 <span className="num mute small">{day(x.created_at)}</span>
                 {me?.user.role === "manager" && String(x.source).startsWith("person:") ? <LiftButton id={x.id} onDone={reload} /> : <span />}

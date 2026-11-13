@@ -4,6 +4,7 @@ import { api } from "./api";
 import { Avatar, Logo } from "./marks";
 import { SignalIcon, SignalLabel } from "./signalIcons";
 import { PlayEditor, PlayPreview } from "./PlayEditor";
+import { ElsewhereAccount, ElsewherePerson, keptBy, useIntegration } from "./elsewhere";
 import {
   Bar, Empty, Seg, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTime, late, money, n0, navigate, pct,
   safeUrl, toast, useBusy, useData, useNowIso, withParam, type Glyph,
@@ -268,6 +269,7 @@ export function PersonSheet({ id }: { id: number }) {
           </ul>
         ) : <Empty title="Nothing yet" />}
       </Section>
+      <ElsewherePerson p={p} />
       <EraseBox personId={p.id} name={p.full_name} />
     </Frame>
   );
@@ -703,6 +705,7 @@ export function AccountSheet({ id }: { id: number }) {
     navigate(u.pathname + "?" + u.searchParams.toString(), true);
   };
   const me = useData<any>("/api/me").data;
+  const integ = useIntegration();
   const [busy, run] = useBusy();
   const [skipping, setSkipping] = useState(false);
   const [reason, setReason] = useState("");
@@ -732,6 +735,8 @@ export function AccountSheet({ id }: { id: number }) {
       )}
     </div>
   ) : null;
+  // With Market Desk present its tier is the tier, read-only, and this desk's own fit steps aside for the accounts that have one.
+  const recorded = keptBy(integ, "market_desk") && !!a.crm_tier;
   const tabs: [string, string, number?][] = [["overview", "Overview"], ["people", "People", data.people.length],
     ["signals", "Signals", data.signals.length], ["outreach", "Outreach", data.messages.length + data.replies.length]];
   return (
@@ -745,19 +750,20 @@ export function AccountSheet({ id }: { id: number }) {
       </div>
       <div className="figs">
         <Fig value={s?.priority ?? 0} label="Priority" />
-        <Fig value={s?.fit ?? a.fit_score ?? 0} label={`Fit, tier ${a.fit_tier}`} />
+        {recorded ? <Fig value={a.crm_tier} label="Tier" /> : <Fig value={s?.fit ?? a.fit_score ?? 0} label={`Fit, tier ${a.fit_tier}`} />}
         <Fig value={s?.intent ?? 0} label="Signals" />
-        <Fig value={a.owner || cur?.owner || "Unassigned"} label="Owner" sm />
+        <Fig value={a.owner || cur?.owner || "Unassigned"} label={keptBy(integ, "market_desk") ? "SDR owner" : "Owner"} sm />
       </div>
       <div className="tabs" role="tablist">
         {tabs.map(([k, l, n]) => <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}{n !== undefined ? <span className="n">{n}</span> : null}</button>)}
       </div>
-      {tab === "overview" && <AccountOverview d={data} decision={decision} />}
+      {tab === "overview" && <AccountOverview d={data} decision={decision} recorded={recorded} />}
       {tab === "people" && <AccountPeople d={data} />}
       {tab === "signals" && <SignalTimeline signals={data.signals} />}
       {tab === "outreach" && <AccountOutreach d={data} />}
       {cur ? null : data.holds.length ? <Section title={`On hold until ${day(data.holds[0].until)}`}><div className="small mute">{cap(data.holds[0].reason)}</div></Section> : null}
       {tab === "overview" ? <div className="acct-tools"><LogMeeting accountId={id} people={data.people} onDone={reload} /><HoldBox accountId={id} onDone={reload} /></div> : null}
+      <ElsewhereAccount a={a} />
     </Frame>
   );
 }
@@ -804,7 +810,7 @@ function CompanyData({ a }: { a: any }) {
   );
 }
 
-function AccountOverview({ d, decision }: { d: any; decision?: ReactNode }) {
+function AccountOverview({ d, decision, recorded }: { d: any; decision?: ReactNode; recorded?: boolean }) {
   const cur = d.current;
   const max = Math.max(1, ...grouped(d.contributions).map((c) => c.value));
   const fit = (d.account.fit_breakdown?.factors || []) as any[];
@@ -859,7 +865,7 @@ function AccountOverview({ d, decision }: { d: any; decision?: ReactNode }) {
           </div>
         ) : <Empty title="No recent signals">Priority is the fit score alone.</Empty>}
       </Section>
-      <Section title="Fit">
+      {recorded ? null : <Section title="Fit">
         {d.account.fit_breakdown?.excluded ? <div className="mute">{d.account.fit_breakdown.excluded}</div> : (
           <div className="ledger">
             {fit.map((f) => (
@@ -870,7 +876,7 @@ function AccountOverview({ d, decision }: { d: any; decision?: ReactNode }) {
             ))}
           </div>
         )}
-      </Section>
+      </Section>}
       {d.opportunities.length ? (
         <Section title="Pipeline">
           <div className="ledger">

@@ -366,13 +366,14 @@ def build_committee(cur, ap: dict, play: dict, account: dict, *, exclude: frozen
                 return hits
 
             found = [Candidate(**c) for c in bought(cur, "people_search", f"{account['id']}:{key}", search)]
-            from .privacy import linkedin_hash
+            from .privacy import linkedin_hash, linkedin_hmac
             for c in found:
                 existing = db.val(cur, "select id from people where linkedin_key = %s", linkedin_key(c.linkedin_url))
                 if existing:
                     continue
-                if c.linkedin_url and db.val(cur, "select exists (select 1 from suppressions where kind = 'linkedin_hash' "
-                                                  "and value = %s)", linkedin_hash(c.linkedin_url)):
+                if c.linkedin_url and db.val(cur, "select exists (select 1 from suppressions where "
+                                                  "(kind = 'linkedin_hash' and value = %s) or (kind = 'linkedin_hmac' and value = %s))",
+                                             linkedin_hash(c.linkedin_url), linkedin_hmac(c.linkedin_url)):
                     continue  # erased on request: never added again
                 if c.match_confidence == "low":
                     continue  # the vendor is not sure this is the right person

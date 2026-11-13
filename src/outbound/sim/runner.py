@@ -8,12 +8,17 @@ import logging
 import random
 from datetime import datetime, timedelta, timezone
 
-from .. import clock, db, jobs, outreach, pipeline, plays, replies, scheduler, scoring, timeutil
+from .. import clock, db, integration, jobs, outreach, pipeline, plays, replies, scheduler, scoring, timeutil
 from ..db import J
 from ..seed import load
-from . import signals_gen, world
+from . import signals_gen, world, world_load
 
 log = logging.getLogger("outbound.sim")
+
+
+def world_on() -> bool:
+    """WORLD=world builds and runs the demo from the shared world's slice (docs/WORLD.md); the default is the desk's own."""
+    return integration.world_mode() == "world"
 
 
 def reset(url: str | None = None) -> None:
@@ -48,7 +53,8 @@ def setup(*, start: datetime, seed: int = 7, n_accounts: int = 3000) -> dict:
     llm.SIM_CHARGE = True  # the demo's AI work costs what it would
     with db.tx() as cur:
         load.load_catalog(cur, start=start)
-        info = world.build(cur, seed=seed, n_accounts=n_accounts, start=start)
+        info = (world_load.build(cur, start=start, n_accounts=n_accounts) if world_on()
+                else world.build(cur, seed=seed, n_accounts=n_accounts, start=start))
         _sim_placement(cur, random.Random(seed), start)
         db.run(cur, """update sending_domains set dns_detail = jsonb_build_object('seeded', jsonb_build_object('spf', spf,
                        'dkim', dkim, 'dmarc', dmarc, 'aligned', dmarc_aligned, 'policy', dmarc_policy))""")
@@ -74,11 +80,14 @@ def _sim_placement(cur, rng: random.Random, start: datetime) -> None:
 
 
 def _queue_day_signals(cur, rng: random.Random, day: datetime) -> int:
-    raw = signals_gen.day_signals(cur, rng, day)
+    # In world mode the day's signals are the world's own and each one's lag is fixed by the signal, so the shared
+    # random stream is never drawn from here.
+    raw = world_load.day_signals(cur, day) if world_on() else signals_gen.day_signals(cur, rng, day)
     n = 0
     for source, items in raw.items():
         for it in items:
-            lag = timedelta(minutes=rng.randint(20, 6 * 60))
+            lag = (world_load.sim_event_lag(it["external_id"]) if world_on()
+                   else timedelta(minutes=rng.randint(20, 6 * 60)))
             payload = {"source": source, "raw": {**it, "observed_at": it["observed_at"].isoformat()}}
             db.run(cur, "insert into sim_events (at, kind, payload) values (%s, 'signal', %s)", it["observed_at"] + lag,
                    J(payload))
@@ -267,7 +276,7 @@ def skip_reasons(employees: int | None) -> list[str]:
 
 
 def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None:
-    reps = db.all(cur, "select * from users where role in ('sdr', 'manager') order by id")
+    reps = db.all(cur, "select * from users where role in ('sdr', 'manager') and active order by id")
     for u in reps:
         if not _working(at, u["timezone"]) or rng.random() > eagerness:
             continue
@@ -466,13 +475,20 @@ def _open_deal(cur, account_id: int) -> bool:
 
 
 def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
+    # Buyers' meeting behaviour: the desk's own numbers, or the world's (no-show share; chance a held meeting opens a deal).
+    if world_on():
+        b = world_load.behavior()
+        held_share = 1 - b["no_show"]["base"]
+        opp_base, opp_need = b["opportunity_from_meeting"]["base"], b["opportunity_from_meeting"]["per_need"]
+    else:
+        held_share, opp_base, opp_need = 0.84, 0.22, 0.5
     for m in db.all(cur, """select m.*, sa.need::float as need, sa.billing, p.email, s.type_key,
                                    coalesce(m.owner_id, a.owner_id) as writer
                             from meetings m join sim_accounts sa on sa.account_id = m.account_id
                             join accounts a on a.id = m.account_id left join people p on p.id = m.person_id
                             left join account_plays ap on ap.id = m.account_play_id left join signals s on s.id = ap.trigger_signal_id
                             where m.status = 'booked' and m.starts_at < %s order by m.starts_at, m.id""", at):
-        status = "held" if rng.random() < 0.84 else "no_show"
+        status = "held" if rng.random() < held_share else "no_show"
         pipeline.set_meeting_status(cur, m["id"], status)
         if status == "held":
             # What was said on the call has its own random stream, so the notes never shift the rest of the world.
@@ -480,7 +496,7 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
             nid = pipeline.record_call_notes(cur, m["id"], notes, m["writer"])
             if rng.random() < 0.9:
                 pipeline.learn_from(cur, nid, m["writer"])
-            if rng.random() < 0.22 + 0.5 * m["need"]:
+            if rng.random() < opp_base + opp_need * m["need"]:
                 db.run(cur, "insert into sim_events (at, kind, payload) values (%s, 'opportunity', %s)",
                        at + timedelta(days=rng.randint(2, 8)), J({"account_id": m["account_id"], "email": m["email"]}))
     for ev in db.all(cur, "select * from sim_events where kind = 'opportunity' and not done and at <= %s order by at, id", at):
@@ -511,10 +527,11 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
 
 def _rebalance(cur, rng: random.Random, at: datetime) -> None:
     """Sales ops moves a few accounts between SDRs in the CRM, and once in a while to an AE who is not on the desk."""
-    sdrs = [r["email"] for r in db.all(cur, "select email from users where role = 'sdr' order by id")]
+    sdrs = [r["email"] for r in db.all(cur, "select email from users where role = 'sdr' and active order by id")]
     for a in db.all(cur, """select a.id, u.email from accounts a left join users u on u.id = a.owner_id
                             where a.lifecycle = 'prospect' order by a.id offset %s limit 3""", rng.randint(0, 400)):
-        to = "ae.team@lumenledger.example" if rng.random() < 0.15 else rng.choice([e for e in sdrs if e != a["email"]] or sdrs)
+        ae = rng.choice(world_load.ae_emails()) if world_on() else "ae.team@lumenledger.example"
+        to = ae if rng.random() < 0.15 else rng.choice([e for e in sdrs if e != a["email"]] or sdrs)
         db.run(cur, "insert into sim_crm_owner_changes (account_id, owner_email, updated_at) values (%s,%s,%s)", a["id"], to, at)
 
 
@@ -548,23 +565,26 @@ def _hour(cur_rng: random.Random, at: datetime, eagerness: float, totals: dict) 
     totals["jobs"] += jobs.run_ready(limit=2000)
 
 
-def run(days: int, *, seed: int = 11, slow_last_days: int = 2, idle_hours: int = 40) -> dict:
+def run(days: int, *, seed: int = 11, slow_last_days: int = 2, idle_hours: int = 40, extra_hours: int = 0) -> dict:
+    """Simulate `days` whole days and then `extra_hours` more hours (the world's now is 14:00, two hours past the cut's
+    12:00 on the 91st day)."""
     rng = random.Random(seed)
     with db.tx() as cur:
         start = clock.now(cur)
     totals = {"signals": 0, "events": 0, "jobs": 0}
-    for d in range(days):
+    total_hours = days * 24 + extra_hours
+    for d in range(days + (1 if extra_hours else 0)):
         day = start + timedelta(days=d)
         with db.tx() as cur:
             totals["signals"] += _queue_day_signals(cur, rng, day.replace(hour=0, minute=0, second=0, microsecond=0))
         eagerness = 0.55 if d < days - slow_last_days else 0.12
-        for h in range(24):
+        for h in range(24 if d < days else extra_hours):
             # The reps stop a day before the demo opens, so it opens on a morning with work waiting.
-            idle = (days - d) * 24 - h <= idle_hours
+            idle = total_hours - (d * 24 + h) <= idle_hours
             _hour(rng, day + timedelta(hours=h), 0.0 if idle else eagerness, totals)
         log.info("simulated day %s: %s", d + 1, totals)
     with db.tx() as cur:
-        db.run(cur, "update sim_clock set at = %s", start + timedelta(days=days))
+        db.run(cur, "update sim_clock set at = %s", start + timedelta(hours=total_hours))
     return totals
 
 

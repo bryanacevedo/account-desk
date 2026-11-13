@@ -288,16 +288,20 @@ def person(cur, person_id: int) -> dict | None:
     sigs = db.all(cur, """select s.id, s.type_key, t.label, s.observed_at, s.evidence from signals s
                           join signal_types t on t.key = s.type_key where s.person_id = %s order by s.observed_at desc limit 20""",
                   person_id)
-    from .privacy import linkedin_hash
+    from .privacy import email_hmac, linkedin_hash, linkedin_hmac
     blocked = db.all(cur, """select kind, reason, created_at from suppressions
                              where (expires_at is null or expires_at > app_now()) and (
                                (kind = 'person' and value = %s) or (kind = 'email' and value = %s) or (kind = 'phone' and value = %s)
                                or (kind = 'domain' and value = split_part(%s, '@', 2))
                                or (kind = 'account' and value = %s)
                                or (kind = 'email_hash' and %s <> '' and value = encode(sha256(convert_to(%s, 'UTF8')), 'hex'))
-                               or (kind = 'linkedin_hash' and value = %s))""",
+                               or (kind = 'email_hmac' and %s <> '' and value = %s)
+                               or (kind = 'linkedin_hash' and value = %s)
+                               or (kind = 'linkedin_hmac' and value = %s))""",
                      str(person_id), p["email"] or "", p["phone"] or "", p["email"] or "", str(p["account_id"] or ""),
-                     p["email"] or "", p["email"] or "", linkedin_hash(p["linkedin_url"]) if p["linkedin_url"] else "")
+                     p["email"] or "", p["email"] or "", p["email"] or "", email_hmac(p["email"]) if p["email"] else "",
+                     linkedin_hash(p["linkedin_url"]) if p["linkedin_url"] else "",
+                     linkedin_hmac(p["linkedin_url"]) if p["linkedin_url"] else "")
     waiting = db.all(cur, """select 'task' as kind, t.id, t.kind as what, t.title as label, t.due_at as at from tasks t
                              where t.person_id = %s and t.status = 'open'
                              union all
@@ -656,8 +660,27 @@ def like_pattern(q: str) -> str:
     return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
 
+def integration_state() -> dict:
+    """Which other desks are present and which this install links to (shared-world DESIGN 2b and 9). Both empty
+    when the desk runs alone: the screen is then exactly the standalone one."""
+    from . import integration
+    return {"integrated_with": sorted(integration.integrated_with()), "links": integration.desk_links()}
+
+
+def kept_in_market_desk(cur) -> dict | None:
+    """What Market Desk keeps when it is present: the profile version in force and when accounts were last read from
+    the record. None when it is not present. The accounts column arrives with migration 0031, so it is read
+    through to_jsonb and works before and after."""
+    from . import integration
+    if not integration.has("market_desk"):
+        return None
+    return {"icp": db.one(cur, "select id, published_at, note from icp_versions order by published_at desc limit 1"),
+            "accounts_read_at": db.val(cur, "select max((to_jsonb(a)->>'crm_read_at')::timestamptz) from accounts a")}
+
+
 def settings(cur) -> dict:
-    return {"settings": {r["key"]: r["value"] for r in db.all(cur, "select key, value from settings where key = any(%s)",
+    return {"integration": integration_state(), "kept": kept_in_market_desk(cur),
+            "settings": {r["key"]: r["value"] for r in db.all(cur, "select key, value from settings where key = any(%s)",
                                                               list(SETTINGS_SHOWN))},
             "signal_types": db.all(cur, "select * from signal_types order by weight desc"),
             "icp": db.one(cur, "select * from icp_versions order by published_at desc limit 1"),

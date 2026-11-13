@@ -1,7 +1,9 @@
 """Command line: python -m outbound <command>
 
   migrate            apply migrations
-  demo [days]        rebuild the demo database from scratch and simulate N days (default 45)
+  demo [days]        rebuild the demo database from scratch and simulate N days (default 90). With WORLD=world it is
+                     built from the shared world's slice and runs from the cut to the world's now (default 91 days
+                     and 2 hours); an explicit N runs N days from the cut.
   simulate [days]    simulate N more days on the current database
   serve              run the web app and API (and the worker in-process)
   monitors           run every monitor once and print the result
@@ -50,17 +52,28 @@ def main(argv: list[str]) -> int:
             print(json.dumps(fn(cur, open(path, encoding="utf-8-sig").read()), indent=1))
     elif cmd == "demo":
         from . import monitors, outreach, pipeline, replies, scheduler, scoring, sending, suggestions, themes  # noqa: F401 register handlers
+        from . import integration
         from .sim import runner
-        days = int(argv[2]) if len(argv) > 2 else 90
+        mode = integration.world_mode()
+        start, days, extra_hours = DEMO_START, int(argv[2]) if len(argv) > 2 else 90, 0
+        if mode == "world":
+            from .sim import world_load
+            start, end = world_load.window()
+            span = end - start
+            if len(argv) > 2:
+                days = int(argv[2])
+            else:
+                days, extra_hours = span.days, span.seconds // 3600
         t0 = time.time()
         runner.reset()
         runner.deterministic_database(True)  # the same seed builds the same desk (runner.deterministic_database)
-        info = runner.setup(start=DEMO_START)
-        totals = runner.run(days)
+        info = runner.setup(start=start)
+        totals = runner.run(days, extra_hours=extra_hours)
         # Learnings are filed as they arrive; the backfill catches any left over and looks for patterns once more.
         totals["learnings_filed_after"] = themes.backfill()
         runner.deterministic_database(False)
-        print(json.dumps({"world": info, "totals": totals, "seconds": round(time.time() - t0, 1)}))
+        print(json.dumps({"world": info, "world_mode": mode, "totals": totals, "seconds": round(time.time() - t0, 1)},
+                         default=str))
         db.close()
     elif cmd == "themes" and len(argv) > 2 and argv[2] == "backfill":
         from . import pipeline, themes  # noqa: F401 register handlers

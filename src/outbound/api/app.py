@@ -47,6 +47,7 @@ from .. import (  # noqa: F401
     vendors,
     views,
 )
+from .. import integration
 from ..config import CONFIG
 
 log = logging.getLogger("outbound.api")
@@ -77,6 +78,7 @@ async def lifespan(_app):
     # However the app is started (python -m outbound serve, or uvicorn outbound.api.app:app directly), the unsafe
     # settings are refused before anything is served.
     CONFIG.validate()
+    integration.integrated_with()  # a name it does not know refuses to start
     # The code and the schema ship together: a desk that starts on an older database brings it up to date first,
     # instead of serving pages that call functions the database does not have yet.
     applied = db.migrate()
@@ -348,7 +350,8 @@ def me(u: dict = Depends(current_user)) -> dict:
         sim = db.val(cur, "select enabled from sim_clock")
     return {"user": {k: u[k] for k in ("id", "name", "role", "timezone")}, "users": users, "counts": counts,
             "money": money(u), "now": now, "simulated": sim, "public_demo": CONFIG.public_demo,
-            "company": CONFIG.sender_company, "linkedin_tool": bool(CONFIG.linkedin_tool_token)}
+            "company": CONFIG.sender_company, "linkedin_tool": bool(CONFIG.linkedin_tool_token),
+            "integration": views.integration_state()}
 
 
 @app.get("/api/today")
@@ -761,6 +764,8 @@ def import_rows(kind: Literal["accounts", "people"], body: ImportFile, u: dict =
     not_in_public_demo()
     need(u, "manager", "gtm")
     from .. import setup_desk
+    if kind == "accounts" and integration.has("market_desk"):
+        raise HTTPException(409, setup_desk.ACCOUNTS_KEPT_MESSAGE)
     with db.tx() as cur:
         out = (setup_desk.import_accounts if kind == "accounts" else setup_desk.import_people)(cur, body.csv)
         audit.log(cur, "person", f"imported_{kind}", "desk", None, {"imported": out["imported"],
@@ -982,6 +987,9 @@ def publish_icp(body: IcpRules, u: dict = Depends(writer)) -> dict:
     version stays, so a score can always be traced to the rules it was computed with."""
     not_in_public_demo()
     need(u, "gtm")
+    if integration.has("market_desk"):
+        from .. import setup_desk
+        raise HTTPException(409, setup_desk.PROFILE_KEPT_MESSAGE)
     if not (0 < body.tiers["B"] < body.tiers["A"] <= 100):
         raise HTTPException(422, "Tier A needs a higher score than tier B, both between 1 and 100.")
     for f in body.factors + body.penalties:
@@ -1495,6 +1503,53 @@ def unsubscribe(person_id: int, token: str) -> str:
 
 if WEB.exists():
     app.mount("/assets", StaticFiles(directory=WEB / "assets"), name="assets")
+
+
+# ---------------------------------------------------------------- links from the other desks (DESIGN 9)
+
+def _gone(what: str) -> HTMLResponse:
+    return HTMLResponse(f"<!doctype html><meta charset=utf-8><body style='font:16px system-ui;max-width:420px;margin:15vh auto'>"
+                        f"<p>{what}</p></body>", status_code=404)
+
+
+@app.get("/go/account/{ref:path}", include_in_schema=False)
+def go_account(ref: str, u: dict = Depends(current_user)):
+    """Another desk's link to an account: `world:<id>`, `domain:<domain>` or `crm:<id>` opens its sheet here. Signed in
+    like the app, so a signed-out request learns nothing about what exists."""
+    from fastapi.responses import RedirectResponse
+    kind, _, value = ref.partition(":")
+    value = value.strip()
+    with db.tx() as cur:
+        if kind == "world" and value:
+            found = db.val(cur, "select id from accounts where world_id = %s", value)
+        elif kind == "domain" and value:
+            found = db.val(cur, """select id from accounts where primary_domain = lower(%s)
+                                   union select account_id from account_domains where domain = lower(%s) limit 1""", value, value)
+        elif kind == "crm" and value:
+            found = db.val(cur, "select id from accounts where crm_id = %s", value)
+        else:
+            found = None
+    if found is None:
+        return _gone("Account Desk holds no account with that reference. It holds the accounts in an SDR's book.")
+    return RedirectResponse(f"/accounts?sheet=account:{found}", status_code=302)
+
+
+@app.get("/go/contact/{ref:path}", include_in_schema=False)
+def go_contact(ref: str, u: dict = Depends(current_user)):
+    """A link to a person: `world:<id>` or `crm:<id>`. An address is never accepted: no personal data in a URL."""
+    from fastapi.responses import RedirectResponse
+    kind, _, value = ref.partition(":")
+    value = value.strip()
+    with db.tx() as cur:
+        if kind == "world" and value:
+            found = db.val(cur, "select id from people where world_id = %s", value)
+        elif kind == "crm" and value:
+            found = db.val(cur, "select id from people where crm_id = %s", value)
+        else:
+            found = None
+    if found is None:
+        return _gone("Account Desk holds no person with that reference.")
+    return RedirectResponse(f"/accounts?sheet=person:{found}", status_code=302)
 
 
 @app.get("/{path:path}", include_in_schema=False)

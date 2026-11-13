@@ -147,6 +147,64 @@ def test_2_feeds_give_every_change_once_across_pages(cur, name):
     assert owners and len({c for c, _ in owners}) == len(owners)
 
 
+# Test 8 (added with the shared world): the methods a CRM may add. A CRM without them is whole; with them they answer in
+# the shapes the desk reads, and the two outbox kinds that came with them land once on a retry.
+@pytest.mark.parametrize("name", CRMS)
+def test_8_optional_methods_and_the_new_outbox_kinds(cur, name):
+    w = _world(cur, name)
+    crm = _crm(name)
+    p0 = w["people"][0]
+
+    def push(k, p, key):
+        """As the outbox does: a failure is tried again with the attempt counted."""
+        if not db.val(cur, "select 1 from crm_outbox where idempotency_key = %s", key):
+            db.run(cur, "insert into crm_outbox (kind, payload, idempotency_key) values (%s, %s, %s)", k, db.J(p), key)
+        for _ in range(5):
+            try:
+                return crm.push(cur, k, p, key)
+            except Exception:
+                db.run(cur, "update crm_outbox set attempts = attempts + 1 where idempotency_key = %s", key)
+        raise AssertionError(f"{key} failed five times")
+    booked = push("meeting", {"meeting_id": w["tag"], "account_id": w["account"], "person_id": p0,
+                              "starts_at": (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()}, f"meeting:{w['tag']}")
+    db.run(cur, "update crm_outbox set status = 'done', payload = payload || %s where idempotency_key = %s",
+           db.J({"crm_ref": booked}), f"meeting:{w['tag']}")
+    kinds = [("contact", {"person_id": p0}, f"contact:{p0}"),
+             ("meeting_outcome", {"meeting_id": w["tag"], "person_id": p0, "status": "held"}, f"mo:{w['tag']}")]
+    first = [push(*k) for k in kinds]
+    again = [push(*k) for k in kinds]
+    assert first == again and all(first)
+    if name == "default":
+        for method in ("accounts_changed", "campaign_members_changed", "contactability"):
+            assert getattr(crm, method, None) is None                      # today's CRM is whole without them
+        assert not getattr(crm, "configured", False)                       # so the desk's own suppression list decides
+        return
+    assert crm.configured is True
+    email = db.val(cur, "select email from people where id = %s", p0)
+    ans = crm.contactability(cur, [{"ref": p0, "email": email}, {"ref": "x", "email": f"nobody.{w['tag']}@{w['domain']}"}])
+    assert ans[0]["can_email"] is True and ans[0]["flags"] == [] and ans[0]["suppressed"] is False
+    assert set(ans[1]) == {"can_email", "can_call", "flags", "suppressed", "erased"}
+    time.sleep(2.5)    # CRM Desk's feeds show a change once it has settled for two seconds
+    book = crm.accounts_changed(cur, None, 5)
+    assert isinstance(book, list) and all(a.domain and a.change_id for a in book)
+    members = crm.campaign_members_changed(cur, None, 5)
+    assert isinstance(members, list) and all(m.campaign_type and m.status for m in members)
+
+
+# Test 8, the fail-closed half: no answer to a contact check is an error, never an answer.
+@pytest.mark.parametrize("answer", ["timeout", 503, 429])
+def test_8_a_contact_check_fails_closed(answer):
+    def handler(request):
+        if answer == "timeout":
+            raise httpx.ConnectTimeout("timed out", request=request)
+        return httpx.Response(answer, json={"error": "down"})
+    crm = crmdesk.CrmDeskCrm("http://crm.test", "k", client=httpx.Client(base_url="http://crm.test", transport=httpx.MockTransport(handler)))
+    for call in (lambda: crm.contactability(None, [{"ref": 1, "email": "x@y.example"}]),
+                 lambda: crm.accounts_changed(None, None, 10), lambda: crm.campaign_members_changed(None, None, 10)):
+        with pytest.raises(crmdesk.CrmDeskDown):
+            call()
+
+
 # Test 4: CRM Desk not answering pauses the work; nothing is treated as done.
 @pytest.mark.parametrize("answer", ["timeout", 503, 429])
 def test_4_fails_closed(answer):

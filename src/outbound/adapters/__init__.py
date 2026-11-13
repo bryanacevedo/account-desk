@@ -199,7 +199,50 @@ class CrmOwner:
     change_id: str = ""  # with updated_at, the cursor: changes sharing a timestamp are never skipped
 
 
+@dataclass
+class CrmAccount:
+    """An account as the CRM holds it, with the market fields (tier, segment, fit) and the SDR who works it."""
+    domain: str
+    name: str
+    world_id: str | None = None
+    crm_id: str | None = None
+    tier: str | None = None          # A | B | C | X, or None when the CRM holds none ("Not judged" is read as None)
+    segment: str | None = None
+    fit: int | None = None
+    icp_version: str | None = None
+    sdr_owner_email: str | None = None
+    updated_at: object = None
+    change_id: str = ""              # the feed's id for this row; with updated_at it is the cursor
+
+
+@dataclass
+class CrmCampaignMember:
+    """One person's place in a campaign (an event) as the CRM holds it."""
+    campaign_ref: str
+    campaign_name: str
+    campaign_type: str               # event | webinar | email | outbound | other
+    event_name: str | None
+    status: str                      # sent | registered | attended | met | no_show | responded
+    contact_email: str | None
+    contact_crm_id: str | None
+    account_domain: str | None
+    updated_at: object = None
+    change_id: str = ""
+
+
 class Crm(Protocol):
+    """What a CRM must do. These three are all a CRM needs for the whole flow to run. A CRM may also have the optional
+    methods below; the desk looks each up with getattr and does without it when absent, so an adapter shaped for a
+    Salesforce-style CRM never has to learn them:
+
+      accounts_changed(cur, since, limit) -> list[CrmAccount]                the SDR books, with tier and segment
+      campaign_members_changed(cur, since, limit) -> list[CrmCampaignMember]  event members, for event follow-up
+      contactability(cur, items) -> list[dict]                               {can_email, can_call, flags: [{kind, reason}],
+                                                                             suppressed, erased} per item, same order
+      configured: bool                                                       True for a real CRM the desk must ask before
+                                                                             a first send (absent or False for the sim)
+      accepts_kinds: set[str]                                                outbox kinds it takes; absent means all
+    """
     def push(self, cur, kind: str, payload: dict, idempotency_key: str) -> str: ...
     def deals_changed(self, cur, since: str | None, limit: int) -> list[CrmDeal]: ...  # since is 'time|crm_id', oldest first
     def owners_changed(self, cur, since: str | None, limit: int) -> list[CrmOwner]: ...  # since is 'time|change_id', oldest first

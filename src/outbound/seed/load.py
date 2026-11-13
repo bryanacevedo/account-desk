@@ -3,19 +3,41 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from .. import db
+from .. import db, integration
 from ..db import J
 from . import catalog as C
 
 
+def _users(world: bool) -> list[tuple]:
+    """name, email, role, timezone, active. The demo's own users, or in world mode the shared roster's."""
+    if not world:
+        return [(*u, True) for u in C.USERS]
+    from ..sim import world_load
+    return [(u["name"], u["email"], u["role"], u["timezone"], u["active"]) for u in world_load.roster()]
+
+
 def load_catalog(cur, *, start: datetime) -> dict:
-    for k, v in C.SETTINGS.items():
+    world = integration.world_mode() == "world"
+    settings = dict(C.SETTINGS)
+    sending_domains = C.SENDING_DOMAINS
+    if world:  # the seller's competitors and sending domains are the world's
+        from ..sim import world_load
+        settings["competing_tools"] = world_load.competing_tools()
+        sending_domains = world_load.sending_domains(C.SENDING_DOMAINS)
+    for k, v in settings.items():
         db.run(cur, "insert into settings (key, value) values (%s, %s) on conflict (key) do update set value = excluded.value",
                k, J(v))
     ids = {}
-    for name, email, role, tz in C.USERS:
-        ids[email] = db.val(cur, "insert into users (name, email, role, timezone, slack_id) values (%s,%s,%s,%s,%s) "
-                                 "returning id", name, email, role, tz, "U" + email.split("@")[0].replace(".", "").upper()[:9])
+    for name, email, role, tz, active in _users(world):
+        ids[email] = db.val(cur, "insert into users (name, email, role, timezone, slack_id, active) values (%s,%s,%s,%s,%s,%s) "
+                                 "returning id", name, email, role, tz, "U" + email.split("@")[0].replace(".", "").upper()[:9],
+                            active)
+    if world:  # Grace Osei's address now reaches Leah Ahn
+        from ..sim import world_load
+        for alias, target in world_load.ALIASES.items():
+            if target in ids:
+                db.run(cur, "insert into user_aliases (alias, user_id) values (%s, %s) on conflict (alias) do nothing",
+                       alias, ids[target])
     manager = next(i for e, i in ids.items() if e.startswith("elena"))
     gtm = next(i for e, i in ids.items() if e.startswith("sam"))
     for key, label, patterns, seniority, role, angle in C.PERSONAS:
@@ -50,8 +72,8 @@ def load_catalog(cur, *, start: datetime) -> dict:
         db.run(cur, "insert into budgets (vendor, monthly_cap_cents) values (%s,%s)", vendor, cap)
     for key, cents, per, note in C.SUBSCRIPTIONS:
         db.run(cur, "insert into subscriptions (key, unit_cents, per, assumed, note) values (%s,%s,%s,true,%s)", key, cents, per, note)
-    reps = db.all(cur, "select id, name, email from users where role = 'sdr' order by id")
-    for d_i, (domain, age_days) in enumerate(C.SENDING_DOMAINS):
+    reps = db.all(cur, "select id, name, email from users where role = 'sdr' and active order by id")
+    for d_i, (domain, age_days) in enumerate(sending_domains):
         young = age_days < 30
         db.run(cur, """insert into sending_domains (domain, spf, dkim, dmarc, dmarc_policy, dmarc_aligned, registered_at,
                                                     checked_at, spam_rate, spam_rate_at, postmaster_status)

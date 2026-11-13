@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import secrets
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -21,15 +22,56 @@ log = logging.getLogger("outbound.db")
 MIGRATIONS = Path(__file__).resolve().parents[2] / "migrations"
 _pool: ConnectionPool | None = None
 _url: str | None = None
+_demo_key: str | None = None  # the demo-only key read from (or written to) settings, kept per database
+
+
+def _erasure_key_for(conn: psycopg.Connection) -> str | None:
+    """This install's erasure key. ERASURE_KEY from the environment wins. Without it, in demo mode only, a random key
+    is made once and kept in settings (key 'erasure_key_demo'): it protects nothing a demo has and lets the demo's
+    erasure tests run. Live mode never reaches the fallback (config.validate refuses to start without ERASURE_KEY).
+    Before the migrations have run there is no settings table, and no key yet."""
+    global _demo_key
+    if CONFIG.erasure_key():
+        return CONFIG.erasure_key()
+    if CONFIG.mode == "live":
+        return None
+    if _demo_key:
+        return _demo_key
+    if not conn.execute("select to_regclass('settings') is not null as there").fetchone()["there"]:
+        return None
+    conn.execute("""insert into settings (key, value) values ('erasure_key_demo', to_jsonb(%s::text))
+                    on conflict (key) do nothing""", (secrets.token_hex(32),))
+    row = conn.execute("select value #>> '{}' as k from settings where key = 'erasure_key_demo'").fetchone()
+    conn.commit()
+    _demo_key = row["k"]
+    return _demo_key
+
+
+def erasure_key() -> str | None:
+    """The key the keyed erasure hashes use, as this process holds it (None before the first migration in demo)."""
+    if CONFIG.erasure_key() or _demo_key:
+        return CONFIG.erasure_key() or _demo_key
+    with pool().connection() as conn:
+        return _erasure_key_for(conn)
+
+
+def _set_session_key(conn: psycopg.Connection) -> None:
+    """Pool configure callback: every pooled connection carries the key as the session setting the database's send
+    guard reads (outbound.erasure_key). Session level, so it survives the transaction that follows."""
+    key = _erasure_key_for(conn)
+    if key:
+        conn.execute("select set_config('outbound.erasure_key', %s, false)", (key,))
+    conn.commit()
 
 
 def configure(url: str | None = None, *, min_size: int = 1, max_size: int = 10) -> None:
     """(Re)point the pool. Tests call this with their own database."""
-    global _pool, _url
+    global _pool, _url, _demo_key
     if _pool is not None:
         _pool.close()
     _url = url or CONFIG.database_url
-    _pool = ConnectionPool(_url, min_size=min_size, max_size=max_size, open=True,
+    _demo_key = None
+    _pool = ConnectionPool(_url, min_size=min_size, max_size=max_size, open=True, configure=_set_session_key,
                            kwargs={"row_factory": dict_row, "autocommit": False})
 
 
@@ -102,6 +144,8 @@ def migrate(url: str | None = None) -> list[str]:
                 conn.execute("insert into schema_migrations (name) values (%s)", (path.name,))
             applied.append(path.name)
             log.info("migrated %s", path.name)
+    if applied and _pool is not None and (url or _url) == _url:
+        _pool.drain()  # connections opened before the schema existed carry no erasure key; open new ones
     return applied
 
 

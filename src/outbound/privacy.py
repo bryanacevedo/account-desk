@@ -3,27 +3,62 @@ and leaves a hashed suppression so they are never added again (docs/SPEC.md 22.1
 from __future__ import annotations
 
 import hashlib
+import hmac as _hmac
 import re
 
 from . import audit, db
 
 
+def _key(key: str | None) -> bytes:
+    k = key or db.erasure_key()
+    if not k:
+        raise RuntimeError("No erasure key: set ERASURE_KEY (demo mode makes its own once the database is migrated).")
+    return k.encode()
+
+
+def email_hmac(email: str, key: str | None = None) -> str:
+    """Keyed hash of an address (DESIGN 6.4). Lower case, trimmed; the key is this install's own, so the hash cannot
+    be reversed by guessing likely addresses, and another install's hash of the same address differs."""
+    return _hmac.new(_key(key), email.strip().lower().encode(), hashlib.sha256).hexdigest()
+
+
+def linkedin_hmac(url: str, key: str | None = None) -> str:
+    return _hmac.new(_key(key), _linkedin_norm(url).encode(), hashlib.sha256).hexdigest()
+
+
+def phone_hmac(phone: str, key: str | None = None) -> str:
+    return _hmac.new(_key(key), re.sub(r"\D", "", phone).encode(), hashlib.sha256).hexdigest()
+
+
+def _linkedin_norm(url: str) -> str:
+    return url.strip().lower().split("://")[-1].removeprefix("www.").rstrip("/")
+
+
+def _suppress_hash(cur, kind: str, value: str, reason: str, source: str) -> None:
+    db.run(cur, "insert into suppressions (kind, value, reason, source) values (%s, %s, %s, %s)", kind, value, reason, source)
+
+
 def erased(cur, *, email: str | None, linkedin_url: str | None) -> bool:
-    """Whether this address or profile belongs to someone erased on request: they are never added again."""
+    """Whether this address or profile belongs to someone erased on request: they are never added again. Checks the
+    keyed hashes and the plain ones written before they existed (those rows cannot be re-keyed: the address is gone)."""
+    e = (email or "").strip().lower()
     return bool(db.val(cur, """select exists (select 1 from suppressions where
                                  (kind = 'email_hash' and %s <> '' and value = encode(sha256(convert_to(%s, 'UTF8')), 'hex'))
-                              or (kind = 'linkedin_hash' and value = %s))""",
-                       (email or "").lower(), (email or "").lower(), linkedin_hash(linkedin_url) if linkedin_url else ""))
+                              or (kind = 'email_hmac' and %s <> '' and value = %s)
+                              or (kind = 'linkedin_hash' and value = %s)
+                              or (kind = 'linkedin_hmac' and value = %s))""",
+                       e, e, e, email_hmac(e) if e else "",
+                       linkedin_hash(linkedin_url) if linkedin_url else "",
+                       linkedin_hmac(linkedin_url) if linkedin_url else ""))
 
 
 def linkedin_hash(url: str) -> str:
-    """The same profile however it is written: no scheme, no www, no trailing slash, lower case."""
-    u = url.strip().lower().split("://")[-1].removeprefix("www.").rstrip("/")
-    return hashlib.sha256(u.encode()).hexdigest()
+    """Legacy plain hash, read only: rows written before the keyed ones. Nothing writes it any more."""
+    return hashlib.sha256(_linkedin_norm(url).encode()).hexdigest()
 
 
 def erase(cur, person_id: int, *, actor_id: int | None) -> dict:
-    p = db.one(cur, "select id, email, full_name, linkedin_url from people where id = %s for update", person_id)
+    p = db.one(cur, "select id, email, phone, full_name, linkedin_url from people where id = %s for update", person_id)
     if p is None:
         return {"ok": False, "reason": "No such person"}
     email = (p["email"] or "").lower()
@@ -50,15 +85,15 @@ def erase(cur, person_id: int, *, actor_id: int | None) -> dict:
     counts["llm_calls_by_name"] = db.run(cur, "update llm_calls set output = '{}'::jsonb where output::text ilike %s",
                                          "%" + p["full_name"].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
     if p["linkedin_url"]:
-        db.run(cur, "insert into suppressions (kind, value, reason, source) values ('linkedin_hash', %s, 'Erased on request', 'erasure')",
-               linkedin_hash(p["linkedin_url"]))
+        _suppress_hash(cur, "linkedin_hmac", linkedin_hmac(p["linkedin_url"]), "Erased on request", "erasure")
+    if p["phone"]:
+        _suppress_hash(cur, "phone_hmac", phone_hmac(p["phone"]), "Erased on request", "erasure")
     if email:
         counts["crm_outbox"] = db.run(cur, "update crm_outbox set payload = payload - 'email' where payload->>'email' = %s", email)
         counts["llm_calls"] = db.run(cur, "update llm_calls set output = '{}'::jsonb where output::text ilike %s", f"%{email}%")
         counts["audit_log"] = db.run(cur, "update audit_log set detail = '{}'::jsonb where detail::text ilike %s", f"%{email}%")
         db.run(cur, "delete from suppressions where kind = 'email' and value = %s", email)
-        db.run(cur, "insert into suppressions (kind, value, reason, source) values ('email_hash', "
-                    "encode(sha256(convert_to(%s, 'UTF8')), 'hex'), 'Erased on request', 'erasure')", email)
+        _suppress_hash(cur, "email_hmac", email_hmac(email), "Erased on request", "erasure")
     counts["people"] = db.run(cur, "delete from people where id = %s", person_id)  # enrollments and messages cascade
     if themes:
         # A theme left with no learnings, and every suggestion on it, goes. A drafted suggestion's play stays, and the
@@ -97,12 +132,11 @@ def suppress_other_channels(cur, person_id: int, *, reason: str, source: str) ->
         db.run(cur, "insert into suppressions (kind, value, reason, source) values ('phone', %s, %s, %s)",
                p["phone"], reason, source)
     if p["linkedin_url"]:
-        db.run(cur, "insert into suppressions (kind, value, reason, source) values ('linkedin_hash', %s, %s, %s)",
-               linkedin_hash(p["linkedin_url"]), reason, source)
+        _suppress_hash(cur, "linkedin_hmac", linkedin_hmac(p["linkedin_url"]), reason, source)
 
 
 def phone_hash(phone: str) -> str:
-    """The same number however it is written: digits only."""
+    """Legacy plain hash, read only. The same number however it is written: digits only."""
     return hashlib.sha256(re.sub(r"\D", "", phone).encode()).hexdigest()
 
 
@@ -135,14 +169,11 @@ def purge_stale(cur, *, months: int | None = None, batch: int = 500) -> dict:
         if opted_out:
             kept += 1
             if email:
-                db.run(cur, "insert into suppressions (kind, value, reason, source) values ('email_hash', "
-                            "encode(sha256(convert_to(%s, 'UTF8')), 'hex'), 'Opted out; record purged', 'retention')", email)
+                _suppress_hash(cur, "email_hmac", email_hmac(email), "Opted out; record purged", "retention")
             if phone:
-                db.run(cur, "insert into suppressions (kind, value, reason, source) values ('phone_hash', %s, "
-                            "'Opted out; record purged', 'retention')", phone_hash(phone))
+                _suppress_hash(cur, "phone_hmac", phone_hmac(phone), "Opted out; record purged", "retention")
             if p["linkedin_url"]:
-                db.run(cur, "insert into suppressions (kind, value, reason, source) values ('linkedin_hash', %s, "
-                            "'Opted out; record purged', 'retention')", linkedin_hash(p["linkedin_url"]))
+                _suppress_hash(cur, "linkedin_hmac", linkedin_hmac(p["linkedin_url"]), "Opted out; record purged", "retention")
         db.run(cur, """delete from suppressions where (kind = 'person' and value = %s)
                        or (kind = 'email' and %s <> '' and value = %s) or (kind = 'phone' and %s <> '' and value = %s)""",
                str(p["id"]), email, email, phone, phone)

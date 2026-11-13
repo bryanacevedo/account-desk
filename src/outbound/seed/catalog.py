@@ -90,6 +90,17 @@ SIGNAL_TYPES = [
     ("news_negative", "Layoffs or a hiring freeze", "Cost cutting pauses new tools, so priority drops.", "account", -15, 45),
 ]
 
+# Event follow-up when Events Desk is beside this desk (shared-world DESIGN.md 2b, option A). These are not in the lists
+# above on purpose: alone the desk has neither the signals nor the play, so its coverage and its demo are unchanged.
+# plays.ensure_event_play adds them when INTEGRATED_WITH names events_desk.
+EVENT_SIGNAL_TYPES = [
+    # key, label, because, level, weight, half-life days
+    ("event_campaign_member", "Came to an event", "Someone from the company attended or met us at an event the CRM records, so they already know who we are.",
+     "person", 16, 21),
+    ("event_registered", "Registered for an event", "Someone from the company registered for an event but did not come: a lighter reason to write.",
+     "person", 7, 14),
+]
+
 SIGNAL_SOURCES = [
     # key, label, adapter, cadence minutes, paid, what it needs. Only first-party data is free.
     ("jobs_feed", "Job postings", "sim", 360, True, "A job-postings data vendor"),
@@ -175,6 +186,16 @@ PLAYS = [
      ["cfo", "controller"], 2, STANDARD,
      "What boards ask finance for after a round, and how long it takes without us.", "research", False, 72),
 ]
+
+EVENT_PLAY = (
+    "event_follow_up", "Event follow-up",
+    "People who came to our event, or signed up and missed it, answer a note about it faster than a cold one.",
+    {"any_of": ["event_campaign_member", "event_registered"], "fit_tiers": ["A", "B"], "min_priority": 20, "within_days": 21},
+    ["revops", "controller", "cfo"], 2,
+    _seq((0, "email", "open", "desk"), (2, "linkedin_connect", "connect", "sdr"), (5, "email", "follow_up", "desk"),
+         (9, "email", "break_up", "desk")),
+    "Name the event first. If they came, say what we heard there; if they only registered, send what was covered.",
+    "draft", True, 24)
 
 HOLIDAYS = [
     ("US", "2026-09-07", "Labor Day"),

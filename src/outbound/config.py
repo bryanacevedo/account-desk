@@ -17,6 +17,11 @@ DEMO_SENDER_ADDRESS = "Lumen Ledger, 400 Market Street, Suite 210, Philadelphia,
 DEMO_PRIVACY_URL = "https://lumenledger.example/privacy"
 
 
+def erasure_key() -> str:
+    """The install key for the keyed erasure hashes (DESIGN 6.4). Read each time so a test or a restart changes it."""
+    return os.environ.get("ERASURE_KEY", "").strip()
+
+
 @dataclass(frozen=True)
 class Config:
     # A mailbox that really receives mail and forwards it to the reply webhook; without one, only the https
@@ -55,6 +60,9 @@ class Config:
     # on this machine. On Render, set it to the network Render's proxy reaches the service from.
     forwarded_allow_ips: str = field(default_factory=lambda: os.environ.get("FORWARDED_ALLOW_IPS", "127.0.0.1"))
 
+    def erasure_key(self) -> str:
+        return erasure_key()
+
     def validate(self) -> None:
         if self.live_send and self.auth_mode == "demo":
             raise SystemExit("LIVE_SEND=1 needs a real AUTH_MODE (header). Refusing to start.")
@@ -72,6 +80,9 @@ class Config:
                                       ("PRIVACY_URL", self.privacy_url, DEMO_PRIVACY_URL)):
                 if not value.strip() or value.strip() == demo:
                     raise SystemExit(f"MODE=live needs {name} set to your own company's details. Refusing to start.")
+        if self.mode == "live" and len(erasure_key()) < 16:
+            raise SystemExit("MODE=live needs ERASURE_KEY set (at least 16 characters, kept secret and never changed: "
+                             "it keys the hashes that keep erased people out). Refusing to start.")
         if self.auth_mode == "header" and not (self.access_team_domain and self.access_aud):
             raise SystemExit("AUTH_MODE=header needs CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD to verify the signed token.")
 

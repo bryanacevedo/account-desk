@@ -156,7 +156,20 @@ def _rows(text: str) -> list[dict]:
     return [{(k or "").strip().lower(): (v or "").strip() for k, v in r.items()} for r in csv.DictReader(io.StringIO(text))]
 
 
+class KeptElsewhere(SystemExit):
+    """A job this desk hands to another when they run together. A SystemExit so the command line prints the message
+    and stops; the API catches it and answers 409."""
+
+
+ACCOUNTS_KEPT_MESSAGE = ("Accounts come from Market Desk's book, through the record. This desk does not import them "
+                         "while INTEGRATED_WITH names market_desk.")
+PROFILE_KEPT_MESSAGE = "The ideal customer profile is kept in Market Desk. Publish it there; this desk reads it."
+
+
 def import_accounts(cur, text: str) -> dict:
+    from . import integration
+    if integration.has("market_desk"):
+        raise KeptElsewhere(ACCOUNTS_KEPT_MESSAGE)
     """Columns: name, domain (required); industry, employees, country, revenue_band, tech (separated by ';'),
     lifecycle, owner_email, crm_id, parent_domain, subscriber_type (corporate for a limited company, individual for a
     sole trader or partnership; UK email needs it). Region comes from the country. A domain already on the desk is

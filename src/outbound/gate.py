@@ -90,18 +90,21 @@ def person_reasons(cur, person_id: int, channel: str, *, account_play_id: int | 
         select kind, reason from suppressions where (expires_at is null or expires_at > app_now()) and (
           (kind = 'email' and value = %s) or
           (kind = 'email_hash' and value = encode(sha256(convert_to(coalesce(%s, ''), 'UTF8')), 'hex')) or
+          (kind = 'email_hmac' and value = %s) or
           (kind = 'domain' and value = split_part(coalesce(%s, ''), '@', 2)) or
           (kind = 'person' and value = %s) or
           (kind = 'phone' and value = %s and %s = 'call') or
-          (kind = 'phone_hash' and value = %s and %s = 'call')) limit 1""",
-        p["email"] or "", p["email"], p["email"], str(person_id), p["phone"] or "", channel,
-        _phone_hash(p["phone"]), channel)
+          (kind = 'phone_hash' and value = %s and %s = 'call') or
+          (kind = 'phone_hmac' and value = %s and %s = 'call')) limit 1""",
+        p["email"] or "", p["email"], _email_hmac(p["email"]), p["email"], str(person_id), p["phone"] or "", channel,
+        _phone_hash(p["phone"]), channel, _phone_hmac(p["phone"]), channel)
     if sup:
         out.append(Reason("suppressed", True, f"Do not contact: {sup['reason']}"))
     elif p["linkedin_url"]:
-        from .privacy import linkedin_hash
-        why = db.val(cur, """select reason from suppressions where kind = 'linkedin_hash' and value = %s
-                             and (expires_at is null or expires_at > app_now()) limit 1""", linkedin_hash(p["linkedin_url"]))
+        from .privacy import linkedin_hash, linkedin_hmac
+        why = db.val(cur, """select reason from suppressions where (expires_at is null or expires_at > app_now())
+                             and ((kind = 'linkedin_hash' and value = %s) or (kind = 'linkedin_hmac' and value = %s))
+                             limit 1""", linkedin_hash(p["linkedin_url"]), linkedin_hmac(p["linkedin_url"]))
         if why:
             out.append(Reason("suppressed", True, f"Do not contact: {why}"))
     hold = db.one(cur, """select reason, until from holds where person_id = %s and until > app_now()
@@ -266,3 +269,13 @@ def is_temporary_only(reasons: list[Reason]) -> bool:
 
 def now(cur) -> datetime:
     return db.val(cur, "select app_now()")
+
+
+def _email_hmac(email: str | None) -> str:
+    from .privacy import email_hmac
+    return email_hmac(email) if email else ""
+
+
+def _phone_hmac(phone: str | None) -> str:
+    from .privacy import phone_hmac
+    return phone_hmac(phone) if phone else ""

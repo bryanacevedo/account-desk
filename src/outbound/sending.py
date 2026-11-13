@@ -80,6 +80,15 @@ def send_one(cur, payload: dict) -> None:
             jobs.enqueue(cur, "reverify", {"person_id": person["id"]}, dedupe_key=f"reverify:{person['id']}")
         later(now + timedelta(hours=4), reasons[0].message)
         return
+    # The CRM is asked once, before a person's first touch; if it cannot answer the message waits (never sent on a guess).
+    # With no CRM beside the desk this is a no-op and the desk's own suppression list, in the gate above, decides.
+    from . import pipeline
+    verdict = pipeline.crm_first_touch(cur, person["id"], "email")
+    if verdict == "wait":
+        later(now + timedelta(hours=1), "the CRM has not said whether this person may be contacted")
+        return
+    if verdict == "stopped":
+        return
     first = m["channel"] == "email" and not db.val(cur, """select exists (select 1 from messages where enrollment_id = %s
                                                      and channel = 'email' and step_index < %s and status in
                                                      ('sent', 'sending', 'send_unknown'))""", e["id"], m["step_index"])

@@ -13,7 +13,7 @@ os.environ.setdefault("NO_WORKER", "1")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from outbound import db, outreach  # noqa: E402
+from outbound import db, outreach, privacy  # noqa: E402
 from outbound.config import CONFIG  # noqa: E402
 
 
@@ -135,20 +135,20 @@ def test_erasure_removes_the_person_and_keeps_them_out(client):
     with db.tx() as cur:
         assert db.val(cur, "select count(*) from people where id = %s", p["id"]) == 0
         assert db.val(cur, "select count(*) from replies where person_id = %s", p["id"]) == 0
-        assert db.val(cur, "select exists (select 1 from suppressions where kind = 'email_hash' and "
-                           "value = encode(sha256(convert_to(%s, 'UTF8')), 'hex'))", p["email"])
+        assert db.val(cur, "select exists (select 1 from suppressions where kind = 'email_hmac' and value = %s)",
+                      privacy.email_hmac(p["email"]))
     assert client.post(f"/api/people/{p['id']}/erase", headers={"X-Acting-As": str(user("sdr"))}).status_code == 403
 
 
 def test_an_erased_person_found_again_by_profile_stays_out(client):
     from outbound import gate
-    from outbound.privacy import linkedin_hash
+    from outbound.privacy import linkedin_hmac
     with db.tx() as cur:
         p = db.one(cur, "select id, linkedin_url, account_id from people where linkedin_url is not null order by id desc limit 1")
     client.post(f"/api/people/{p['id']}/erase", headers={"X-Acting-As": str(user("gtm"))})
     with db.tx() as cur:
-        assert db.val(cur, "select exists (select 1 from suppressions where kind = 'linkedin_hash' and value = %s)",
-                      linkedin_hash(p["linkedin_url"]))
+        assert db.val(cur, "select exists (select 1 from suppressions where kind = 'linkedin_hmac' and value = %s)",
+                      linkedin_hmac(p["linkedin_url"]))
         # The same profile, written differently, comes back from a people search with no email.
         again = db.val(cur, """insert into people (account_id, full_name, linkedin_url, source) values (%s, 'Back Again', %s, 'people_search')
                                returning id""", p["account_id"], p["linkedin_url"].upper().replace("https://www.", "http://") + "/")

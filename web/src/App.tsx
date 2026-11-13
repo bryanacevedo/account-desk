@@ -6,6 +6,7 @@ import {
 import { api, setActingAs } from "./api";
 import { Toaster, changed, navigate, setNow, toast, useBusy, useData, usePath } from "./lib";
 import { SheetHost } from "./sheets";
+import { usePrewarm } from "./elsewhere";
 import { Accounts, Today } from "./pages/Work";
 import { Flight } from "./pages/Flight";
 import { Vendors } from "./pages/Vendors";
@@ -13,7 +14,7 @@ import { Approvals, Plays, Replies, Signals } from "./pages/Flow";
 import { Deliverability, Ops, Results, Settings } from "./pages/Desk";
 
 type Me = { user: { id: number; name: string; role: string }; users: any[]; counts: Record<string, number>; money: boolean;
-  now: string; simulated: boolean; public_demo: boolean; company: string };
+  now: string; simulated: boolean; public_demo: boolean; company: string; integration?: { integrated_with: string[]; links: Record<string, string> } };
 
 const ROUTES: { path: string; label: string; icon: ReactNode; page: () => JSX.Element; roles?: string[]; count?: string; group?: string; offBar?: boolean }[] = [
   { path: "/", label: "Today", icon: <Sun size={18} />, page: Today, count: "today" },
@@ -35,6 +36,7 @@ const ROLE: Record<string, string> = { sdr: "SDR", manager: "Manager", gtm: "GTM
 export function App() {
   const [path] = usePath();
   const { data: me } = useData<Me>("/api/me");
+  usePrewarm(me?.integration?.links);
   const [, setTick] = useState(0);
   useEffect(() => { if (me?.now) setNow(me.now); }, [me?.now]);
   useEffect(() => {

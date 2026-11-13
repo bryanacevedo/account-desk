@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 
 # suggestions and themes are unused here; importing them registers their jobs wherever learn_from can queue one.
-from . import adapters, alerts, audit, db, jobs, plays, suggestions, themes  # noqa: F401
+from . import adapters, alerts, audit, db, integration, jobs, plays, scoring, suggestions, themes  # noqa: F401
 from .db import J
 
 log = logging.getLogger("outbound.pipeline")
@@ -43,6 +43,9 @@ def book_meeting(cur, *, account_id: int, person_id: int | None, starts_at: date
     return mid
 
 
+MEETING_OUTCOMES = ("held", "no_show", "cancelled")
+
+
 def set_meeting_status(cur, meeting_id: int, status: str, user_id: int | None = None) -> None:
     m = db.one(cur, "select * from meetings where id = %s for update", meeting_id)
     db.run(cur, "update meetings set status = %s where id = %s", status, meeting_id)
@@ -56,6 +59,10 @@ def set_meeting_status(cur, meeting_id: int, status: str, user_id: int | None = 
             plays.set_state(cur, ap["id"], "engaged")
             db.run(cur, """insert into tasks (account_play_id, person_id, kind, title, due_at, owner_id)
                            values (%s,%s,'call','Rebook the meeting',app_now(),%s)""", ap["id"], m["person_id"], ap["owner_id"])
+    if status in MEETING_OUTCOMES:
+        # The CRM learns how the meeting this desk booked turned out. The row waits for the booking to reach the CRM first.
+        db.run(cur, "insert into crm_outbox (kind, payload, idempotency_key) values ('meeting_outcome', %s, %s) on conflict do nothing",
+               J({"meeting_id": meeting_id, "person_id": m["person_id"], "status": status}), f"meeting_outcome:{meeting_id}:{status}")
     audit.log(cur, "person" if user_id else "desk", f"meeting_{status}", "meeting", meeting_id, {}, actor_id=user_id)
 
 
@@ -163,13 +170,30 @@ def opportunity_closed(cur, crm_id: str, won: bool, closed_at: datetime, loss_re
     _lifecycle(cur, o["account_id"])
 
 
+# Kinds added after the three-method CRM contract. A CRM that does not know them is not an error: the row is finished
+# with a note, so a stub or a Salesforce-shaped adapter that only has today's kinds runs the whole flow.
+OPTIONAL_KINDS = ("contact", "meeting_outcome")
+
+
+def _push(cur, crm, item: dict) -> str:
+    kind = item["kind"]
+    if kind in OPTIONAL_KINDS:
+        if kind not in getattr(crm, "accepts_kinds", {kind}):
+            return "skipped:unsupported"
+        try:
+            return crm.push(cur, kind, item["payload"], item["idempotency_key"])
+        except ValueError:
+            return "skipped:unsupported"
+    return crm.push(cur, kind, item["payload"], item["idempotency_key"])
+
+
 @jobs.handler("crm_push")
 def crm_push(cur, payload: dict) -> None:
     for item in db.all(cur, """select * from crm_outbox where status = 'pending' and next_at <= app_now()
                                order by id limit 100 for update skip locked"""):
         try:
             with cur.connection.transaction():
-                ref = adapters.get().crm.push(cur, item["kind"], item["payload"], item["idempotency_key"])
+                ref = _push(cur, adapters.get().crm, item)
                 db.run(cur, "update crm_outbox set status = 'done', done_at = app_now(), last_error = null, "
                             "payload = payload || %s where id = %s", J({"crm_ref": ref}), item["id"])
         except Exception as exc:
@@ -204,6 +228,14 @@ def deliver_alert(cur, payload: dict) -> None:
         raise RuntimeError("alert not delivered")
 
 
+def desk_user(cur, email: str) -> dict | None:
+    """The active user with this address, or whose old address it was (the roster renames people; the CRM may still
+    use the old one)."""
+    e = (email or "").strip().lower()
+    return db.one(cur, """select id, name, role from users where active and (email = %s
+                          or id = (select user_id from user_aliases where alias = %s))""", e, e)
+
+
 def apply_owner(cur, account_id: int, owner_email: str) -> str:
     """The CRM says who owns the account. The account, its open play and that play's open work move to them;
     sequences already under way finish from the original sender, so a thread never changes voice halfway.
@@ -211,7 +243,7 @@ def apply_owner(cur, account_id: int, owner_email: str) -> str:
     email = owner_email.strip().lower()
     a = db.one(cur, "select id, name, owner_id from accounts where id = %s for update", account_id)
     db.run(cur, "update accounts set crm_owner_email = %s where id = %s", email, account_id)
-    new = db.one(cur, "select id, name, role from users where email = %s and active", email)
+    new = desk_user(cur, email)
     if new is None or new["role"] != "sdr":
         alerts.raise_alert(cur, kind="owner_not_on_desk", severity="info", channel="#outbound-ops",
                            title=f"{a['name']} now belongs to {email} in the CRM",
@@ -307,7 +339,275 @@ def crm_sync(cur, payload: dict) -> None:
     if owner_since:
         db.run(cur, """insert into settings (key, value) values ('crm_owner_cursor', %s)
                        on conflict (key) do update set value = excluded.value""", J(owner_since))
+    sync_accounts(cur, crm)
+    sync_campaign_members(cur, crm)
     signals.first_party_from_crm(cur)
+
+
+# ---------------------------------------------------------------- the account book, read from a CRM that keeps one
+
+# Market Desk's tiers (A, B, C, X, or "Not judged") use this desk's own letters, so a tier read from the CRM is stored as
+# it is and "Not judged" or none is no tier at all (shared-world DESIGN.md 5 and 7 step 2). With a tier present, the
+# account's fit tier follows it; with none, the desk's own fit decides, as it does alone.
+TIERS = ("A", "B", "C", "X")
+
+
+def _set_setting(cur, key: str, value) -> None:
+    db.run(cur, """insert into settings (key, value) values (%s, %s)
+                   on conflict (key) do update set value = excluded.value""", key, J(value))
+
+
+def _stamp(row) -> str:
+    return (row.updated_at.isoformat() if hasattr(row.updated_at, "isoformat") else str(row.updated_at)) + "|" + row.change_id
+
+
+def sync_accounts(cur, crm) -> int:
+    """Accounts whose SDR owner is a desk SDR become, or update, this desk's accounts, with the CRM's tier and segment.
+    A failed read stops here: the book the desk has stays as it is and nothing is removed. Returns accounts touched."""
+    read = getattr(crm, "accounts_changed", None)
+    if read is None:
+        return 0
+    since = db.val(cur, "select value #>> '{}' from settings where key = 'crm_account_cursor'")
+    touched = 0
+    failure = None
+    while True:
+        try:
+            with cur.connection.transaction():     # one batch at a time: a failure keeps the batches already read
+                batch = read(cur, since, 200)
+                for a in batch:
+                    touched += 1 if apply_account(cur, a) else 0
+        except Exception as exc:
+            failure = exc
+            break
+        if batch:
+            since = _stamp(batch[-1])
+        if len(batch) < 200:
+            break
+    if since:
+        _set_setting(cur, "crm_account_cursor", since)
+    if failure is None:
+        _set_setting(cur, "crm_account_read_error", None)
+        _set_setting(cur, "crm_account_read_at", db.val(cur, "select app_now()::text"))
+    else:
+        log.warning("accounts read stopped: %s", failure)
+        _set_setting(cur, "crm_account_read_error", str(failure)[:300])
+    return touched
+
+
+def apply_account(cur, a) -> bool:
+    """One account from the CRM. Not ours (its SDR is not a desk SDR) changes nothing. Returns whether it was applied."""
+    owner = desk_user(cur, a.sdr_owner_email) if a.sdr_owner_email else None
+    if owner is None or owner["role"] != "sdr":
+        return False
+    from . import signals
+    domain = signals.normalize_domain(a.domain)
+    aid = None
+    if a.crm_id:
+        aid = db.val(cur, "select id from accounts where crm_id = %s", a.crm_id)
+    if aid is None and a.world_id:
+        aid = db.val(cur, "select id from accounts where world_id = %s", a.world_id)
+    if aid is None and domain:
+        aid, _ = signals.resolve_account(cur, domain, None)
+    tier = a.tier if a.tier in TIERS else None
+    if aid is None:
+        if not domain:
+            return False
+        aid = db.val(cur, """insert into accounts (name, name_key, primary_domain, source, world_id, crm_id, owner_id, crm_owner_email,
+                                                   fit_tier)
+                             values (%s,%s,%s,'crm',%s,%s,%s,%s,%s) returning id""",
+                     a.name or domain, signals.normalize_name(a.name), domain, a.world_id, a.crm_id, owner["id"],
+                     (a.sdr_owner_email or "").lower(), tier)
+        db.run(cur, "insert into account_domains (domain, account_id) values (%s, %s) on conflict do nothing", domain, aid)
+        audit.log(cur, "desk", "account_from_crm", "account", aid, {"domain": domain, "tier": tier})
+    else:
+        # An id this desk already gave another account is left alone rather than moved.
+        db.run(cur, """update accounts set
+                         world_id = coalesce(world_id, case when not exists (select 1 from accounts o where o.world_id = %s) then %s end),
+                         crm_id = coalesce(crm_id, case when not exists (select 1 from accounts o where o.crm_id = %s) then %s end)
+                       where id = %s""", a.world_id, a.world_id, a.crm_id, a.crm_id, aid)
+        if db.val(cur, "select owner_id is distinct from %s from accounts where id = %s", owner["id"], aid):
+            apply_owner(cur, aid, a.sdr_owner_email)
+    db.run(cur, """update accounts set crm_tier = %s, crm_segment = %s, crm_fit_score = %s, crm_icp_version = %s, crm_read_at = app_now(),
+                   fit_tier = coalesce(%s, fit_tier) where id = %s""", tier, a.segment, a.fit, a.icp_version, tier, aid)
+    jobs.enqueue(cur, "rescore", {"account_id": aid, "reason": "crm_book"}, dedupe_key=f"rescore:{aid}")
+    return True
+
+
+def _fit_with_crm_tier(own):
+    """The desk's fit, except that a tier read from the CRM wins when there is one. Wrapped around scoring.fit so that
+    scoring.py needs no change; an account the desk excludes for being a customer stays excluded."""
+    def fit(rules: dict, account: dict) -> dict:
+        f = own(rules, account)
+        tier = account.get("crm_tier")
+        if tier not in TIERS or account.get("lifecycle") in ("customer", "open_opp", "competitor"):
+            return f
+        score = account.get("crm_fit_score")
+        return {**f, "tier": tier, "score": f["score"] if score is None else int(score),
+                "excluded": f["excluded"] if tier == "X" else None, "source": "crm"}
+    fit.__wrapped_by_crm__ = True
+    return fit
+
+
+if not getattr(scoring.fit, "__wrapped_by_crm__", False):
+    scoring.fit = _fit_with_crm_tier(scoring.fit)
+
+
+# ---------------------------------------------------------------- event members, read from a CRM that keeps campaigns
+
+# A member of an event or webinar campaign becomes a signal. Attended or met is the stronger one; registered, and no
+# show, is "registered, did not attend" and is its own type with a lighter weight (DESIGN.md 2b, option A).
+MEMBER_SIGNALS = {"registered": ("event_registered", 0.5), "no_show": ("event_registered", 0.3),
+                  "attended": ("event_campaign_member", 0.8), "met": ("event_campaign_member", 0.95)}
+MEMBER_VERBS = {"registered": "registered for", "no_show": "registered for but missed", "attended": "attended", "met": "met us at"}
+
+
+def sync_campaign_members(cur, crm) -> int:
+    """Only when Events Desk is present (INTEGRATED_WITH) and the CRM can list campaign members. Returns signals made."""
+    read = getattr(crm, "campaign_members_changed", None)
+    if read is None or not integration.has("events_desk"):
+        return 0
+    plays.ensure_event_play(cur)
+    since = db.val(cur, "select value #>> '{}' from settings where key = 'crm_member_cursor'")
+    made = 0
+    failure = None
+    while True:
+        try:
+            with cur.connection.transaction():
+                batch = read(cur, since, 200)
+                made += ingest_members(cur, batch)
+        except Exception as exc:
+            failure = exc
+            break
+        if batch:
+            since = _stamp(batch[-1])
+        if len(batch) < 200:
+            break
+    if since:
+        _set_setting(cur, "crm_member_cursor", since)
+    if failure is not None:
+        log.warning("campaign members read stopped: %s", failure)
+    _set_setting(cur, "crm_member_read_error", str(failure)[:300] if failure is not None else None)
+    return made
+
+
+def ingest_members(cur, members) -> int:
+    """Turn members of event campaigns into signals, once each (the external id carries campaign, contact and status).
+    A person the desk holds, or an account it works, is needed; nobody is created here."""
+    from . import signals
+    raws = []
+    for m in members:
+        if m.campaign_type not in ("event", "webinar") or m.status not in MEMBER_SIGNALS:
+            continue
+        person = None
+        if m.contact_email:
+            person = db.one(cur, "select id, account_id, email, linkedin_url from people where email = %s", m.contact_email.lower())
+        if person is None and m.contact_crm_id:
+            person = db.one(cur, "select id, account_id, email, linkedin_url from people where crm_id = %s", m.contact_crm_id)
+        account_id = person["account_id"] if person else None
+        if account_id is None and m.account_domain:
+            account_id, _ = signals.resolve_account(cur, m.account_domain, None)
+        if account_id is None:
+            continue
+        kind, strength = MEMBER_SIGNALS[m.status]
+        who = m.contact_crm_id or m.contact_email or "unknown"
+        raws.append({"type": kind, "external_id": f"member:{m.campaign_ref}:{who}:{m.status}", "observed_at": m.updated_at,
+                     "account_id": account_id, "strength": strength,
+                     "evidence": {"summary": f"Someone at the company {MEMBER_VERBS[m.status]} {m.event_name or m.campaign_name}.",
+                                  "quote": f"{m.campaign_name}: {m.status}"},
+                     **({"person": {"email": person["email"], "linkedin_url": person["linkedin_url"]}} if person else {})})
+    return signals.ingest(cur, "crm", raws)["matched"] if raws else 0
+
+
+# ---------------------------------------------------------------- the first touch: may this person be contacted
+
+# Which of the CRM's flags bar which channel. A bounce bars email only; a do-not-call bars calls only.
+BARS = {"email": {"do_not_contact", "do_not_email", "unsubscribed", "bounced", "left_company"},
+        "call": {"do_not_contact", "do_not_call", "left_company"},
+        "linkedin": {"do_not_contact", "left_company"}}
+WAITS_BEFORE_ALERT = 3
+
+
+def enqueue_contact(cur, person_id: int) -> None:
+    """Write the person to the CRM before their first activity, once per person (the outbox is read oldest first)."""
+    db.run(cur, "insert into crm_outbox (kind, payload, idempotency_key) values ('contact', %s, %s) on conflict do nothing",
+           J({"person_id": person_id}), f"contact:{person_id}")
+
+
+def _barred(answer: dict, channel: str) -> str | None:
+    """Why the CRM's answer bars this channel, or None."""
+    if answer.get("erased"):
+        return "erased"
+    if answer.get("suppressed"):
+        return "On the CRM's do-not-contact list"
+    flags = [f for f in answer.get("flags") or [] if f.get("kind") in BARS.get(channel, ())]
+    if flags:
+        return "Do not contact: " + flags[0].get("reason", flags[0]["kind"])
+    if channel == "email" and not answer.get("can_email", True):
+        return "The CRM says this person cannot be emailed"
+    return None
+
+
+def crm_first_touch(cur, person_id: int, channel: str = "email") -> str:
+    """Ask the CRM whether a person may be contacted, before the first email, call or LinkedIn step. Returns `ok`,
+    `wait` (the CRM did not answer: nothing is sent on a guess, the caller tries again) or `stopped` (flagged or erased:
+    the person is stopped, or erased here). Alone, or with a CRM that cannot answer, the desk's own suppression list
+    decides and this returns `ok`. The database send guard still runs after it."""
+    crm = adapters.get().crm
+    ask = getattr(crm, "contactability", None)
+    if ask is None or not getattr(crm, "configured", False):
+        enqueue_contact(cur, person_id)
+        return "ok"
+    row = db.one(cur, "select * from crm_contact_checks where person_id = %s", person_id)
+    answer = row["answer"] if row and row["state"] == "ok" else None
+    if answer is None:
+        p = db.one(cur, """select p.email, p.world_id, p.full_name, a.primary_domain from people p
+                           left join accounts a on a.id = p.account_id where p.id = %s""", person_id)
+        if p is None:
+            return "stopped"
+        item = {"ref": str(person_id), "email": p["email"], "world_id": p["world_id"], "full_name": p["full_name"],
+                "domain": p["primary_domain"]}
+        try:
+            answer = ask(cur, [item])[0]
+        except Exception as exc:
+            waits = (row["waits"] if row else 0) + 1
+            db.run(cur, """insert into crm_contact_checks (person_id, state, waits, last_error) values (%s, 'waiting', %s, %s)
+                           on conflict (person_id) do update set state = 'waiting', waits = excluded.waits,
+                           last_error = excluded.last_error""", person_id, waits, str(exc)[:300])
+            if waits >= WAITS_BEFORE_ALERT:
+                alerts.raise_alert(cur, kind="crm_check_waiting", severity="warn", channel="#outbound-ops",
+                                   title="A first email is waiting for the CRM to answer",
+                                   body=f"The CRM has not said whether {p['full_name']} may be contacted ({waits} tries). "
+                                        "Nothing is sent until it does.", object_kind="person", object_id=person_id,
+                                   dedup_key=f"crmwait:{person_id}")
+            return "wait"
+        db.run(cur, """insert into crm_contact_checks (person_id, state, checked_at, waits, last_error, answer)
+                       values (%s, 'ok', app_now(), 0, null, %s)
+                       on conflict (person_id) do update set state = 'ok', checked_at = app_now(), waits = 0,
+                       last_error = null, answer = excluded.answer""", person_id, J(answer))
+    why = _barred(answer, channel)
+    if why is None:
+        enqueue_contact(cur, person_id)
+        return "ok"
+    if why == "erased":
+        from . import privacy
+        privacy.erase(cur, person_id, actor_id=None)    # the checks row goes with the person
+        return "stopped"
+    _stop_for_crm(cur, person_id, channel, why)
+    return "stopped"
+
+
+def _stop_for_crm(cur, person_id: int, channel: str, why: str) -> None:
+    from . import outreach
+    p = db.one(cur, "select email, phone from people where id = %s", person_id)
+    # The desk's own list becomes a copy of the flag, so the gate refuses this person everywhere from now on.
+    if channel == "email" and p["email"]:
+        db.run(cur, "insert into suppressions (kind, value, reason, source) values ('email', %s, %s, 'crm')", p["email"], why[:200])
+    elif channel == "call" and p["phone"]:
+        db.run(cur, "insert into suppressions (kind, value, reason, source) values ('phone', %s, %s, 'crm')", p["phone"], why[:200])
+    db.run(cur, "update crm_contact_checks set state = 'stopped' where person_id = %s", person_id)
+    for e in db.all(cur, "select id from enrollments where person_id = %s and state in ('pending','active','paused')", person_id):
+        outreach.stop_enrollment(cur, e["id"], ("crm: " + why)[:120])
+    audit.log(cur, "desk", "stopped_by_crm", "person", person_id, {"why": why, "channel": channel})
 
 
 def record_call_notes(cur, meeting_id: int, text: str, user_id: int) -> int:
