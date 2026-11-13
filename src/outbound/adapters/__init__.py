@@ -296,9 +296,15 @@ def choose_crm(current):
         return CrmDeskCrm.from_env()
     if choice == "sim" and CONFIG.mode != "live":
         return current
+    if choice == "recorded":
+        # The demo build's CRM, replayed from the shared rehearsal's journal (JOURNAL_PATH, default world/journal.jsonl).
+        if CONFIG.mode == "live" or CONFIG.public_demo:
+            raise SystemExit("CRM=recorded replays a journal for the demo build; it is refused in live mode and on the public demo.")
+        from .recorded import RecordedCrm
+        return RecordedCrm.from_journal()
     if choice == "salesforce":
         raise SystemExit("CRM=salesforce: this desk has no Salesforce adapter yet. Leave CRM unset or use CRM=crmdesk.")
-    raise SystemExit(f"CRM={choice} is not a CRM this desk knows. Use crmdesk, or leave it unset.")
+    raise SystemExit(f"CRM={choice} is not a CRM this desk knows. Use crmdesk, recorded, or leave it unset.")
 
 
 def override(a: Adapters | None) -> None:

@@ -46,3 +46,16 @@ only module that opens the slice's `truth/` folder, and `tests/test_truth_guard.
 `sim_hidden_people.world_id` (the `pe_` id) and `sim_hidden_people.vendor_findable` (boolean) are filled when the table has
 them. Without them, a person no vendor can find is left out of the build (the news still names a new finance leader, so
 those are kept), and a hidden person has no `pe_` id for a simulated people search to hand back.
+
+## The CRM half, replayed from the rehearsal's journal
+
+With `WORLD=world` and a `world/journal.jsonl` holding steps whose `actor` is `account_desk`, `demo` serves the whole
+build's CRM calls from those steps (`adapters/recorded.py`) and, at the end, fails with `JournalMismatch` if any step was
+not used. Any difference also fails: a call the journal does not have next, or a different method, path, query,
+idempotency key or body. `at` is not compared. With no `account_desk` step the build uses the simulated CRM as before.
+`CRM=recorded` (path from `JOURNAL_PATH`, default `world/journal.jsonl`) does the same outside `demo`; it is refused with
+`MODE=live` and `PUBLIC_DEMO`.
+
+Each `account_desk` step the rehearsal writes: `actor`, `at`, `method`, `path` (no `/api/v1`), `status`, `answer`, and,
+when the request had them, `query` (GET params), `idempotency_key` (the `idempotency-key` header) and `body`.
+`RecordingCrm(inner, path)` writes this format around a `CrmDeskCrm`.

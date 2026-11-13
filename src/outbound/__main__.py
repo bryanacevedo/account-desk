@@ -26,6 +26,17 @@ from .config import CONFIG
 
 # 90 days, so the 90-day window of call notes behind play suggestions is full. 90 days later is 2026-11-11.
 DEMO_START = datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
+WORLD_JOURNAL = "world/journal.jsonl"
+
+
+def demo_crm(journal_path=WORLD_JOURNAL):
+    """The CRM for a world demo build: the journal's account_desk steps replayed, or None (keep the simulated CRM) when
+    the journal is absent or holds no step from this desk."""
+    from pathlib import Path
+    from .adapters import recorded
+    if not Path(journal_path).exists() or not recorded.read_steps(journal_path):
+        return None
+    return recorded.RecordedCrm.from_journal(journal_path)
 
 
 def main(argv: list[str]) -> int:
@@ -64,6 +75,10 @@ def main(argv: list[str]) -> int:
                 days = int(argv[2])
             else:
                 days, extra_hours = span.days, span.seconds // 3600
+        replay = demo_crm() if mode == "world" and CONFIG.mode != "live" else None
+        if replay is not None:
+            from . import adapters
+            adapters.get().crm = replay      # the whole build, including the first read of the CRM, is served from the journal
         t0 = time.time()
         runner.reset()
         runner.deterministic_database(True)  # the same seed builds the same desk (runner.deterministic_database)
@@ -72,6 +87,8 @@ def main(argv: list[str]) -> int:
         # Learnings are filed as they arrive; the backfill catches any left over and looks for patterns once more.
         totals["learnings_filed_after"] = themes.backfill()
         runner.deterministic_database(False)
+        if replay is not None:
+            replay.finish()                  # JournalMismatch if any recorded step was never asked for
         print(json.dumps({"world": info, "world_mode": mode, "totals": totals, "seconds": round(time.time() - t0, 1)},
                          default=str))
         db.close()
