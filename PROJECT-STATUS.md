@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-12. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 64. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-12. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 70. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -29,6 +29,25 @@ Checked by running them (the date is on each line):
 
 - Design: one fresh hands-on reviewer drove every page and panel at 1440 and 375 wide (2026-11-11): "not ready to show", 3 blockers (phone rows, broken draft grammar, panels scrolling sideways), 14 major (explanatory sentences, jargon, numbers shown twice, two names for one thing, decorative dots, phone navigation, Approve and Reject behaving differently, losing the tab on Back, team work labelled as yours) and nits. All blockers and majors fixed and checked at both widths; checking at 375 also found a tab strip that collapsed to 1px and a page that grew to 402px wide, both fixed. Bryan's own review: "best design work so far", with comments to come.
 - Found by the flow test during the fixes: a resume after an out-of-office brought a colleague's first email forward to the same day; a pause now keeps each person's planned time.
+
+## Shared world, Phase 3 step 3 (2026-11-13, session world-phase3, branch `p3-account`)
+
+Built (decisions 65 to 70; `docs/WORLD.md`):
+- `WORLD=world` builds the demo from the vendored slice in `world/` (lumen-world 1.1.0, manifest-checked, 3,000 companies, about 25,000 people, 12,000 signals); `WORLD=legacy`, the default and what the Dockerfile still builds, is unchanged. `.example` companies and sending domains, the shared roster with Grace Osei renamed Leah Ahn (old address kept as an alias), truth read only by `sim/world_load.py` and `sim/world.py` (world guard in `tests/test_truth_guard.py`).
+- Optional `Crm` methods `accounts_changed`, `campaign_members_changed`, `contactability`; outbox kinds `contact` and `meeting_outcome`; a first-touch check that fails closed when a CRM is configured. A stub with only the old three methods runs the whole flow (tested).
+- Keyed HMAC erasure hashes (`ERASURE_KEY`, migration 0032, pgcrypto in the send guard).
+- `INTEGRATED_WITH=market_desk` hides profile publishing and the accounts import; `events_desk` runs event follow-up as a play from campaign members (Bryan's option A). `DESK_LINKS` links only. `/go/account/{ref}` and `/go/contact/{ref}`, prewarm, an Elsewhere section on the account and person sheets.
+- `CRM=recorded` replays the journal's account_desk steps and fails on any difference. Migrations 0030 to 0033.
+
+Checked by running them on 2026-11-13: the full suite 438 tests, all passing on default settings (the 3 contract tests that need a CRM Desk skip there); the contract file passes 14 of 14 including the CRM Desk half against a running CRM Desk (world-phase3-crm-build, 8901), with the CRM Desk half-checks in its own repo unchanged (6 of 6 there); ruff, tsc, web build and design-lint clean; two from-scratch legacy builds give identical coverage (99 scenarios, 97 shown, none missing, 2 of the 12 chance ones absent), every suggestion state shown. Renders at 1440 and 375 of the Elsewhere section, the person sheet and the Market Desk settings state, in `~/Developer/account-desk-review/p3/built-*.png`.
+
+Not done, and why:
+- The links' placement is direction C of three drawn by a design agent (`~/Developer/account-desk-review/p3/README.md`); built provisionally, Bryan picks. Two open points there: INTEGRATED_WITH set while DESK_LINKS is unset shows the words with no link, and "registered, did not attend" has its own signal type.
+- The three-desk rehearsal has not run, so `world/journal.jsonl` holds no account_desk steps and the demo build still uses the simulated CRM. The rehearsal must write each account_desk step as method, path, query, idempotency_key, body, status and answer (`docs/WORLD.md`).
+- About 12 percent of world accounts sit in countries with no email rule in the catalog (IT, CH, SE, MX, DK, BE, AT, NO, FI, PT): the desk does not email them until a manager adds a rule. Legal; counsel to confirm any rule.
+- Reply probabilities in world mode keep the legacy numbers (`sim/recipients.py` does not read `behavior.json` for them); calibration is for the rehearsal.
+- CRM Desk has no `/go/contact` route yet, so the person sheet's CRM link lands on its not-found page until it does.
+- Events Desk turning its own sequencer off (`INTEGRATED_WITH=account_desk`) is its Phase 4 work.
 
 ## Proven and not proven
 
