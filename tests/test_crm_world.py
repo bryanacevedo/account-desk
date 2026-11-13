@@ -11,7 +11,7 @@ import httpx
 import pytest
 from test_guarantees import scene  # noqa: F401  (an account, a person, an active play, a scheduled message)
 
-from outbound import adapters, db, pipeline, plays, scoring, sending
+from outbound import adapters, clock, db, pipeline, plays, scoring, sending
 from outbound.adapters import CrmAccount, CrmCampaignMember, crmdesk
 from outbound.db import J
 from outbound.seed import catalog as C
@@ -99,7 +99,7 @@ def acct(domain, tier=None, owner=None, **kw):
 def member(email, status="attended", campaign="cmp_1", ctype="event", domain=None, crm_id="con_1"):
     return CrmCampaignMember(campaign_ref=campaign, campaign_name="Finance Ops Summit", campaign_type=ctype, event_name="Finance Ops Summit",
                              status=status, contact_email=email, contact_crm_id=crm_id, account_domain=domain,
-                             updated_at=datetime.now(timezone.utc) - timedelta(days=1), change_id=f"m_{crm_id}_{status}")
+                             updated_at=clock.now() - timedelta(days=1), change_id=f"m_{crm_id}_{status}")
 
 
 # ---------------------------------------------------------------- a CRM with only today's three methods
