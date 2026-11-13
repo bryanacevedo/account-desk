@@ -77,6 +77,7 @@ def crm(monkeypatch):
 @pytest.fixture
 def desk(cur, scene):  # noqa: F811
     """The scene, plus what a CRM-fed desk needs: a published ICP, a GTM user and a manager, a live play."""
+    db.run(cur, "delete from crm_outbox")  # rolled back with the test: other tests' rows are not this one's
     db.run(cur, "insert into icp_versions (rules, note) values (%s, 'test')", J(C.ICP))
     u = scene["user"]
     gtm = db.val(cur, "insert into users (name, email, role) values ('G', %s, 'gtm') returning id", f"g{id(cur)}@x.example")
