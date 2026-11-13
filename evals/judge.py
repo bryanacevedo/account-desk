@@ -72,7 +72,7 @@ def judge(case: dict, output: dict, criteria: list[tuple[str, str]]) -> dict | N
     listing = "\n".join(f"- {cid}: {text}" for cid, text in criteria)
     for _ in range(2):  # a verdict missing for any criterion is asked again once, never counted as a fail
         resp = client.messages.parse(
-        model=JUDGE_MODEL, max_tokens=4000, system=SYSTEM, output_format=Judgement,
+        model=JUDGE_MODEL, max_tokens=4000, system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}], output_format=Judgement,
         output_config={"effort": "medium"},
         messages=[{"role": "user", "content": (
             f"Case:\n{json.dumps(case, ensure_ascii=False, default=str)}\n\n"
@@ -86,7 +86,9 @@ def judge(case: dict, output: dict, criteria: list[tuple[str, str]]) -> dict | N
             break
     verdicts = {cid: got.get(cid, {"passed": False, "why": "The judge returned no verdict for this criterion."})
                 for cid, _ in criteria}
-    usage = {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens, "model": resp.model}
+    usage = {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens, "model": resp.model,
+             "cache_creation_input_tokens": getattr(resp.usage, "cache_creation_input_tokens", 0) or 0,
+             "cache_read_input_tokens": getattr(resp.usage, "cache_read_input_tokens", 0) or 0}
     RECORDINGS.parent.mkdir(parents=True, exist_ok=True)
     with RECORDINGS.open("a") as f:
         f.write(json.dumps({"key": k, "verdicts": verdicts, "usage": usage}, default=str) + "\n")

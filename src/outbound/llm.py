@@ -26,6 +26,8 @@ RECORDINGS = Path(__file__).resolve().parents[2] / "evals" / "recordings"
 PRICES = {"claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5-5": (2.0, 10.0), "claude-haiku-5-5": (0.10, 0.50)}
 # The simulation charges each stand-in answer what a real call of that task typically uses, so the demo's AI cost is
 # the size it would be (the draft eval measured about 1.75 cents a draft). Off by default; the demo build turns it on.
+# Cache reads per million input tokens (Opus 5.5 and Sonnet 5.5 list prices); a model not listed is charged a tenth of its input price.
+CACHE_READ_PRICES = {"claude-opus-5-5": 0.20, "claude-sonnet-5-5": 0.10}
 SIM_CHARGE = False
 TYPICAL_TOKENS = {"brief": (6000, 1500), "draft": (3000, 500), "draft_linkedin": (2000, 200), "classify": (800, 100),
                   "suggest_reply": (2000, 400), "extract": (800, 150), "check_claims": (1500, 300),
@@ -255,12 +257,34 @@ def sim(task: str) -> Callable[[Callable[[dict], dict]], Callable[[dict], dict]]
     return wrap
 
 
+def system_blocks(task: str) -> list[dict]:
+    """The task's system prompt as one block marked as a cache breakpoint. It is the stable part of the request, so it
+    goes first; the per-request payload is the user message after it. A prefix under the model's minimum (512 tokens on
+    Opus 5.5) is silently not cached: the call still works and bills at the normal rate."""
+    return [{"type": "text", "text": TASKS[task]["system"], "cache_control": {"type": "ephemeral"}}]
+
+
+def usage_of(resp) -> dict:
+    u = resp.usage
+    return {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens, "model": resp.model,
+            "cache_creation_input_tokens": getattr(u, "cache_creation_input_tokens", 0) or 0,
+            "cache_read_input_tokens": getattr(u, "cache_read_input_tokens", 0) or 0}
+
+
+def input_cost_cents(model: str, usage: dict) -> float:
+    """Input side of a call in cents: uncached tokens at the list price, cache writes at 1.25x, cache reads at the cache-read price."""
+    pin = PRICES.get(model, (4.0, 20.0))[0]
+    pread = CACHE_READ_PRICES.get(model, pin * 0.1)
+    return (usage.get("input_tokens", 0) * pin + usage.get("cache_creation_input_tokens", 0) * pin * 1.25
+            + usage.get("cache_read_input_tokens", 0) * pread) / 1_000_000 * 100
+
+
 def _live(task: str, payload: dict) -> tuple[dict, dict]:  # pragma: no cover - needs a key
     import anthropic
     spec = TASKS[task]
     client = anthropic.Anthropic()
     resp = client.messages.parse(
-        model=spec["model"], max_tokens=spec["max_tokens"], system=spec["system"],
+        model=spec["model"], max_tokens=spec["max_tokens"], system=system_blocks(task),
         messages=[{"role": "user", "content": json.dumps(payload, default=str)}],
         thinking={"type": "adaptive"}, output_config={"effort": spec["effort"]}, output_format=spec["schema"],
         extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"}, extra_body={"fallbacks": "default"},
@@ -268,8 +292,7 @@ def _live(task: str, payload: dict) -> tuple[dict, dict]:  # pragma: no cover - 
     if resp.stop_reason == "refusal":
         raise RuntimeError(f"model refused the {task} task")
     out = resp.parsed_output.model_dump()
-    usage = {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens, "model": resp.model}
-    return out, usage
+    return out, usage_of(resp)
 
 
 def run(cur, task: str, payload: dict, *, account_id: int | None = None) -> dict:
@@ -297,11 +320,11 @@ def run(cur, task: str, payload: dict, *, account_id: int | None = None) -> dict
         tin, tout = TYPICAL_TOKENS.get(task, (1000, 200))
         usage = {"input_tokens": tin, "output_tokens": tout}
     pin, pout = PRICES.get(spec["model"], (4.0, 20.0))
-    cost = (usage["input_tokens"] * pin + usage["output_tokens"] * pout) / 1_000_000 * 100 if charged else 0
+    cost = (input_cost_cents(spec["model"], usage) + usage["output_tokens"] * pout / 1_000_000 * 100) if charged else 0
     db.run(cur, """insert into llm_calls (task, model, input_hash, input_tokens, output_tokens, cost_cents, output, source)
                    values (%s,%s,%s,%s,%s,%s,%s,%s)""", task, spec["model"], h, usage["input_tokens"],
            usage["output_tokens"], cost, J(out), source)
     if charged:
-        spend.charge_llm(cur, model=spec["model"], input_tokens=usage["input_tokens"],
+        spend.charge_llm(cur, model=spec["model"], input_tokens=usage["input_tokens"] + usage.get("cache_creation_input_tokens", 0) + usage.get("cache_read_input_tokens", 0),
                          output_tokens=usage["output_tokens"], cost_cents=cost, purpose=task, account_id=account_id)
     return out
