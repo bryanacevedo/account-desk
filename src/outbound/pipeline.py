@@ -252,7 +252,7 @@ def retry_held_deals(cur, payload: dict | None = None) -> int:
     """Read held deals again; those whose account now exists become opportunities and are attributed."""
     from .adapters import CrmDeal
     done = 0
-    for h in db.all(cur, "select * from crm_held_deals order by first_seen limit 500"):
+    for h in db.all(cur, "select * from crm_held_deals order by first_seen, crm_id limit 500"):
         raw = dict(h["deal"])
         for k in ("created_at", "updated_at", "closed_at"):
             if raw.get(k):

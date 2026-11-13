@@ -15,4 +15,7 @@ CONF
 su postgres -c "$PGBIN/pg_ctl -D /data -l /tmp/pg.log -w start"
 su postgres -c "$PGBIN/createdb -h 127.0.0.1 -U postgres outbound"
 /app/.venv/bin/python -m outbound demo 90
+# The image is only built when the demo shows every scenario (src/outbound/coverage.py): a scenario at zero means the
+# live demo cannot show it, so the build fails here and Render keeps the last good image.
+/app/.venv/bin/python -m outbound coverage
 su postgres -c "$PGBIN/pg_ctl -D /data -m fast -w stop"

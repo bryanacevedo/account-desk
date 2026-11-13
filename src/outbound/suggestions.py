@@ -40,7 +40,7 @@ def _window(cur) -> list[dict]:
                case when u.role = 'sdr' then cn.written_by end as sdr
         from learnings l join call_notes cn on cn.id = l.call_note_id join meetings m on m.id = cn.meeting_id
         left join learning_themes t on t.id = l.theme_id left join users u on u.id = cn.written_by
-        where cn.created_at > app_now() - make_interval(days => %s)""", RULE["window_days"])
+        where cn.created_at > app_now() - make_interval(days => %s) order by l.id""", RULE["window_days"])
 
 
 def evaluate(rows: list[dict], *, rule: dict | None = None) -> dict[tuple[int, str], dict]:
@@ -113,7 +113,7 @@ def check(cur) -> list[tuple[int, str]]:
     open a new suggestion, as (theme, segment). Short: no model call happens here."""
     db.run(cur, "select pg_advisory_xact_lock(7342047)")  # one check at a time
     pairs = evaluate(_window(cur))
-    for s in db.all(cur, "select id, theme_id, segment_signal_type from play_suggestions where status = 'open' for update"):
+    for s in db.all(cur, "select id, theme_id, segment_signal_type from play_suggestions where status = 'open' order by id for update"):
         e = pairs.get((s["theme_id"], s["segment_signal_type"]))
         if e and e["passes"]:
             db.run(cur, "update play_suggestions set evidence = %s where id = %s", J(_evidence(e)), s["id"])

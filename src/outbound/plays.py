@@ -194,7 +194,7 @@ def expire_proposals(cur, payload: dict) -> None:
     timeutil.load_holidays(cur)
     now = db.val(cur, "select app_now()")
     for r in db.all(cur, """select ap.id, ap.proposed_at, p.urgent from account_plays ap join plays p on p.id = ap.play_id
-                            where ap.state = 'proposed'"""):
+                            where ap.state = 'proposed' order by ap.id"""):
         limit = urgent_ttl if r["urgent"] else ttl
         if timeutil.business_days_between(r["proposed_at"], now) > limit:
             set_state(cur, r["id"], "expired", reason="expired", cooldown_key="expired")
@@ -221,7 +221,7 @@ def close_stale(cur, payload: dict) -> None:
     timeutil.load_holidays(cur)
     now = db.val(cur, "select app_now()")
     for r in db.all(cur, """select id, account_id, owner_id, coalesce(decided_at, proposed_at) as since from account_plays
-                            where state in ('accepted', 'researching')"""):
+                            where state in ('accepted', 'researching') order by id"""):
         if timeutil.business_days_between(r["since"], now) > 2:
             set_state(cur, r["id"], "stopped", reason="research_failed")
             from . import alerts
@@ -230,15 +230,15 @@ def close_stale(cur, payload: dict) -> None:
                                object_kind="account_play", object_id=r["id"], dedup_key=f"research_failed:{r['id']}")
     for r in db.all(cur, """select ap.id from account_plays ap where ap.state = 'engaged' and not exists (
                               select 1 from replies r where r.account_id = ap.account_id and r.hot
-                              and r.received_at > app_now() - interval '21 days')"""):
+                              and r.received_at > app_now() - interval '21 days') order by ap.id"""):
         set_state(cur, r["id"], "stopped", reason="no_meeting")
     for r in db.all(cur, """select ap.id from account_plays ap where ap.state = 'meeting' and not exists (
                               select 1 from meetings m where m.account_play_id = ap.id
-                              and m.starts_at > app_now() - interval '120 days')"""):
+                              and m.starts_at > app_now() - interval '120 days') order by ap.id"""):
         set_state(cur, r["id"], "stopped", reason="no_opportunity")
     for r in db.all(cur, """select ap.id from account_plays ap where ap.state = 'approving' and not exists (
                               select 1 from enrollments e where e.account_play_id = ap.id
-                              and e.state in ('pending', 'active', 'paused'))"""):
+                              and e.state in ('pending', 'active', 'paused')) order by ap.id"""):
         set_state(cur, r["id"], "stopped", reason="nothing_approved")
     # At the research stage the SDR writes the emails, so the play stays open for as long as the play's own sequence
     # would have run (calendar days, a little over its business days), instead of closing the day the brief is done.
@@ -250,12 +250,12 @@ def close_stale(cur, payload: dict) -> None:
                               and not exists (select 1 from enrollments e where e.account_play_id = ap.id
                                 and e.stop_reason = 'rep_writes'
                                 and e.created_at > app_now() - make_interval(days => ceil(1.4 * coalesce(
-                                  (select max((s->>'day')::int) from jsonb_array_elements(pl.sequence) s), 0))::int + 1))"""):
+                                  (select max((s->>'day')::int) from jsonb_array_elements(pl.sequence) s), 0))::int + 1)) order by ap.id"""):
         set_state(cur, r["id"], "stopped", reason="sequence_finished")
     # CRM turned the account into a customer or an open opportunity elsewhere.
     for r in db.all(cur, """select ap.id, a.lifecycle from account_plays ap join accounts a on a.id = ap.account_id
                             where ap.state in ('proposed','accepted','researching','approving','active','engaged','meeting')
-                            and a.lifecycle in ('customer', 'open_opp')"""):
+                            and a.lifecycle in ('customer', 'open_opp') order by ap.id"""):
         set_state(cur, r["id"], "stopped",
                   reason="became_customer" if r["lifecycle"] == "customer" else "opportunity_elsewhere")
 
@@ -276,7 +276,7 @@ def autonomy_watch(cur, payload: dict) -> None:
     """Automatic demotion (docs/SPEC.md section 9): a complaint, bounces over 3% of the last 200 sends, or SDRs editing more than
     30% of the last 20 drafts moves a play down one stage. Promotion is never automatic."""
     from . import alerts
-    for p in db.all(cur, "select * from plays where status = 'live' and autonomy in ('supervised', 'autonomous')"):
+    for p in db.all(cur, "select * from plays where status = 'live' and autonomy in ('supervised', 'autonomous') order by id"):
         why = None
         complaints = db.val(cur, """select count(*) from deliveries d join messages m on m.id = d.message_id
                                     join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
@@ -287,14 +287,14 @@ def autonomy_watch(cur, payload: dict) -> None:
         day = db.one(cur, """with last as (select m.id from messages m join enrollments e on e.id = m.enrollment_id
                                             join account_plays ap on ap.id = e.account_play_id
                                             where ap.play_id = %s and m.channel = 'email' and m.status = 'sent'
-                                            order by m.sent_at desc limit 200)
+                                            order by m.sent_at desc, m.id desc limit 200)
                              select (select count(*) from last) as sent,
                                     (select count(*) from deliveries d where d.message_id in (select id from last)
                                      and d.event = 'bounced_hard') as bounced""", p["id"])
         last = db.all(cur, """select m.edited from messages m join enrollments e on e.id = m.enrollment_id
                               join account_plays ap on ap.id = e.account_play_id
                               where ap.play_id = %s and m.approval_mode = 'person' and m.channel = 'email'
-                              order by m.approved_at desc limit 20""", p["id"])
+                              order by m.approved_at desc, m.id desc limit 20""", p["id"])
         if complaints:
             why = "A spam complaint"
         elif day["sent"] >= 50 and day["bounced"] / day["sent"] > 0.03:

@@ -71,10 +71,10 @@ def account_facts(cur, account_id: int, limit: int = 14, *, citable_only: bool =
         (select id, kind, text, source_url, observed_at, person_id from facts
           where account_id = %s and kind like 'signal:%%' and observed_at > app_now() - interval '90 days'
             and kind <> all(%s)
-          order by observed_at desc limit 8)
+          order by observed_at desc, id desc limit 8)
         union all
         (select id, kind, text, source_url, observed_at, person_id from facts
-          where account_id = %s and kind not like 'signal:%%' order by observed_at desc limit 8)""",
+          where account_id = %s and kind not like 'signal:%%' order by observed_at desc, id desc limit 8)""",
         account_id, private, account_id)[:limit]
 
 
@@ -888,7 +888,7 @@ def due_steps(cur, payload: dict) -> None:
     now = db.val(cur, "select app_now()")
     # A first email nobody approved in time lapses too, so its play can close.
     for e in db.all(cur, """select e.id, e.next_at, p.country from enrollments e join people p on p.id = e.person_id
-                            where e.state = 'pending' and e.next_at is not null for update of e skip locked"""):
+                            where e.state = 'pending' and e.next_at is not null order by e.id for update of e skip locked"""):
         if timeutil.business_days_between(e["next_at"], now, e["country"]) > lapse:
             db.run(cur, "update messages set status = 'cancelled' where enrollment_id = %s and status in "
                         "('awaiting_approval', 'failed_gate', 'draft')", e["id"])
@@ -897,7 +897,7 @@ def due_steps(cur, payload: dict) -> None:
     rows = db.all(cur, """select e.*, ap.owner_id, pl.sequence, p.country, p.full_name, p.phone from enrollments e
                           join account_plays ap on ap.id = e.account_play_id join plays pl on pl.id = ap.play_id
                           join people p on p.id = e.person_id
-                          where e.state = 'active' and e.next_at <= app_now() for update of e skip locked""")
+                          where e.state = 'active' and e.next_at <= app_now() order by e.next_at, e.id for update of e skip locked""")
     for e in rows:
         if e["step_index"] >= len(e["sequence"]):
             db.run(cur, "update enrollments set state = 'done', next_at = null where id = %s", e["id"])

@@ -28,7 +28,7 @@ def tick(cur) -> int:
     queued = 0
     state = {r["key"]: r["value"] for r in db.all(cur, "select key, value from settings where key like 'sched:%%'")}
     due = dict(PERIODIC)
-    for s in db.all(cur, "select key, cadence_minutes from signal_sources where enabled and adapter not in ('webhook', 'enrichment')"):
+    for s in db.all(cur, "select key, cadence_minutes from signal_sources where enabled and adapter not in ('webhook', 'enrichment') order by key"):
         due["ingest:" + s["key"]] = s["cadence_minutes"]
     for kind, minutes in due.items():
         last = state.get("sched:" + kind)

@@ -359,7 +359,7 @@ def act(cur, r: dict) -> None:
             _stop_person(cur, pid, "replied_positive")
         if ap and ap["state"] in ("active", "approving"):
             plays.set_state(cur, ap["id"], "engaged")
-        owner = owner or db.val(cur, "select id from users where role = 'manager' limit 1")
+        owner = owner or db.val(cur, "select id from users where role = 'manager' order by id limit 1")
         due = _sla(cur, r, owner)
         db.run(cur, "update replies set sla_due_at = %s where id = %s", due, r["id"])
         body = suggest(cur, label, r["cleaned"], db.val(cur, "select first_name from people where id = %s", pid) if pid else None, aid)
@@ -488,8 +488,8 @@ def handle(cur, reply_id: int, *, user_id: int, outcome: str, label: str | None 
 @jobs.handler("sla_check")
 def sla_check(cur, payload: dict) -> None:
     for r in db.all(cur, """select r.*, a.name from replies r join accounts a on a.id = r.account_id
-                            where r.hot and r.handled_at is null and r.escalated_at is null and r.sla_due_at < app_now()"""):
-        manager = db.val(cur, "select id from users where role = 'manager' limit 1")
+                            where r.hot and r.handled_at is null and r.escalated_at is null and r.sla_due_at < app_now() order by r.id"""):
+        manager = db.val(cur, "select id from users where role = 'manager' order by id limit 1")
         alerts.raise_alert(cur, kind="sla_missed", severity="urgent", channel="#outbound-ops", target_user=manager,
                            object_kind="reply", object_id=r["id"], title=f"Reply from {r['name']} still unanswered",
                            body="Past the response time.", dedup_key=f"sla:{r['id']}")

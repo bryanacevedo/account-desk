@@ -214,7 +214,7 @@ def _replaced_in_seat(cur, account_id: int, pid: int, title: str | None, started
         return
     from . import outreach
     for p in db.all(cur, """select id, title from people where account_id = %s and id <> %s and status = 'active'
-                            and (role_started_at is null or role_started_at < %s)""", account_id, pid, started):
+                            and (role_started_at is null or role_started_at < %s) order by id""", account_id, pid, started):
         if _seat(p["title"]) != seat:
             continue
         db.run(cur, "update people set status = 'left' where id = %s", p["id"])
@@ -265,7 +265,8 @@ def first_party_from_crm(cur) -> int:
     rows = db.all(cur, """
         select o.id, o.account_id, o.closed_at from opportunities o
         where o.won = false and o.closed_at < app_now() - interval '150 days' and o.loss_reason = 'timing'
-          and not exists (select 1 from signals s where s.source = 'crm' and s.external_id = 'lost-' || o.id)""")
+          and not exists (select 1 from signals s where s.source = 'crm' and s.external_id = 'lost-' || o.id)
+        order by o.id""")
     for r in rows:
         db.run(cur, """insert into signals (type_key, source, external_id, account_id, observed_at, strength, evidence, status)
                        values ('closed_lost_revisit', 'crm', %s, %s, app_now(), 0.7, %s, 'matched')""",

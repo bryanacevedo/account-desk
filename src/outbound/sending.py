@@ -34,7 +34,7 @@ def send_due(cur, payload: dict) -> None:
     ids = [r["id"] for r in db.all(cur, """select m.id from messages m join enrollments e on e.id = m.enrollment_id
                                            where m.status = 'scheduled' and m.scheduled_for <= app_now()
                                              and e.state = 'active'
-                                           order by m.scheduled_for limit 200""")]
+                                           order by m.scheduled_for, m.id limit 200""")]
     for mid in ids:
         jobs.enqueue(cur, "send_one", {"message_id": mid}, dedupe_key=f"send:{mid}", max_attempts=3)
 
@@ -171,7 +171,7 @@ class SendResultLike:
 def sweep_sending(cur, payload: dict) -> None:
     """Messages left in 'sending' for more than 15 minutes: a worker died mid-send. Ask the provider."""
     for r in db.all(cur, """select id from messages where status = 'sending'
-                            and sent_at < app_now() - interval '15 minutes' for update skip locked"""):
+                            and sent_at < app_now() - interval '15 minutes' order by id for update skip locked"""):
         db.run(cur, "update messages set status = 'send_unknown' where id = %s", r["id"])
         jobs.enqueue(cur, "reconcile_send", {"message_id": r["id"]}, dedupe_key=f"reconcile:{r['id']}")
 

@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-12. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 61. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-12. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 64. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -51,6 +51,7 @@ Checked by running them (the date is on each line):
 
 ## Done since the first review (2026-11-11)
 
+- Deterministic demo and a coverage gate (2026-11-12, decisions 63 and 64): two 90-day builds of one seed, run in parallel with different hash seeds, gave different worlds (signal totals 10,833 and 10,778) and one lost "came back after a not now". Fixed by turning off parallel scans, synchronized scans and autovacuum while the demo is built (`deterministic_database`, `sim/runner.py`) and ending every query that feeds the simulation in an id (runner, plays, outreach, signals, replies, enrichment, sending, scheduler, suggestions, pipeline, `adapters/sources.py`). Proof: two from-scratch builds on the final code have the same signals, jobs, plays and audit log, byte-identical coverage, 97 of 99 shown and none missing. Still different between builds, on purpose: random tokens (unsubscribe links, signing keys, so hashes of them), call timings, and the order of a monitor's sample list. `scripts/docker-build-demo.sh` now runs `python -m outbound coverage` and fails the image build on a missing scenario. The API-pricing plant's early share went 0.5 to 0.9 so the pattern comes back in the stable world; the 21-day test world now runs on seed 7 (seed 5 drew one LinkedIn task once ordering was fixed). The phone's bottom bar shows the Suggested count on More (same `pn-n`), and the More list shows it beside Plays.
 - `CRM_DESK_OWNER_ROLE` (2026-11-12, shared world Phase 2): with CRM Desk as the CRM, Account Desk follows the account's owner by default, as before, or the SDR with `CRM_DESK_OWNER_ROLE=sdr`, for a CRM Desk that keeps the SDR beside the AE (the shared world). Two tests; the CRM Desk contract suite still passes 9 of 9.
 
 Counts in this list (tests, cases) are as of when each item was done, not today's.

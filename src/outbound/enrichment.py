@@ -267,7 +267,7 @@ def refresh(cur, payload: dict) -> None:
                               select 1 from account_plays ap where ap.account_id = a.id
                               and ap.state in ('accepted','researching','approving','active','engaged','meeting')))
                             and (a.enriched_at is null or a.enriched_at < app_now() - (%s || ' days')::interval)
-                            order by a.enriched_at nulls first limit 40""", str(COMPANY_EVERY_DAYS)):
+                            order by a.enriched_at nulls first, a.id limit 40""", str(COMPANY_EVERY_DAYS)):
         try:
             enrich_company(cur, a)
         except spend.OverBudget:
@@ -276,7 +276,7 @@ def refresh(cur, payload: dict) -> None:
     for p in db.all(cur, """select distinct p.* from people p join enrollments e on e.person_id = p.id
                             where e.state in ('pending','active','paused') and p.status = 'active'
                             and (p.enriched_at is null or p.enriched_at < app_now() - (%s || ' days')::interval)
-                            order by p.enriched_at nulls first limit 60""", str(PERSON_EVERY_DAYS)):
+                            order by p.enriched_at nulls first, p.id limit 60""", str(PERSON_EVERY_DAYS)):
         def buy(p=p):
             with spend.paid_call(cur, "people_search", "match", vendor="people_search", qty=1, purpose="refresh person",
                                  account_id=p["account_id"]) as info:
@@ -293,7 +293,7 @@ def refresh(cur, payload: dict) -> None:
     from . import outreach
     for p in db.all(cur, """select distinct p.* from people p join enrollments e on e.person_id = p.id
                             where e.state in ('pending','active') and p.email is not null and p.email_status = 'valid'
-                            and p.email_verified_at < app_now() - (%s || ' days')::interval limit 60""",
+                            and p.email_verified_at < app_now() - (%s || ' days')::interval order by p.id limit 60""",
                     str(int(outreach.setting(cur, "verify_max_age_days", 45)))):
         jobs.enqueue(cur, "reverify", {"person_id": p["id"]}, dedupe_key=f"reverify:{p['id']}")
 

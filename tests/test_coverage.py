@@ -15,3 +15,12 @@ def test_the_demo_shows_every_scenario(built_demo):
         rows = coverage.scenarios(cur)
     zero = [f"{r['group']}: {r['scenario']}" for r in coverage.missing(rows)]
     assert zero == [], "\n" + coverage.table(rows)
+
+
+def test_the_image_build_fails_on_a_missing_scenario():
+    """The hosted demo is built once, into the image: coverage runs right after the simulation, so a build that cannot
+    show every scenario stops there instead of going live (and `set -e` makes its exit code stop the build)."""
+    from pathlib import Path
+    script = (Path(__file__).resolve().parents[1] / "scripts" / "docker-build-demo.sh").read_text()
+    assert "set -e" in script
+    assert script.index("-m outbound demo") < script.index("-m outbound coverage") < script.index("pg_ctl -D /data -m fast")

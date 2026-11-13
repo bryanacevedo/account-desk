@@ -54,10 +54,12 @@ def main(argv: list[str]) -> int:
         days = int(argv[2]) if len(argv) > 2 else 90
         t0 = time.time()
         runner.reset()
+        runner.deterministic_database(True)  # the same seed builds the same desk (runner.deterministic_database)
         info = runner.setup(start=DEMO_START)
         totals = runner.run(days)
         # Learnings are filed as they arrive; the backfill catches any left over and looks for patterns once more.
         totals["learnings_filed_after"] = themes.backfill()
+        runner.deterministic_database(False)
         print(json.dumps({"world": info, "totals": totals, "seconds": round(time.time() - t0, 1)}))
         db.close()
     elif cmd == "themes" and len(argv) > 2 and argv[2] == "backfill":

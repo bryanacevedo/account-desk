@@ -51,6 +51,8 @@ export function App() {
   // The phone's bottom bar: the first four pages that belong there; everything else is under More.
   const bar = routes.filter((r) => !r.offBar).slice(0, 4);
   const rest = routes.filter((r) => !bar.includes(r));
+  // What waits on a page under More (the Suggested plays) shows on More itself, the way Approvals' count shows.
+  const moreN = rest.reduce((n, r) => n + (r.count && me?.counts[r.count] ? me.counts[r.count] : 0), 0);
   const more = { path: "/more", label: "More", icon: null, page: () => <More routes={rest} me={me} /> } as any;
   const route = path === "/more" ? more : routes.find((r) => r.path === path) || routes[0];
   const Page = route.page;
@@ -106,7 +108,8 @@ export function App() {
           </a>
         ))}
         <a href="/more" aria-current={route.path === "/more" || rest.some((r) => r.path === route.path) ? "page" : undefined}
-          onClick={(e) => { e.preventDefault(); navigate("/more"); }}><span className="pn-icon"><DotsThree size={18} weight="bold" /></span><span>More</span></a>
+          aria-label={moreN ? `More, ${moreN} waiting` : undefined}
+          onClick={(e) => { e.preventDefault(); navigate("/more"); }}><span className="pn-icon"><DotsThree size={18} weight="bold" />{moreN ? <i className="pn-n" key={moreN}>{moreN}</i> : null}</span><span>More</span></a>
       </nav>
       {me ? <SheetHost key={me.now} /> : null}
       <Toaster />
@@ -123,7 +126,8 @@ function More({ routes, me }: { routes: typeof ROUTES; me: Me | null }) {
         {routes.map((r) => (
           <a key={r.path} href={r.path} className="row" style={{ gridTemplateColumns: "24px minmax(0,1fr) auto" }}
             onClick={(e) => { e.preventDefault(); navigate(r.path); }}>
-            <span className="mute">{r.icon}</span><span className="cell-main"><span className="t">{r.label}</span></span><CaretRight size={16} className="mute" />
+            <span className="mute">{r.icon}</span><span className="cell-main"><span className="t">{r.label}</span></span>
+            <span className="more-end">{r.count && me?.counts[r.count] ? <span className="n" aria-label={`${me.counts[r.count]} waiting`}>{me.counts[r.count]}</span> : null}<CaretRight size={16} className="mute" /></span>
           </a>
         ))}
       </div>

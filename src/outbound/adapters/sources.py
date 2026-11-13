@@ -14,7 +14,7 @@ def fetch(cur, source: str) -> list[dict]:
         from . import live
         return live.fetch_source(cur, source)
     rows = db.all(cur, """select id, payload from sim_events where kind = 'signal' and not done and at <= app_now()
-                          and payload->>'source' = %s order by at for update skip locked""", source)
+                          and payload->>'source' = %s order by at, id for update skip locked""", source)
     out = []
     for r in rows:
         raw = dict(r["payload"]["raw"])

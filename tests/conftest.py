@@ -38,7 +38,7 @@ def world(database):
     from outbound import monitors, outreach, pipeline, replies, scheduler, scoring, sending  # noqa: F401
     from outbound.sim import runner
     runner.setup(start=START, seed=3, n_accounts=140)
-    totals = runner.run(21, seed=5, slow_last_days=0, idle_hours=0)
+    totals = runner.run(21, seed=6, slow_last_days=0, idle_hours=0)  # seed 5 drew one LinkedIn task and no active enrollment once ordering was fixed
     return totals
 
 

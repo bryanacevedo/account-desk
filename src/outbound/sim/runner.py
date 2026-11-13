@@ -22,6 +22,26 @@ def reset(url: str | None = None) -> None:
     db.migrate(url)
 
 
+def deterministic_database(on: bool) -> None:
+    """Make the same seed build the same desk, or put the database back to its defaults.
+
+    A query that does not fix its order returns rows in the order Postgres happens to produce them, and the simulation
+    hands rows to its seeded random stream one at a time, so a different order is a different desk (2026-11-12: two
+    builds of one seed differed everywhere, and one lost "came back after a not now"). Three things reorder rows at
+    moments the seed does not control, so they are off while the demo is built: parallel scans (workers return rows
+    as they finish), synchronized scans, and background vacuum (it moves rows on disk and the statistics a plan is
+    chosen from). The queries that feed the simulation also say their order; this covers the rest."""
+    with db.tx() as cur:
+        name = db.val(cur, "select current_database()")
+        for setting, off in (("max_parallel_workers_per_gather", "0"), ("synchronize_seqscans", "off")):
+            db.run(cur, f'alter database "{name}" ' + (f"set {setting} = {off}" if on else f"reset {setting}"))
+        for t in db.all(cur, "select tablename from pg_tables where schemaname = 'public' order by tablename"):
+            db.run(cur, f'alter table "{t["tablename"]}" set (autovacuum_enabled = {"false" if on else "true"})')
+        if not on:
+            db.run(cur, "analyze")
+    db.close()  # the pool reconnects, so every connection has the new settings
+
+
 def setup(*, start: datetime, seed: int = 7, n_accounts: int = 3000) -> dict:
     clock.set_sim(start)
     from .. import llm
@@ -36,7 +56,7 @@ def setup(*, start: datetime, seed: int = 7, n_accounts: int = 3000) -> dict:
         db.run(cur, "insert into sim_dns (domain, dkim_broken_from, dkim_broken_until) values (%s, %s, %s)",
                first, start + timedelta(days=36), start + timedelta(days=39))
         pipeline.crm_sync(cur, {})  # the first read of the CRM: its history becomes the desk's
-        for r in db.all(cur, "select id from accounts"):
+        for r in db.all(cur, "select id from accounts order by id"):
             scoring.rescore(cur, r["id"])
         # Earlier history: a few months of signals already ingested, so scores start warm.
     return info
@@ -68,7 +88,7 @@ def _queue_day_signals(cur, rng: random.Random, day: datetime) -> int:
 
 def _process_events(cur, until: datetime) -> int:
     n = 0
-    for ev in db.all(cur, """select * from sim_events where not done and kind not in ('signal', 'opportunity') and at <= %s order by at""", until):
+    for ev in db.all(cur, """select * from sim_events where not done and kind not in ('signal', 'opportunity') and at <= %s order by at, id""", until):
         db.run(cur, "update sim_clock set at = greatest(at, %s)", ev["at"])
         p = ev["payload"]
         if ev["kind"] in ("reply", "bounce"):
@@ -247,13 +267,13 @@ def skip_reasons(employees: int | None) -> list[str]:
 
 
 def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None:
-    reps = db.all(cur, "select * from users where role in ('sdr', 'manager')")
+    reps = db.all(cur, "select * from users where role in ('sdr', 'manager') order by id")
     for u in reps:
         if not _working(at, u["timezone"]) or rng.random() > eagerness:
             continue
         # Proposals: accept most, skip some with a reason.
         for ap in db.all(cur, """select ap.id, a.employees from account_plays ap join accounts a on a.id = ap.account_id
-                                 where ap.owner_id = %s and ap.state = 'proposed' order by ap.proposed_at limit 3""",
+                                 where ap.owner_id = %s and ap.state = 'proposed' order by ap.proposed_at, ap.id limit 3""",
                          u["id"]):
             if rng.random() < 0.82:
                 plays.decide(cur, ap["id"], accept=True, user_id=u["id"])
@@ -264,7 +284,7 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
                                 join enrollments e on e.id = m.enrollment_id
                                 join account_plays ap on ap.id = e.account_play_id join plays pl on pl.id = ap.play_id
                                 where ap.owner_id = %s and m.status in ('awaiting_approval', 'failed_gate') and m.channel = 'email'
-                                order by m.created_at limit 6""", u["id"]):
+                                order by m.created_at, m.id limit 6""", u["id"]):
             roll = rng.random()
             try:
                 if m["status"] == "failed_gate":
@@ -282,7 +302,7 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
                 pass
         # Replies a person must label.
         for r in db.all(cur, """select r.* from replies r join tasks t on t.reply_id = r.id
-                                where t.owner_id = %s and t.kind = 'review_reply' and t.status = 'open' limit 4""", u["id"]):
+                                where t.owner_id = %s and t.kind = 'review_reply' and t.status = 'open' order by r.received_at, r.id limit 4""", u["id"]):
             truth = (r["extracted"] or {}).get("_sim_kind")
             label = {"positive": "interested", "not_now": "not_now", "not_interested": "not_interested",
                      "referral": "referral", "wrong_person": "wrong_person", "unsubscribe": "unsubscribe",
@@ -304,7 +324,7 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
                                 left join people p on p.id = t.person_id left join sim_accounts sa on sa.account_id = p.account_id
                                 where t.owner_id = %s and t.status = 'open' and t.kind in
                                 ('call','linkedin_connect','linkedin_message','research','referral') and t.due_at <= %s
-                                order by t.due_at limit 6""", u["id"], at):
+                                order by t.due_at, t.id limit 6""", u["id"], at):
             work_task(cur, rng, t, u, at)
 
 
@@ -357,9 +377,11 @@ EINVOICE = ("Need EU e-invoicing ready before the new rules start.", "Want EU e-
             "Need e-invoicing ready for the new EU rules.")
 # (signal, ways it is said, share of first calls, heard from, heard until); None is the whole run.
 MORE_PLANTED = [
-    # Launching usage pricing for the API product: heard now and then, then on nearly every call as Q1 gets close, so
-    # once set aside it comes back (rule 5).
-    ("pricing_change", REASONS[5][0], 0.5, None, datetime(2026, 10, 1, tzinfo=UTC)),
+    # Launching usage pricing for the API product: heard on most calls from the start, so it opens early, and on nearly
+    # every call as Q1 gets close, so once set aside it comes back (rule 5). Only about eleven first calls a run come in
+    # on this signal and the rule needs 1.5 times as many accounts as when it was set aside (five, then eight), so a
+    # lower share left it a few accounts short on a build (2026-11-12).
+    ("pricing_change", REASONS[5][0], 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
     ("pricing_change", REASONS[5][0], 0.95, datetime(2026, 10, 1, tzinfo=UTC), None),
     ("pricing_visit", ERP, 0.8, None, datetime(2026, 10, 1, tzinfo=UTC)),          # heard for a while, then not
     ("pricing_change", PORTAL, 0.7, None, None),
@@ -449,7 +471,7 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
                             from meetings m join sim_accounts sa on sa.account_id = m.account_id
                             join accounts a on a.id = m.account_id left join people p on p.id = m.person_id
                             left join account_plays ap on ap.id = m.account_play_id left join signals s on s.id = ap.trigger_signal_id
-                            where m.status = 'booked' and m.starts_at < %s""", at):
+                            where m.status = 'booked' and m.starts_at < %s order by m.starts_at, m.id""", at):
         status = "held" if rng.random() < 0.84 else "no_show"
         pipeline.set_meeting_status(cur, m["id"], status)
         if status == "held":
@@ -461,7 +483,7 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
             if rng.random() < 0.22 + 0.5 * m["need"]:
                 db.run(cur, "insert into sim_events (at, kind, payload) values (%s, 'opportunity', %s)",
                        at + timedelta(days=rng.randint(2, 8)), J({"account_id": m["account_id"], "email": m["email"]}))
-    for ev in db.all(cur, "select * from sim_events where kind = 'opportunity' and not done and at <= %s", at):
+    for ev in db.all(cur, "select * from sim_events where kind = 'opportunity' and not done and at <= %s order by at, id", at):
         p = ev["payload"]
         need = db.val(cur, "select need::float from sim_accounts where account_id = %s", p["account_id"]) or 0.3
         # One open new-business deal per company: a second good meeting moves the open deal along, it does not open
@@ -470,7 +492,7 @@ def meetings_and_deals(cur, rng: random.Random, at: datetime) -> None:
             _crm_deal(cur, rng, ev["at"], p["account_id"], need, p.get("email"))
         db.run(cur, "update sim_events set done = true where id = %s", ev["id"])
     # Deals move: a stage every week or two, then they close on their hidden date.
-    for d in db.all(cur, "select * from sim_crm_deals where closed_at is null and updated_at < %s - interval '9 days'", at):
+    for d in db.all(cur, "select * from sim_crm_deals where closed_at is null and updated_at < %s - interval '9 days' order by id", at):
         if at >= d["close_on"]:
             reason = None if d["will_win"] else rng.choices([r for r, _ in LOSS], weights=[w for _, w in LOSS])[0]
             db.run(cur, """update sim_crm_deals set closed_at = %s, won = %s, loss_reason = %s, updated_at = %s,
@@ -500,7 +522,7 @@ def _organic(cur, rng: random.Random, at: datetime) -> None:
     """What happens without outbound, once a day: some companies ask for a demo, and sales opens some deals on its
     own. Held-back accounts get these too, so the comparison group measures what outbound adds, not zero."""
     for a in db.all(cur, """select a.id, sa.need::float as need from accounts a join sim_accounts sa on sa.account_id = a.id
-                            where a.lifecycle = 'prospect'"""):
+                            where a.lifecycle = 'prospect' order by a.id"""):
         if rng.random() < 0.0012 * a["need"]:
             person = db.one(cur, "select id, email from people where account_id = %s and status = 'active' order by id limit 1", a["id"])
             if person:
