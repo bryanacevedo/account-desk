@@ -85,6 +85,12 @@ def scenarios(cur) -> list[dict]:
 
     for name, sql in REGION_OUTCOMES.items():
         add("Region rules", name, _n(cur, sql))
+    # A blocked country can only be shown where someone lives in one. The shared world has none (Mexico is opt-out, decision
+    # 76), so the scenario is not applicable there, and the table says so instead of calling it missing.
+    blocked = next(r for r in out if r["scenario"] == "blocked: not emailed in this country")
+    if blocked["count"] == 0 and not _n(cur, """select count(*) from people p join region_rules r on r.country = p.country
+                                                where r.rule = 'blocked'"""):
+        blocked["na"] = True
 
     add("Sending and data", "held-back accounts", reached["held_out"])
     add("Sending and data", "hard bounce", _n(cur, "select count(*) from deliveries where event = 'bounced_hard'"))
@@ -146,7 +152,7 @@ BY_CHANCE = {("Autonomy stages (plays that were at it)", "autonomous"), ("Autono
 
 
 def by_chance(r: dict) -> bool:
-    return (r["group"], r["scenario"]) in BY_CHANCE
+    return (r["group"], r["scenario"]) in BY_CHANCE or bool(r.get("na"))
 
 
 def missing(rows: list[dict]) -> list[dict]:
@@ -160,12 +166,14 @@ def table(rows: list[dict]) -> str:
         if r["group"] != group:
             group = r["group"]
             lines.append(f"\n{group}")
-        mark = ("   (by chance)" if by_chance(r) else "   MISSING") if r["count"] == 0 else ""
+        mark = ("   (no blocked country in this world)" if r.get("na") else "   (by chance)" if by_chance(r) else "   MISSING") if r["count"] == 0 else ""
         lines.append(f"  {r['scenario']:<{width}}{r['count']:>7}" + mark)
     gone = missing(rows)
-    rare = [r for r in rows if r["count"] == 0 and by_chance(r)]
-    lines.append(f"\n{len(rows)} scenarios: {len(rows) - len(gone) - len(rare)} shown, {len(gone)} missing, "
-                 f"{len(rare)} of the {len(BY_CHANCE)} that rest on chance not in this build.")
+    rare = [r for r in rows if r["count"] == 0 and by_chance(r) and not r.get("na")]
+    na = [r for r in rows if r.get("na")]
+    lines.append(f"\n{len(rows)} scenarios: {len(rows) - len(gone) - len(rare) - len(na)} shown, {len(gone)} missing, "
+                 f"{len(rare)} of the {len(BY_CHANCE)} that rest on chance not in this build"
+                 + (f"; {len(na)} not applicable (no one lives in a blocked country)." if na else "."))
     return "\n".join(lines).lstrip("\n")
 
 

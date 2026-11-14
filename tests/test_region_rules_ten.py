@@ -37,7 +37,7 @@ def test_every_one_of_the_ten_has_a_rule_a_name_and_a_note():
         assert catalog.REGION_NOTES[c].endswith(".") and chr(0x2014) not in catalog.REGION_NOTES[c]
     assert {c: rules[c] for c in CONSENT} == dict.fromkeys(CONSENT, "consent_required")
     assert {c: rules[c] for c in BASIS} == dict.fromkeys(BASIS, "basis_required")
-    assert rules["MX"] == "blocked"
+    assert rules["MX"] == "allowed"
     # The starting list's own rules are as they were.
     assert rules["US"] == "allowed" and rules["GB"] == "basis_required" and rules["SG"] == "blocked"
     assert catalog.INDIVIDUAL_CONSENT == {"GB", "FI", "PT"}
@@ -61,13 +61,11 @@ def test_a_recorded_legitimate_interest_does_not_open_a_consent_country(cur, sce
     refused(cur, scene["message"], "basis")
 
 
-def test_mexico_is_blocked_and_consent_does_not_open_it(cur, scene):
+def test_mexico_is_opt_out_so_nothing_holds_a_first_email(cur, scene):
+    # Decision 76: allowed, with the unsubscribe every email carries. No block, no consent hold, no missing rule.
     _in(cur, scene, "MX")
-    assert "region_blocked" in _codes(cur, scene)
-    refused(cur, scene["message"], "region blocked")
-    db.run(cur, "insert into contact_basis (person_id, basis) values (%s, 'consent')", scene["person"])
-    assert "region_blocked" in _codes(cur, scene)
-    refused(cur, scene["message"], "region blocked")
+    codes = _codes(cur, scene)
+    assert not {"region_blocked", "no_consent", "no_basis", "no_region_rule"} & set(codes)
 
 
 @pytest.mark.parametrize("country", BASIS)

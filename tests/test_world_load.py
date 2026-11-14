@@ -382,9 +382,9 @@ def test_the_second_report_is_only_for_job_changes_and_is_fixed_by_the_signal():
     assert all(1 <= s["delay_days"] <= 5 for s in shown if s)
 
 
-def test_the_world_countries_have_rules_and_mexico_is_blocked_by_a_real_one(built):
+def test_the_world_countries_have_rules_and_mexico_is_opt_out_by_a_real_one(built):
     # Decision 72: the rules for the ten countries come from the catalog in every mode, not from a world-only list.
-    assert v("select rule from region_rules where country = 'MX'") == "blocked"
+    assert v("select rule from region_rules where country = 'MX'") == "allowed"
     assert v("select rule from region_rules where country = 'IT'") == "consent_required"
     assert v("select rule from region_rules where country = 'FI'") == "basis_required"
     assert v("select individual_consent from region_rules where country = 'PT'") is True

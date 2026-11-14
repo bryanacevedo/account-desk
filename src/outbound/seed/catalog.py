@@ -240,9 +240,9 @@ REGION_RULES = [
     ("IT", "consent_required"), ("CH", "consent_required"), ("SE", "consent_required"), ("DK", "consent_required"),
     ("BE", "consent_required"), ("AT", "consent_required"), ("NO", "consent_required"),
     ("FI", "basis_required"), ("PT", "basis_required"),
-    # Mexico is blocked, not consent-only: no source found says what a cold email to a named business contact needs
-    # (the 2025 privacy law's tacit consent may or may not reach it), so the desk does not email there until counsel says.
-    ("MX", "blocked"),
+    # Mexico is opt-out: allowed, with the footer's unsubscribe (decision 72, Bryan 2026-11-13). No source settles what a
+    # cold email to a named business contact needs, and the 2025 privacy law's tacit consent is an opt-out model.
+    ("MX", "allowed"),
 ]
 
 # Where a sole trader or partnership is a natural person with the stricter rule even when a company is not, a cold email
@@ -262,7 +262,7 @@ REGION_NOTES = {
     "NO": "Opt-in for every natural person, a work address in a person's name included (Markedsforingsloven 15 s.). Counsel to confirm.",
     "FI": "Opt-out for companies (Act 917/2014 s. 202), opt-in for natural persons, sole traders included (s. 200). Counsel to confirm.",
     "PT": "Opt-out for companies, with the DGC list (Lei 41/2004 art. 13-A(2), 13-B); opt-in for natural persons. Counsel to confirm.",
-    "MX": "Blocked: no source settles what a cold B2B email needs under the 2025 privacy law. Counsel to confirm, then set a rule.",
+    "MX": "Opt-out: allowed with an unsubscribe in each email; no source settles what a cold B2B email needs under the 2025 privacy law. Counsel to confirm.",
 }
 
 # Calls, per country: whether the SDRs call there, and the do-not-call register screened first. A country not listed
