@@ -75,7 +75,7 @@ class CrmDeskCrm:
 
     def push(self, cur, kind: str, payload: dict, idempotency_key: str) -> str:
         pid = payload.get("person_id")
-        person = db.one(cur, "select id, email from people where id = %s", pid) if pid else None
+        person = db.one(cur, "select id, email, world_id from people where id = %s", pid) if pid else None
         if pid and person is None:
             return "refused:erased"          # Account Desk deletes an erased person's row; nothing is written about them
         email = (person or {}).get("email") or payload.get("email")
@@ -96,6 +96,10 @@ class CrmDeskCrm:
                 raise CrmDeskUnresolved(f"opt-out {idempotency_key} has no address")
             self._ok(self._call("POST", "/contacts/opt-out", json={"email": email}))
             return "opt_out"
+        if not email and (person or {}).get("world_id"):
+            # No address yet (an inbound booking from someone the desk has only a profile for): the CRM knows the contact by
+            # the shared world's person id, which `_contact` wrote it under.
+            email = f"ext:world_people:{person['world_id']}"
         if not email:
             raise CrmDeskUnresolved(f"{kind} {idempotency_key} names a person with no address")
         # When it happened is when the desk queued it, never when the CRM happens to hear: a retry after an outage, or a

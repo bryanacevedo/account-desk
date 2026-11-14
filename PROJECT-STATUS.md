@@ -133,3 +133,12 @@ Counts in this list (tests, cases) are as of when each item was done, not today'
 - Team and sending administration (decision 32). Evals for drafts and briefs from live Claude (decision 33, README table).
 - A second hands-on design review (2026-11-11): 5 phone blockers (pages scrolling sideways) and about 26 majors (contradicting figures, one thing with several names, explaining sentences, jargon, a dead end in the play editor). Blockers and majors fixed; checked at 375 and 1440.
 - The flaky monitor test was the slow-first-touch alert catching late approvals by simulated SDRs, which is its job; the test now fails only when a play is stuck inside the desk, and that found a real one (decision 17). Simulator picks now use its seeded generator instead of SQL `random()`.
+
+## Hand-off 2026-11-14 (session p3t, branch `p3t/step5`)
+
+Done: Mexico opt-out (decision 76), coverage "not applicable" for a blocked scenario nobody lives under, a meeting at an account CRM Desk lacks goes on the contact, an inbound meeting for a person with no address goes by the world person id (all 244 meetings reach CRM Desk in the rehearsal, none dead). Suite 466 passed, 3 skipped before the last small change; ruff and tsc clean.
+
+Not done:
+- The rehearsal's Account Desk half is not committed (`world/journal.jsonl` stays absent here). Replayed, the coverage gate fails four deal scenarios (sourced, influenced, converted, closed-lost revisit): the rehearsal has no AEs opening opportunities in CRM Desk from Account Desk's meetings. The journal is in `~/Developer/.wt/p3t-lumen-world/stage/out/journal.jsonl`.
+- Reps in other time zones work some call and LinkedIn tasks outside the account's working hours (8 in the rehearsal), which CRM Desk's audit refuses. A fix in `sim/runner.py` act_as_reps moves the coverage margins: rerun both seeds.
+- Not run yet: the design review, the goldfish review, fetch and rebase, push, Render and live checks.
