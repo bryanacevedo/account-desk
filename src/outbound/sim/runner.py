@@ -8,7 +8,20 @@ import logging
 import random
 from datetime import datetime, timedelta, timezone
 
-from .. import clock, db, integration, jobs, outreach, pipeline, plays, replies, scheduler, scoring, timeutil
+from .. import (
+    clock,
+    db,
+    gate,
+    integration,
+    jobs,
+    outreach,
+    pipeline,
+    plays,
+    replies,
+    scheduler,
+    scoring,
+    timeutil,
+)
 from ..db import J
 from ..seed import load
 from . import signals_gen, world, world_load
@@ -339,12 +352,19 @@ def act_as_reps(cur, rng: random.Random, at: datetime, eagerness: float) -> None
                 else:
                     replies.handle(cur, r["id"], user_id=u["id"], outcome="answered")
         # Tasks: calls and LinkedIn steps, worked the way an SDR would, with outcomes the desk records.
-        for t in db.all(cur, """select t.id, t.kind, t.person_id, sa.need::float as need from tasks t
+        # A call or LinkedIn step waits until it is daytime for the buyer; the rest of the queue is looked at in order.
+        worked = 0
+        for t in db.all(cur, """select t.id, t.kind, t.person_id, sa.need::float as need, p.country, p.timezone from tasks t
                                 left join people p on p.id = t.person_id left join sim_accounts sa on sa.account_id = p.account_id
                                 where t.owner_id = %s and t.status = 'open' and t.kind in
                                 ('call','linkedin_connect','linkedin_message','research','referral') and t.due_at <= %s
-                                order by t.due_at, t.id limit 6""", u["id"], at):
+                                order by t.due_at, t.id limit 30""", u["id"], at):
+            if t["kind"] in ("call", "linkedin_connect", "linkedin_message") and not gate.in_call_hours(cur, t, at):
+                continue
             work_task(cur, rng, t, u, at)
+            worked += 1
+            if worked >= 6:
+                break
 
 
 # What buyers say on first calls, weighted so some themes recur across calls the way they do in real life. Each is
@@ -399,11 +419,12 @@ MORE_PLANTED = [
     # Launching usage pricing for the API product: heard on most calls from the start, so it opens early, and on nearly
     # every call as Q1 gets close, so once set aside it comes back (rule 5). Only about eleven first calls a run come in
     # on this signal and the rule needs 1.5 times as many accounts as when it was set aside (five, then eight), so a
-    # lower share left it a few accounts short on a build (2026-11-12).
+    # lower share left it a few accounts short on a build (2026-11-12). The dismissed one sits on the hiring signal and the
+    # set-aside one at 0.9, as in the world build: a thin segment lost each of them once the reps' call hours changed (2026-11-14).
     ("pricing_change", REASONS[5][0], 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
     ("pricing_change", REASONS[5][0], 0.95, datetime(2026, 10, 1, tzinfo=UTC), None),
-    ("pricing_visit", ERP, 0.8, None, datetime(2026, 10, 1, tzinfo=UTC)),          # heard for a while, then not
-    ("pricing_change", PORTAL, 0.7, None, None),
+    ("pricing_visit", ERP, 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),          # heard for a while, then not
+    ("hiring_function", PORTAL, 0.8, None, None),
     ("pricing_change", COMMITS, 0.8, None, None),
     ("pricing_visit", CREDITS, 0.7, None, None),
     ("pricing_visit", TOOLS[1][0], 0.9, None, None),                                 # a competitor
@@ -413,10 +434,11 @@ MORE_PLANTED = [
 # a third of the legacy desk's first calls on a web visit and a tenth as many on a new executive, and the pattern rule
 # needs five accounts in one segment (and, to come back, eight), so each reason sits where there are enough calls: the
 # reason heard for a while and then not and the two open ones on web visits, the dismissed one with the hiring reason on
-# the signal with the most calls, the API pricing launch and the annual commits on a pricing change.
+# the signal with the most calls, the annual commits on a pricing change, and the API pricing launch on web visits (a
+# pricing change had only eight first calls in a build, one short of the eight accounts it needs to come back).
 MORE_PLANTED_WORLD = [
-    ("pricing_change", REASONS[5][0], 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
-    ("pricing_change", REASONS[5][0], 0.95, datetime(2026, 10, 1, tzinfo=UTC), None),
+    ("pricing_visit", REASONS[5][0], 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
+    ("pricing_visit", REASONS[5][0], 0.95, datetime(2026, 10, 1, tzinfo=UTC), None),
     ("pricing_visit", ERP, 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),           # heard for a while, then not
     ("hiring_function", PORTAL, 0.8, None, None),
     ("pricing_change", COMMITS, 0.8, None, None),

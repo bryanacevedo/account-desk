@@ -394,6 +394,37 @@ def test_a_meeting_outcome_waits_for_the_booking_then_lands_once(cur, desk, crm)
     assert db.val(cur, "select count(*) from crm_outbox where kind = 'meeting_outcome'") == 1
 
 
+def test_a_meeting_for_a_person_with_no_address_goes_by_the_world_person_id(cur, desk, crm):  # noqa: F811
+    api = Api()
+    crm(crm_desk(api))
+    db.run(cur, "update people set email = null, world_id = 'pe_77' where id = %s", desk["person"])
+    pipeline.book_meeting(cur, account_id=desk["account"], person_id=desk["person"],
+                          starts_at=datetime.now(timezone.utc) + timedelta(days=2), source="inbound")
+    pipeline.crm_push(cur, {})
+    posts = [b for m, p, b, _ in api.calls if m == "POST" and p == "/activities"]
+    assert posts and all(b["contact"] == "ext:world_people:pe_77" for b in posts)
+    assert db.val(cur, "select count(*) from crm_outbox where status = 'pending' and kind = 'meeting'") == 0
+
+
+def test_a_meeting_at_an_account_the_crm_lacks_lands_on_the_contact(cur, desk, crm):  # noqa: F811
+    class NoAccount(Api):
+        def __call__(self, request):
+            if request.method == "POST" and request.url.path.endswith("/activities") and b'"account"' in request.content:
+                self.calls.append((request.method, request.url.path.removeprefix("/api/v1"), json.loads(request.content), {}))
+                return httpx.Response(404, json={"error": "no such account"})
+            return super().__call__(request)
+    api = NoAccount()
+    crm(crm_desk(api))
+    db.run(cur, "update accounts set primary_domain = 'gone.example' where id = %s", desk["account"])
+    pipeline.book_meeting(cur, account_id=desk["account"], person_id=desk["person"],
+                          starts_at=datetime.now(timezone.utc) + timedelta(days=2), source="sdr")
+    pipeline.crm_push(cur, {})
+    posts = [b for m, p, b, _ in api.calls if m == "POST" and p == "/activities"]
+    assert len(posts) == 2 and posts[0]["account"] == "domain:gone.example" and "account" not in posts[1]
+    assert posts[1]["type"] == "meeting"
+    assert db.val(cur, "select count(*) from crm_outbox where status = 'pending' and kind = 'meeting'") == 0
+
+
 # ---------------------------------------------------------------- event follow-up from campaign members (option A)
 
 @pytest.fixture
