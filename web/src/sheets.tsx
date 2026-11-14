@@ -225,7 +225,7 @@ export function PersonSheet({ id }: { id: number }) {
               const sub = e.state === "active" && e.next_at
                 ? `Step ${e.step_index + 1} of ${e.sequence.length}, ${ahead(e.next_at) === "overdue" ? late(e.next_at).toLowerCase() : `next ${ahead(e.next_at)}`}`
                 : colleague ? `${e.meeting.name || "A colleague"} booked a meeting, so the play stopped for everyone`
-                : `Since ${day(e.created_at)}`;
+                : `${e.state === "active" || e.state === "pending" || e.state === "paused" ? "Since" : "Started"} ${day(e.created_at)}`;
               return (
                 <button key={e.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => openSheet("play", e.play_id)}>
                   <div className="cell-main"><span className="t">{e.play}</span><span className="s">{sub}</span></div>
@@ -680,9 +680,9 @@ function EraseBox({ personId, name }: { personId: number; name: string }) {
 
 function Reach({ label, value, state }: { label: string; value: ReactNode; state?: [Glyph, string] | null }) {
   return (
-    <div className="row" style={{ gridTemplateColumns: "96px minmax(0,1fr) auto" }}>
+    <div className="row reach" style={{ gridTemplateColumns: "96px minmax(0,1fr) auto" }}>
       <span className="mute">{label}</span>
-      <span className="clip">{value || <span className="faint">Not found</span>}</span>
+      <span className="clip">{value || <span className="mute">Not found</span>}</span>
       {state ? <Status kind={state[0]}>{state[1]}</Status> : <span />}
     </div>
   );
@@ -761,12 +761,21 @@ export function AccountSheet({ id }: { id: number }) {
       {tab === "people" && <AccountPeople d={data} />}
       {tab === "signals" && <SignalTimeline signals={data.signals} />}
       {tab === "outreach" && <AccountOutreach d={data} />}
-      {cur ? null : data.holds.length ? <Section title={`On hold until ${day(data.holds[0].until)}`}><div className="small mute">{cap(data.holds[0].reason)}</div></Section> : null}
+      {cur ? null : data.holds.length ? <Section title={`On hold until ${day(data.holds[0].until)}`}><div className="small mute">{HOLD_WORDS[data.holds[0].reason] || cap(data.holds[0].reason)}</div></Section> : null}
       {tab === "overview" ? <div className="acct-tools"><LogMeeting accountId={id} people={data.people} onDone={reload} /><HoldBox accountId={id} onDone={reload} /></div> : null}
       <ElsewhereAccount a={a} />
     </Frame>
   );
 }
+
+// The reasons the desk itself writes on a hold (plays.COOLDOWN keys); a hold set by a person keeps their words.
+const HOLD_WORDS: Record<string, string> = {
+  "nothing approved": "No draft was approved", "no meeting": "The play ended without a meeting",
+  "no opportunity": "The play ended without an opportunity", "sequence finished": "The sequence finished",
+  skipped: "The play was skipped", expired: "The proposal expired", "not interested": "They said they were not interested",
+  "held out": "Held back", "research failed": "Research failed", "no reachable people": "No one reachable",
+  manual: "Stopped by hand", "play paused": "The play was paused",
+};
 
 function WhyNow({ why }: { why: any }) {
   return (
@@ -812,7 +821,8 @@ function CompanyData({ a }: { a: any }) {
 
 function AccountOverview({ d, decision, recorded }: { d: any; decision?: ReactNode; recorded?: boolean }) {
   const cur = d.current;
-  const max = Math.max(1, ...grouped(d.contributions).map((c) => c.value));
+  const raising = grouped(d.contributions).filter((c) => Math.round(c.value) > 0);
+  const max = Math.max(1, ...raising.map((c) => c.value));
   const fit = (d.account.fit_breakdown?.factors || []) as any[];
   return (
     <>
@@ -850,7 +860,7 @@ function AccountOverview({ d, decision, recorded }: { d: any; decision?: ReactNo
             <div className="ledger">
               {past.map((x) => (
                 <button key={x.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => openSheet("play", x.play_id)}>
-                  <div className="cell-main"><span className="t">{x.play}</span><span className="s">{day(x.proposed_at)}{x.closed_at ? ` to ${day(x.closed_at)}` : ""}{x.owner ? `, ${x.owner}` : ""}</span></div>
+                  <div className="cell-main"><span className="t">{x.play}</span><span className="s">{day(x.proposed_at)}{x.closed_at && day(x.closed_at) !== day(x.proposed_at) ? ` to ${day(x.closed_at)}` : ""}{x.owner ? `, ${x.owner}` : ""}</span></div>
                   <Status kind={PLAY_STATE[x.state]?.[0] || "none"}>{PLAY_STATE[x.state]?.[1] || x.state}</Status>
                 </button>
               ))}
@@ -859,9 +869,9 @@ function AccountOverview({ d, decision, recorded }: { d: any; decision?: ReactNo
         ) : null;
       })()}
       <Section title="Signals raising priority">
-        {d.contributions.length ? (
+        {raising.length ? (
           <div className="bars">
-            {grouped(d.contributions).slice(0, 7).map((c: any) => <Bar key={c.type} label={<SignalLabel type={c.type} label={c.label} />} value={c.value} of={max} shown={`+${Math.round(c.value)}`} hint="points" />)}
+            {raising.slice(0, 7).map((c: any) => <Bar key={c.type} label={<SignalLabel type={c.type} label={c.label} />} value={c.value} of={max} shown={`+${Math.round(c.value)}`} hint="points" />)}
           </div>
         ) : <Empty title="No recent signals">Priority is the fit score alone.</Empty>}
       </Section>
@@ -944,7 +954,7 @@ export function SignalTimeline({ signals }: { signals: any[] }) {
           <SignalIcon type={s.type_key} />
           <div className="cell-main" style={{ whiteSpace: "normal" }}>
             <span className="t" style={{ whiteSpace: "normal" }}>{s.label}</span>
-            <span className="s" style={{ whiteSpace: "normal" }}>{s.evidence.summary}{safeUrl(s.evidence.url) ? <> <a href={safeUrl(s.evidence.url)} target="_blank" rel="noreferrer noopener" className="mute"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
+            <span className="s" style={{ whiteSpace: "normal" }}>{s.evidence.summary}{safeUrl(s.evidence.url) ? <> <a href={safeUrl(s.evidence.url)} target="_blank" rel="noreferrer noopener" className="mute src-link" aria-label="Source"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
           </div>
         </li>
       ))}

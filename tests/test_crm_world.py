@@ -527,3 +527,24 @@ def test_a_write_the_crm_answers_erased_erases_the_person_here(cur, desk, crm): 
            J({"type": "email_sent", "person_id": desk["person"], "message_id": 1, "subject": "s"}))
     pipeline.crm_push(cur, {})
     assert db.val(cur, "select count(*) from people where id = %s", desk["person"]) == 0
+
+
+def test_a_contact_whose_linkedin_profile_sits_on_another_record_is_still_written(cur):
+    """A job mover is one person in two seats with one profile: CRM Desk keeps the profile on the other record and
+    answers 409 duplicate, and the contact is written again without it so the meeting still reaches the CRM."""
+    acc = db.one(cur, "insert into accounts (name, primary_domain) values ('Mover Co', 'mover.example') returning id")["id"]
+    pid = db.one(cur, """insert into people (account_id, full_name, email, linkedin_url, source)
+                         values (%s, 'Pat Mover', 'pat@mover.example', 'https://www.linkedin.com/in/pat-mover', 'import')
+                         returning id""", acc)["id"]
+    seen = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+        if "linkedin_url" in body:
+            return httpx.Response(409, json={"error": "Another record already has this LinkedIn.", "code": "duplicate"})
+        return httpx.Response(200, json={"id": "contact-1"})
+
+    crm = crmdesk.CrmDeskCrm("http://crm.test", "k", client=httpx.Client(base_url="http://crm.test", transport=httpx.MockTransport(answer)))
+    assert crm._contact(cur, pid, "k1") == "contact-1"
+    assert "linkedin_url" in seen[0] and "linkedin_url" not in seen[1]

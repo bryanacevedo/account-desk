@@ -435,7 +435,7 @@ MORE_PLANTED = [
 # needs five accounts in one segment (and, to come back, eight), so each reason sits where there are enough calls: the
 # reason heard for a while and then not and the two open ones on web visits, the dismissed one with the hiring reason on
 # the signal with the most calls, the annual commits on a pricing change, and the API pricing launch on web visits (a
-# pricing change had only eight first calls in a build, one short of the eight accounts it needs to come back).
+# pricing change had eight first-call accounts in a build and seven heard it; it needs eight to come back).
 MORE_PLANTED_WORLD = [
     ("pricing_visit", REASONS[5][0], 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
     ("pricing_visit", REASONS[5][0], 0.95, datetime(2026, 10, 1, tzinfo=UTC), None),

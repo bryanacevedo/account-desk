@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-13. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 75. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-14. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 77. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -40,7 +40,7 @@ Checked by running them (the date is on each line):
 ## Shared world, Phase 3 step 3 (2026-11-13, session world-phase3, branch `p3-account`)
 
 Built (decisions 65 to 70; `docs/WORLD.md`):
-- `WORLD=world` builds the demo from the vendored slice in `world/` (lumen-world 1.1.0, manifest-checked, 3,000 companies, about 25,000 people, 12,000 signals); `WORLD=legacy`, the default and what the Dockerfile still builds, is unchanged. `.example` companies and sending domains, the shared roster with Grace Osei renamed Leah Ahn (old address kept as an alias), truth read only by `sim/world_load.py` and `sim/world.py` (world guard in `tests/test_truth_guard.py`).
+- `WORLD=world` builds the demo from the vendored slice in `world/` (lumen-world 1.1.0 then, 1.2.0 since 2026-11-14 with the same rows; manifest-checked, 3,000 companies, about 25,000 people, 12,000 signals); `WORLD=legacy` stays the default of the setting and is unchanged. The Dockerfile now builds world mode (`DEMO_WORLD=world`, see below). `.example` companies and sending domains, the shared roster with Grace Osei renamed Leah Ahn (old address kept as an alias), truth read only by `sim/world_load.py` and `sim/world.py` (world guard in `tests/test_truth_guard.py`).
 - Optional `Crm` methods `accounts_changed`, `campaign_members_changed`, `contactability`; outbox kinds `contact` and `meeting_outcome`; a first-touch check that fails closed when a CRM is configured. A stub with only the old three methods runs the whole flow (tested).
 - Keyed HMAC erasure hashes (`ERASURE_KEY`, migration 0032, pgcrypto in the send guard).
 - `INTEGRATED_WITH=market_desk` hides profile publishing and the accounts import; `events_desk` runs event follow-up as a play from campaign members (Bryan's option A). `DESK_LINKS` links only. `/go/account/{ref}` and `/go/contact/{ref}`, prewarm, an Elsewhere section on the account and person sheets.
@@ -136,9 +136,8 @@ Counts in this list (tests, cases) are as of when each item was done, not today'
 
 ## Hand-off 2026-11-14 (session p3t, branch `p3t/step5`)
 
-Done: Mexico opt-out (decision 76), coverage "not applicable" for a blocked scenario nobody lives under, a meeting at an account CRM Desk lacks goes on the contact, an inbound meeting for a person with no address goes by the world person id (all 244 meetings reach CRM Desk in the rehearsal, none dead). Suite 466 passed, 3 skipped before the last small change; ruff and tsc clean.
+Done: reps work calls and LinkedIn steps only in the buyer's calling hours (decision 77; two world builds, hash seeds 1 and 2, give identical coverage, none missing; `gate.in_call_hours` is tested, its use in `act_as_reps` is not); Mexico opt-out (decision 76), coverage "not applicable" for a blocked scenario nobody lives under, a meeting at an account CRM Desk lacks goes on the contact, an inbound meeting for a person with no address goes by the world person id (all 244 meetings reached CRM Desk in the first rehearsal, none dead; in the rerun on world 1.2.0, 257 of 258 did and one died after five 409 refusals (a job mover's LinkedIn profile held by another record); the contact is now written again without the profile (`crmdesk._contact`, tested), and in the next rerun all 258 arrive, none dead). Suite 466 passed, 3 skipped before the last small change; ruff and tsc clean.
 
 Not done:
 - Account Desk ships with its standalone world demo. Its replayed CRM journal waits for the "AE opens opportunities" step: replayed, the coverage gate fails four deal scenarios (sourced, influenced, converted, closed-lost revisit), because the rehearsal has no AEs opening opportunities in CRM Desk from Account Desk's meetings. `world/journal.jsonl` is never committed here.
-- Reps now work calls and LinkedIn steps only in the buyer's calling hours (decision 77); two world builds (hash seeds 1 and 2) give identical coverage, none missing.
 - Not run yet: the design review, the goldfish review, fetch and rebase, push, Render and live checks.

@@ -727,3 +727,24 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
   .sheet-foot:has(.btn.lead) .btn { flex: 1 1 0; min-height: 44px; }
   .sheet-foot:has(.btn.lead) .btn.lead { flex: 1 1 100%; }
 }
+
+/* Account, person sheets (design review 2026-11-14). A signal's name reads whole beside its bar. */
+.sheet .bars .barrow { grid-template-columns: minmax(140px, 240px) minmax(0, 1fr) auto; }
+/* An inline source link keeps its place in the sentence and is still a 44px target. */
+.src-link { position: relative; }
+.src-link::after { content: ""; position: absolute; inset: -14px; }
+@media (max-width: 720px) {
+  /* The same shape as a Heard row: the name on its own line, the bar and the figure under it. */
+  .sheet .bars .barrow { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+  .sheet .bars .barrow .lbl { grid-column: 1 / -1; }
+}
+@media (max-width: 900px) {
+  /* In a sheet a row's state keeps the right edge, beside the name or under it. */
+  .sheet .ledger .row > .status { flex: 0 1 auto; margin-left: auto; }
+  /* A field keeps its label column: label, value, state. A long value wraps instead of dropping under the label. */
+  .sheet .ledger .row.reach { display: grid !important; grid-template-columns: 84px minmax(0, 1fr) auto; gap: 4px 12px; }
+  .sheet .ledger .row.reach > .clip { white-space: normal; overflow-wrap: anywhere; }
+  .sheet .ledger .row.reach a { min-height: 44px; display: inline-flex; align-items: center; gap: 4px; }
+  .timeline li { grid-template-columns: 48px 28px minmax(0, 1fr); gap: 10px; }
+  .timeline .link-row { min-height: 44px; align-content: start; }
+}

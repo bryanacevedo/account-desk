@@ -161,6 +161,16 @@ class CrmDeskCrm:
         else:
             body.pop("email", None)
             r = self._call("PUT", f"/contacts/by-email/{p['email']}", json=body, headers=headers)
+        if r.status_code == 409 and r.json().get("code") == "duplicate" and body.get("linkedin_url"):
+            # One LinkedIn profile, two seats (a job mover): the CRM keeps the profile on the other record, and this
+            # contact is written without it, so the meeting still reaches the CRM.
+            body.pop("linkedin_url")
+            headers = {"idempotency-key": f"{idempotency_key}:{digest}:no-linkedin"}
+            if p["world_id"]:
+                r = self._call("PUT", f"/contacts/by-ext/world_people/{p['world_id']}", json=body, headers=headers)
+            else:
+                body.pop("email", None)
+                r = self._call("PUT", f"/contacts/by-email/{p['email']}", json=body, headers=headers)
         if r.status_code == 409 and r.json().get("code") == "erased":
             return "refused:erased"
         return self._ok(r)["id"]
