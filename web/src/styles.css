@@ -748,3 +748,8 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
   .timeline li { grid-template-columns: 48px 28px minmax(0, 1fr); gap: 10px; }
   .timeline .link-row { min-height: 44px; align-content: start; }
 }
+
+/* A unit beside a figure (T10): muted, in a fixed width so the digits above and below it share one right edge. */
+.num .unit { display: inline-block; min-width: 5.4em; margin-left: 6px; text-align: left; }
+.num .unit.is-num { min-width: 3.4em; text-align: right; }
+@media (max-width: 900px) { .num .unit, .num .unit.is-num { min-width: 0; } }

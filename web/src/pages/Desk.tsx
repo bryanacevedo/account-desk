@@ -225,8 +225,8 @@ export function Results() {
                 <div key={c.channel} className="row" style={{ gridTemplateColumns: C_COLS }}>
                   <span className="sig-label"><span className="sig-icon">{c.channel === "linkedin" ? <LinkedinLogo size={15} /> : c.channel === "call" ? <Phone size={15} /> : <EnvelopeSimple size={15} />}</span>{c.channel === "linkedin" ? "LinkedIn" : c.channel === "call" ? "Calls" : "Email"}</span>
                   <span className="num">{n0(c.reached)}</span>
-                  <span className="num">{pct(answered / c.reached, 0)} <span className="mute small">{word}{c.channel === "linkedin" && c.replied ? `, ${pct(c.replied / c.reached, 0)} replied` : ""}</span></span>
-                  <span className="num hide-sm">{n0(c.meetings)} <span className="mute small">{pct(c.meetings / c.reached, 1)}</span></span>
+                  <span className="num" title={c.channel === "linkedin" && c.replied ? `${pct(c.replied / c.reached, 0)} replied` : undefined}>{pct(answered / c.reached, 0)}<span className="mute small unit">{word}</span></span>
+                  <span className="num hide-sm">{n0(c.meetings)}<span className="mute small unit is-num">{pct(c.meetings / c.reached, 1)}</span></span>
                 </div>
               );
             })}
@@ -235,7 +235,7 @@ export function Results() {
       </Section>
       <Section title="Which signals turn into meetings">
         <div className="ledger">
-          <div className="row head" style={{ gridTemplateColumns: "minmax(0,1.4fr) 110px minmax(160px,1.6fr)" }}><span>Signal</span><span className="num">Plays started</span><span>Meetings within 60 days</span></div>
+          <div className="row head" style={{ gridTemplateColumns: "minmax(0,1.4fr) 110px minmax(160px,1.6fr)" }}><span>Signal</span><span className="num">Plays started</span><span className="num">Meetings within 60 days</span></div>
           {data.signals.filter((s: any) => s.treated > 0).sort((a: any, b: any) => (b.meeting_rate || 0) - (a.meeting_rate || 0)).map((s: any) => (
             <div key={s.key} className="row" style={{ gridTemplateColumns: "minmax(0,1.4fr) 110px minmax(160px,1.6fr)" }}>
               <span className="clip"><SignalLabel type={s.key} label={s.label} /></span>
