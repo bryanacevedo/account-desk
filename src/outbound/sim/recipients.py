@@ -13,6 +13,10 @@ from .. import db
 from ..adapters.sim import sim_inbox_rate
 from ..db import J
 
+# The share of mail that reaches an inbox and draws a spam complaint. A build sends a few thousand emails, so 0.15% left "spam
+# complaint" and "mailbox paused" at zero in one environment and three in another (decision 79); this keeps them in every one.
+COMPLAINT_RATE = 0.0035
+
 POSITIVE = [
     "Hi {sender}, good timing actually. We're feeling this at month end. Can you send a couple of times next week?",
     "{sender}, we're two weeks from quarter close and this is exactly the mess. Thursday or Friday afternoon?",
@@ -93,7 +97,7 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
     provider = "outlook" if int(hashlib.md5(p["primary_domain"].encode()).hexdigest(), 16) % 5 < 2 else "gmail"
     if mailbox and rng.random() >= sim_inbox_rate(cur, mailbox["id"], provider):
         return
-    if rng.random() < 0.0015:
+    if rng.random() < COMPLAINT_RATE:
         _event(cur, at + timedelta(hours=rng.randint(1, 30)), "complaint", message, person_id)
         return
     if rng.random() < 0.045:
