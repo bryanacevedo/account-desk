@@ -18,6 +18,9 @@
   --series-2: #1F9A86; /* the comparison group in charts; validated against cobalt for colour-blind separation */
   --ok: #1E7A4C;
   --wait: #A86A12;
+  --sev-urgent: #0F2C6E; /* the alert ramp: three blues, darker is more urgent; the word beside each says it too */
+  --sev-warn: #4F7DC4;
+  --sev-info: #A9C4E8;
   --stop: #B3261E;
   --sans: "Geist Variable", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -782,4 +785,33 @@ a.cite:hover { color: var(--ink); }
   .rule-edit { grid-template-columns: minmax(0, 1fr); gap: 16px; margin: 0 -16px; padding: 8px 16px 20px; }
   .ledger.rules .row > .clip, .ledger.hist .row > .clip { flex: 1 1 100%; }
   .ledger.rules .row > .end { margin-left: auto; }
+}
+
+/* ------------------------------------------------------------------ alerts at the top of Inboxes and Health (SPEC 23.2) */
+
+.alerts { display: grid; gap: 14px; }
+.alerts-none { font-size: 13px; }
+/* design-lint: allow the 3px rule marks a severity group; its heading word states the severity in ink (decision 86) */
+.alert-grp { display: grid; border-left: 3px solid var(--line-2); padding-left: 14px; }
+.alert-grp.sev-urgent { border-left-color: var(--sev-urgent); }
+.alert-grp.sev-warn { border-left-color: var(--sev-warn); }
+.alert-grp.sev-info { border-left-color: var(--sev-info); }
+.alert-head { display: flex; gap: 6px; align-items: baseline; height: 28px; font-size: 12.5px; line-height: 18px; border-bottom: 1px solid var(--line); }
+.alert-n { color: var(--faint); font-weight: 500; }
+.sev-urgent .alert-word { font-weight: 640; color: var(--ink); }
+.sev-warn .alert-word { font-weight: 560; color: var(--ink-2); }
+.sev-info .alert-word { font-weight: 450; color: var(--mute); }
+.alert-row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 64px; align-items: center; gap: 16px; min-height: 44px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.alert-grp .alert-row:last-child { border-bottom: 0; }
+.sev-urgent .cell-main .t { font-weight: 600; }
+.sev-warn .cell-main .t { font-weight: 500; }
+.sev-info .cell-main .t { font-weight: 400; color: var(--ink-2); }
+.alert-when { text-align: right; white-space: nowrap; }
+.alert-ack { justify-self: end; }
+@media (max-width: 900px) {
+  .alert-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
+  .alert-row .cell-main { grid-column: 1 / -1; }
+  .alert-row .cell-main .t, .alert-row .cell-main .s { white-space: normal; }
+  .alert-when { text-align: left; align-self: center; }
+  .alert-ack.btn { min-height: 44px; }
 }

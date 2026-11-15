@@ -26,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .. import (  # noqa: F401
+    alerts,
     audit,
     db,
     gate,
@@ -1270,8 +1271,23 @@ def resume_watch(template_key: str, u: dict = Depends(writer)) -> dict:
     with db.tx() as cur:
         db.run(cur, "update play_step_watch set paused = false, paused_reason = null, sends = 0, hard_bounces = 0, "
                     "complaints = 0 where template_key = %s", template_key)
+        alerts.resolve(cur, ["watch_paused"], object_kind="play_step", object_key=template_key)
         audit.log(cur, "person", "watch_resumed", "play_step", None, {"key": template_key}, actor_id=u["id"])
     return {"ok": True}
+
+
+@app.post("/api/alerts/{alert_id}/ack")
+def ack_alert(alert_id: int, u: dict = Depends(writer)) -> dict:
+    """A person has seen an alert: it and every open row of the same condition leave the tab (SPEC 23.2)."""
+    not_in_public_demo()
+    need(u, "manager", "gtm")
+    with db.tx() as cur:
+        closed = alerts.ack(cur, alert_id)
+        if closed is None:
+            raise HTTPException(404, "No such alert.")
+        if closed:
+            audit.log(cur, "person", "alert_acked", "alert", alert_id, {"rows": closed}, actor_id=u["id"])
+    return {"ok": True, "acked": closed}
 
 
 class KillSwitch(BaseModel):

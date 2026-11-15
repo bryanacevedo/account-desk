@@ -2,7 +2,7 @@
 (managers and GTM); a rep's read never carries it."""
 from __future__ import annotations
 
-from . import adapters, db, monitors, outreach, region_rules, spend, stats, suggestions
+from . import adapters, alerts, db, monitors, outreach, region_rules, spend, stats, suggestions
 
 OPEN = ("proposed", "accepted", "researching", "approving", "active", "engaged", "meeting")
 
@@ -567,8 +567,9 @@ def deliverability(cur) -> dict:
         w["step"] = int(step or 0) + 1
     capacity = sum(b["cap"] for b in boxes if not b["blocked"])
     thresholds = {k: float(outreach.setting(cur, k, d)) for k, d in (("placement_hold_below", 0.8), ("placement_pause_below", 0.5))}
+    shown = alerts.open_view(cur, "inboxes")
     return {"domains": domains, "mailboxes": boxes, "forecast": forecast, "capacity": capacity, "watch": watch,
-            "placement": thresholds}
+            "placement": thresholds, "alerts": shown["alerts"], "alert_counts": shown["counts"]}
 
 
 # ---------------------------------------------------------------- results
@@ -634,7 +635,8 @@ def health(cur) -> dict:
     jobs = [{**j, "name": job_name(j["kind"])} for j in db.all(
         cur, "select kind, status, count(*) as n from jobs where status in ('queued','running','failed','dead') group by 1,2 order by 1")]
     outbox = db.all(cur, "select status, count(*) as n from crm_outbox group by status")
-    alerts = db.all(cur, "select id, at, kind, severity, channel, title, body, delivered_at, delivery_error from alerts order by at desc limit 40")
+    shown = alerts.open_view(cur, "health")
+    undelivered = db.val(cur, "select count(*) from alerts where delivered_at is null and at > app_now() - interval '14 days'")
     budgets = db.all(cur, """select b.vendor, b.monthly_cap_cents as cap, coalesce((select sum(case when b.vendor = 'anthropic'
                                then l.cost_cents else l.qty end) from ledger l where l.vendor = b.vendor
                                and l.at >= date_trunc('month', app_now())), 0) as used from budgets b order by b.vendor""")
@@ -642,7 +644,8 @@ def health(cur) -> dict:
     # Guarantee 21: the checks themselves are checked. They run every 6 hours; older than 12 means they stopped.
     last_run = db.val(cur, "select max(at) from monitor_runs")
     stale = last_run is None or db.val(cur, "select %s < app_now() - interval '12 hours'", last_run)
-    return {"monitors": monitors.latest(cur), "jobs": jobs, "outbox": outbox, "alerts": alerts, "budgets": budgets,
+    return {"monitors": monitors.latest(cur), "jobs": jobs, "outbox": outbox, "alerts": shown["alerts"],
+            "alert_counts": shown["counts"], "undelivered_alerts": undelivered, "budgets": budgets,
             "checks_ran_at": last_run, "checks_stale": bool(stale), "llm": llm_calls, "adapters": adapters.get().notes,
             "kill_switch": bool(db.val(cur, "select value from settings where key = 'kill_switch'"))}
 

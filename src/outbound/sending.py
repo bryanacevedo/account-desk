@@ -121,6 +121,7 @@ def send_one(cur, payload: dict) -> None:
                                target_user=ap["owner_id"], dedup_key=f"no_mailbox:{ap['owner_id']}:{now:%Y-%m-%d}")
             return
         db.run(cur, "update enrollments set mailbox_id = %s where id = %s", mailbox["id"], e["id"])
+    alerts.resolve(cur, ["no_mailbox"], target_user=ap["owner_id"])  # a healthy mailbox was found
     # Lock the mailbox and its domain while counting, so two workers cannot both take the last slot.
     db.one(cur, "select id from mailboxes where id = %s for update", mailbox["id"])
     domain_cap = db.val(cur, "select daily_cap from sending_domains where domain = %s for update", mailbox["domain"])
@@ -270,6 +271,7 @@ def record_delivery_event(cur, message_id: int, event: str, detail: dict | None 
                                title=f"Paused email {step['n']} of {step['play']} in its first batch" if step
                                else "Paused an email step in its first batch",
                                body="Bounces or a complaint in the first sends. Check the data source before resuming.",
+                               object_kind="play_step", object_key=m["template_key"],
                                dedup_key=f"watch:{m['template_key']}")
     if event == "complaint":
         db.run(cur, "update mailboxes set status = 'paused', pause_reason = 'Spam complaint received' where id = %s "
@@ -294,10 +296,13 @@ def mailbox_health(cur, payload: dict) -> None:
         if rate >= 0.02:
             db.run(cur, "update mailboxes set status = 'paused', pause_reason = %s where id = %s",
                    f"Bounce rate {rate:.1%} over 14 days", r["id"])
+            alerts.resolve(cur, ["mailbox_warn"], object_kind="mailbox", object_id=r["id"])
             alerts.raise_alert(cur, kind="mailbox_paused", severity="urgent", channel="#outbound-ops",
                                title=f"{r['address']} paused", body=f"Hard bounces {r['bounced']} of {r['sent']} in 14 days.",
                                object_kind="mailbox", object_id=r["id"], dedup_key=f"mbpause:{r['id']}:{r['sent']}")
-        elif rate >= 0.015:
+        elif rate < 0.015:
+            alerts.resolve(cur, ["mailbox_warn"], object_kind="mailbox", object_id=r["id"])
+        else:
             alerts.raise_alert(cur, kind="mailbox_warn", severity="warn", channel="#outbound-ops",
                                title=f"{r['address']} bounce rate {rate:.1%}", body="Watch the data source.",
                                object_kind="mailbox", object_id=r["id"],
@@ -332,6 +337,10 @@ def placement_tests(cur, payload: dict) -> None:
         if worst is None:
             continue
         rate, where, today = worst.inbox / worst.seeds, PROVIDER[worst.provider], db.val(cur, "select app_now()::date")
+        if rate >= pause:  # no longer bad enough to pause: the pause alert's condition has ended
+            alerts.resolve(cur, ["placement_pause"], object_kind="mailbox", object_id=mb["id"])
+        if rate >= hold:  # back above the hold line
+            alerts.resolve(cur, ["placement_hold"], object_kind="mailbox", object_id=mb["id"])
         if rate < pause and mb["status"] == "active":
             db.run(cur, "update mailboxes set status = 'paused', pause_reason = %s where id = %s",
                    f"{rate:.0%} inbox at {where} on {db.val(cur, 'select to_char(app_now(), \'FMDD Mon\')')}", mb["id"])
@@ -395,18 +404,20 @@ def dns_check(cur, payload: dict) -> None:
                        dns_detail = (dns_detail - 'error') || %s where domain = %s""",
                r.spf, r.dkim, r.dmarc, r.dmarc_policy, r.dmarc_aligned, blocked, r.blocklists or d["blocklists"],
                J({k: v for k, v in r.detail.items() if k != "seeded"}), d["domain"])
+        if now_ok:
+            alerts.resolve(cur, ["dns_broken"], object_kind="domain", object_key=d["domain"])
         if was_ok and not now_ok:
             missing = [n for n, ok in (("SPF", r.spf), ("DKIM", r.dkim), ("DMARC", r.dmarc), ("alignment", r.dmarc_aligned))
                        if not ok] + (["a blocklist"] if blocked else [])
             alerts.raise_alert(cur, kind="dns_broken", severity="urgent", channel="#outbound-ops",
                                title=f"{d['domain']} stopped sending: {', '.join(missing)} failing",
                                body="No mailbox on it sends until the check passes again. Usually a DNS edit removed a record.",
-                               object_kind="domain", object_id=None,
+                               object_kind="domain", object_key=d["domain"],
                                dedup_key=f"dns:{d['domain']}:{db.val(cur, 'select app_now()::date')}")
         elif now_ok and not was_ok and d["checked_at"] is not None:
             alerts.raise_alert(cur, kind="dns_fixed", severity="info", channel="#outbound-ops",
                                title=f"{d['domain']} passes its DNS checks again", body="Its mailboxes can send.",
-                               object_kind="domain", object_id=None,
+                               object_kind="domain", object_key=d["domain"],
                                dedup_key=f"dnsok:{d['domain']}:{db.val(cur, 'select app_now()::date')}")
 
 
@@ -434,13 +445,20 @@ def telemetry(cur, payload: dict) -> None:
             title = f"{t.domain} spam rate {t.spam_rate:.2%}" if high else f"{t.domain} fails Google Postmaster compliance"
             alerts.raise_alert(cur, kind="spam_rate", severity="urgent", channel="#outbound-ops",
                                title=title, body="Every mailbox on it is paused.",
+                               object_kind="domain", object_key=t.domain,
                                dedup_key=f"spam:{t.domain}:{db.val(cur, 'select app_now()::date')}")
         elif t.spam_rate is not None and t.spam_rate >= 0.001:
             # Google's own line is 0.1%: the mailboxes are held at 10 a day from here, and pause at 0.3%.
+            alerts.resolve(cur, ["spam_rate"], object_kind="domain", object_key=t.domain)
             alerts.raise_alert(cur, kind="spam_rate_warn", severity="warn", channel="#outbound-ops",
                                title=f"{t.domain} spam rate {t.spam_rate:.2%}",
                                body="Its mailboxes are held at 10 a day. At 0.3% they pause.",
+                               object_kind="domain", object_key=t.domain,
                                dedup_key=f"spamwarn:{t.domain}:{db.val(cur, 'select app_now()::date')}")
+        else:
+            alerts.resolve(cur, ["spam_rate"], object_kind="domain", object_key=t.domain)
+            if t.spam_rate is not None:  # below 0.1%
+                alerts.resolve(cur, ["spam_rate_warn"], object_kind="domain", object_key=t.domain)
 
 
 def resolve_unknown(cur, message_id: int, *, sent: bool, provider_id: str | None = None) -> None:
@@ -448,6 +466,7 @@ def resolve_unknown(cur, message_id: int, *, sent: bool, provider_id: str | None
     m = db.one(cur, "select * from messages where id = %s for update", message_id)
     if m["status"] != "send_unknown":
         return
+    alerts.resolve(cur, ["send_unknown"], object_kind="message", object_id=message_id)
     if sent:
         record_result(cur, message_id, "sent", provider_id or m["provider_id"], None)
         return

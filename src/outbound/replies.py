@@ -482,6 +482,7 @@ def handle(cur, reply_id: int, *, user_id: int, outcome: str, label: str | None 
                 "where id = %s", user_id, outcome, reply_id)
     db.run(cur, "update tasks set status = 'done', done_at = app_now() where reply_id = %s and kind = 'reply' "
                 "and status = 'open'", reply_id)
+    alerts.resolve(cur, ["hot_reply", "sla_missed"], object_kind="reply", object_id=reply_id)
     audit.log(cur, "person", "reply_handled", "reply", reply_id, {"outcome": outcome}, actor_id=user_id)
 
 

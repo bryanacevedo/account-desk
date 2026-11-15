@@ -2,7 +2,7 @@ import { Fragment, useState } from "react";
 import { EnvelopeSimple, LinkedinLogo, Phone } from "@phosphor-icons/react";
 import { api } from "../api";
 import {
-  Bar, Empty, Failed, Fig, Loading, Section, Status, VENDOR_NAME, ago, cap, day, money, n0, navigate, pct, useBusy, useData,
+  AlertGroups, Bar, Empty, Failed, Fig, Loading, Section, Status, VENDOR_NAME, ago, cap, day, money, n0, navigate, pct, useBusy, useData,
 } from "../lib";
 import { Comparison, LABEL, openSheet } from "../sheets";
 import { SignalLabel } from "../signalIcons";
@@ -35,6 +35,7 @@ export function Deliverability() {
   return (
     <div className="page">
       <div className="head"><div><h1>Inboxes</h1></div></div>
+      <AlertGroups alerts={data.alerts} canAck={!me?.public_demo} onDone={reload} />
       <div className="figs">
         <Fig value={healthy} unit={`of ${data.mailboxes.length}`} label="Mailboxes able to send" />
         <Fig value={data.capacity} label="Emails a day, at today's limits" />
@@ -303,6 +304,7 @@ export function Ops() {
   const { data, error, reload } = useData<any>("/api/ops");
   const [busy, run] = useBusy();
   const [reason, setReason] = useState("");
+  const me = useData<any>("/api/me").data;
   if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
   if (!data) return <div className="page"><div className="head"><h1>Health</h1></div><Loading /></div>;
   const failing = data.monitors.filter((m: any) => !m.ok);
@@ -318,10 +320,11 @@ export function Ops() {
           </button>
         </div>
       </div>
+      <AlertGroups alerts={data.alerts} canAck={!me?.public_demo} onDone={reload} />
       <div className="figs">
         <Fig value={<Status kind={data.kill_switch ? "stop" : "ok"}>{data.kill_switch ? "Stopped" : "On"}</Status>} label="Sending" sm />
         <Fig value={failing.length} unit={`of ${data.monitors.length}`} label="Checks finding problems" />
-        <Fig value={data.alerts.filter((a: any) => !a.delivered_at).length} label="Alerts not delivered" />
+        <Fig value={data.undelivered_alerts} label="Alerts not delivered" />
         <Fig value={<Status kind={data.checks_stale ? "stop" : "ok"}>{data.checks_ran_at ? ago(data.checks_ran_at) : "Never"}</Status>} label={data.checks_stale ? "Checks stopped running" : "Checks last ran"} sm />
       </div>
       <Section title="Checks">
@@ -352,18 +355,6 @@ export function Ops() {
           ) : <Empty title="Nothing waiting" />}
         </Section>
       </div>
-      <Section title="Alerts">
-        <div className="ledger">
-          {data.alerts.map((a: any) => (
-            <div key={a.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 150px 120px 80px" }}>
-              <div className="cell-main"><span className="t">{a.title}</span><span className="s">{a.body}</span></div>
-              <span className="mute small clip">{a.channel}</span>
-              <Status kind={a.delivered_at ? "ok" : "wait"}>{a.delivered_at ? "Delivered" : "Not delivered"}</Status>
-              <span className="num mute small">{ago(a.at)}</span>
-            </div>
-          ))}
-        </div>
-      </Section>
     </div>
   );
 }

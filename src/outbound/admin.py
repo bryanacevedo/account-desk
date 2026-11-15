@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from . import audit, db, jobs
+from . import alerts, audit, db, jobs
 from .signals import normalize_domain
 
 
@@ -112,6 +112,11 @@ def set_mailbox(cur, mid: int, *, status: str, reason: str | None, by: int) -> N
         raise AdminError("Say why.")
     db.run(cur, "update mailboxes set status = %s, pause_reason = %s where id = %s",
            status, None if status == "active" else reason, mid)
+    if status == "active":  # resumed: what paused it has been looked at
+        alerts.resolve(cur, ["mailbox_paused", "mailbox_warn", "placement_pause"], object_kind="mailbox", object_id=mid)
+    elif status == "retired":
+        alerts.resolve(cur, ["mailbox_paused", "mailbox_warn", "placement_hold", "placement_pause"],
+                       object_kind="mailbox", object_id=mid)
     if status == "retired":
         db.run(cur, """update enrollments set mailbox_id = null where mailbox_id = %s and state in ('pending','active','paused')""", mid)
     audit.log(cur, "person", f"mailbox_{status}", "mailbox", mid, {"was": m["status"], "was_reason": m["pause_reason"],

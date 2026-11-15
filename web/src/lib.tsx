@@ -258,6 +258,36 @@ export function Bar({ label, value, of, shown, tone, hint }: { label: ReactNode;
   );
 }
 
+const SEVERITY_WORD: Record<string, string> = { urgent: "Urgent", warn: "Warning", info: "Info" };
+
+/** The open alerts for a tab, in three ruled groups (SPEC 23.2, direction A). The severity is the group's heading word
+ *  in ink, stepped in weight, with its count: cover the blue rule and nothing is lost. An empty group is not drawn. */
+export function AlertGroups({ alerts, canAck, onDone }: { alerts: any[]; canAck: boolean; onDone: () => void }) {
+  const [busy, run] = useBusy();
+  if (!alerts.length) return <p className="mute alerts-none">Nothing needs attention</p>;
+  return (
+    <div className="alerts">
+      {(["urgent", "warn", "info"] as const).map((sev) => {
+        const rows = alerts.filter((a) => a.severity === sev);
+        if (!rows.length) return null;
+        return (
+          <section key={sev} className={`alert-grp sev-${sev}`} aria-label={SEVERITY_WORD[sev]}>
+            <h2 className="alert-head"><span className="alert-word">{SEVERITY_WORD[sev]}</span><span className="alert-n">{rows.length}</span></h2>
+            {rows.map((a) => (
+              <div key={a.id} className="alert-row">
+                <div className="cell-main"><span className="t">{a.title}</span><span className="s">{a.body}</span></div>
+                <span className="mute small alert-when">{ago(a.at)}</span>
+                {canAck ? <button type="button" className="btn line sm alert-ack" disabled={busy}
+                  onClick={() => run(() => api(`/api/alerts/${a.id}/ack`, { method: "POST" }).then(onDone), "Alert seen.")}>Ack</button> : <span className="alert-ack" />}
+              </div>
+            ))}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Empty({ title, children, icon: Ic = CheckCircle }: { title: string; children?: ReactNode; icon?: Icon }) {
   return (
     <div className="empty" role="status">

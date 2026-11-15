@@ -600,6 +600,6 @@ Risk: legal, high. Counsel to confirm the starting list (decisions 72, 73, 76) b
 
 1. Country rules in the legacy desk build: `setup_desk.py` accepts `cfg.region_rules` to override the starting list. With the migration seeding the rows, should that config become a write through the new endpoint (with a history row, who = system), or be dropped?
 2. Original text for per-change restore (23.3): `messages` stores no original. Keep it in `attempts` or add `original_subject` and `original_body` columns? Needs a decision before build; it affects 0036 if bundled.
-3. Alert age cutoff (23.2): 14 days for an event alert nobody acks is a guess; the code has no precedent to read. Confirm.
+3. Alert age cutoff (23.2): 14 days for an event alert nobody acks is a guess; the code has no precedent to read. Built as 14 days (decision 86); confirm.
 4. Reply sends (23.4): a new `reply_sends` table or `messages` with a kind and nullable step; the second reuses the cap, region and PECR triggers but loosens `unique (enrollment_id, step_index)` and every query that assumes a step.
 5. A reply from a person with no open enrollment (a stopped sequence): which mailbox sends. Proposed: the account owner's.
