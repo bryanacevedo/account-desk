@@ -165,6 +165,10 @@ def test_placement_recovering_resolves_its_alerts(cur, box):
     assert len(paused) == 1
     truth(cur, box["id"], gmail=1.0, outlook=1.0)
     sending.placement_tests(cur, {"mailbox_id": box["id"]})
+    # A better result alone does not end the pause (resuming is manual); resuming does.
+    assert [r for r in open_(cur) if r["object_id"] == box["id"] and r["kind"] == "placement_pause"]
+    boss = db.val(cur, "insert into users (name, email, role) values ('Boss', %s, 'manager') returning id", f"c{id(cur)}@x.example")
+    admin.set_mailbox(cur, box["id"], status="active", reason=None, by=boss)
     assert not [r for r in open_(cur) if r["object_id"] == box["id"] and r["kind"].startswith("placement")]
 
 
