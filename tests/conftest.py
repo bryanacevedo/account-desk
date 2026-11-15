@@ -77,3 +77,13 @@ def cur(database):
         with conn.cursor() as c:
             yield c
         tx.__exit__(psycopg.Rollback, psycopg.Rollback(), None)
+
+
+def ensure_rule(cur, country: str, rule: str, individual_consent: bool = False) -> None:
+    """Put a country on a rule the way the desk does: through the write function, so the history trigger is satisfied."""
+    from outbound import region_rules
+    row = db.one(cur, "select rule, individual_consent from region_rules where country = %s", country)
+    if row and row["rule"] == rule and row["individual_consent"] == individual_consent:
+        return
+    region_rules.change(cur, country, rule, individual_consent, "test setup of the rule", None, allow_new=True,
+                        skip_confirm=True)

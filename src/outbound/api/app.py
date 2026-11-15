@@ -37,6 +37,7 @@ from .. import (  # noqa: F401
     pipeline,
     play_editor,
     plays,
+    region_rules,
     replies,
     scheduler,
     scoring,
@@ -1289,6 +1290,41 @@ def kill_switch(body: KillSwitch, u: dict = Depends(writer)) -> dict:
         audit.log(cur, "person", "kill_switch_on" if body.on else "kill_switch_off", "settings", None,
                   {"reason": body.reason}, actor_id=u["id"])
     return {"ok": True}
+
+
+class RegionRuleChange(BaseModel):
+    rule: Literal["allowed", "basis_required", "consent_required", "blocked"]
+    individual_consent: bool
+    reason: str = Field(min_length=10, max_length=500)
+    confirm: str | None = None
+    from_rule: str | None = None   # the rule the form was showing; a different current rule is a 409
+
+
+@app.put("/api/region-rules/{country}")
+def change_region_rule(country: str, body: RegionRuleChange, u: dict = Depends(writer)) -> dict:
+    not_in_public_demo()
+    need(u, "manager", "gtm")
+    with db.tx() as cur:
+        try:
+            out = region_rules.change(cur, country, body.rule, body.individual_consent, body.reason, u["id"],
+                                      expect_rule=body.from_rule, confirm=body.confirm)
+        except region_rules.RuleError as e:
+            raise HTTPException(e.status, str(e) if e.current is None else f"{e} It is now {e.current}.") from e
+        audit.log(cur, "person", "region_rule_changed", "region_rule", None,
+                  {**out, "individual_consent": body.individual_consent, "reason": body.reason}, actor_id=u["id"])
+    return {"ok": True, **out}
+
+
+@app.get("/api/region-rules")
+def region_rules_list(u: dict = Depends(current_user)) -> dict:
+    with db.tx() as cur:
+        return region_rules.listing(cur)
+
+
+@app.get("/api/region-rules/{country}/changes")
+def region_rule_changes(country: str, u: dict = Depends(current_user)) -> dict:
+    with db.tx() as cur:
+        return {"changes": [c for c in region_rules.listing(cur)["changes"] if c["country"] == country.upper()]}
 
 
 class SignalWeight(BaseModel):

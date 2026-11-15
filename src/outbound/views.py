@@ -2,7 +2,7 @@
 (managers and GTM); a rep's read never carries it."""
 from __future__ import annotations
 
-from . import adapters, db, monitors, outreach, spend, stats, suggestions
+from . import adapters, db, monitors, outreach, region_rules, spend, stats, suggestions
 
 OPEN = ("proposed", "accepted", "researching", "approving", "active", "engaged", "meeting")
 
@@ -687,6 +687,6 @@ def settings(cur) -> dict:
             "icp": db.one(cur, "select * from icp_versions order by published_at desc limit 1"),
             "personas": db.all(cur, "select * from personas"),
             "suggestion_rule": suggestions.RULE,
-            "regions": db.all(cur, "select * from region_rules order by country"),
+            **{("regions" if k == "regions" else "region_changes"): v for k, v in region_rules.listing(cur).items()},
             "suppressions": db.all(cur, "select id, kind, value, reason, source, created_at, expires_at from suppressions where expires_at is null or expires_at > app_now() "
                                         "order by created_at desc limit 100")}

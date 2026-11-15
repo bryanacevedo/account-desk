@@ -4,6 +4,7 @@ catalog says what each is, the contact gate gives its reason, and the database r
 from __future__ import annotations
 
 import pytest
+from conftest import ensure_rule
 from test_guarantees import refused, scene, send  # noqa: F401  the shared scene fixture
 
 from outbound import db, gate
@@ -17,9 +18,7 @@ TEN = CONSENT + BASIS + ["MX"]
 def _in(cur, scene, country, subscriber="corporate"):
     """The catalog's own rule for the country, and the person and account placed there."""
     rules = dict(catalog.REGION_RULES)
-    db.run(cur, "insert into region_rules (country, rule, individual_consent) values (%s, %s, %s) "
-                "on conflict (country) do update set rule = excluded.rule, individual_consent = excluded.individual_consent",
-           country, rules[country], country in catalog.INDIVIDUAL_CONSENT)
+    ensure_rule(cur, country, rules[country], country in catalog.INDIVIDUAL_CONSENT)
     db.run(cur, "update people set country = %s where id = %s", country, scene["person"])
     db.run(cur, "update accounts set hq_country = %s, subscriber_type = %s where id = %s", country, subscriber,
            scene["account"])

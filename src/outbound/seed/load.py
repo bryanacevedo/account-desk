@@ -64,11 +64,7 @@ def load_catalog(cur, *, start: datetime) -> dict:
                 "on conflict (key) do update set value = excluded.value", J("LIA-2026-07"), J(lia_review.isoformat()))
     for country, day, name in C.HOLIDAYS:
         db.run(cur, "insert into holidays (country, day, name) values (%s,%s,%s)", country, date.fromisoformat(day), name)
-    for country, rule in C.REGION_RULES:
-        call_rule, register = C.CALL_RULES.get(country, ("blocked", None))
-        db.run(cur, "insert into region_rules (country, rule, call_rule, dnc_register, note, individual_consent) "
-                    "values (%s,%s,%s,%s,%s,%s)", country, rule, call_rule, register,
-               C.REGION_NOTES.get(country, "Counsel to confirm."), country in C.INDIVIDUAL_CONSENT)
+    # The region rules are seeded by migration 0035, the same rows for every build.
     for vendor, cap in C.BUDGETS:
         db.run(cur, "insert into budgets (vendor, monthly_cap_cents) values (%s,%s)", vendor, cap)
     for key, cents, per, note in C.SUBSCRIPTIONS:

@@ -759,3 +759,27 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .cite > span { overflow: hidden; text-overflow: ellipsis; }
 a.cite:hover { color: var(--ink); }
 .cite.is-text { overflow: hidden; text-overflow: ellipsis; }
+
+/* Settings, Countries: the rule is a word in ink and its weight says how strict it is; Change opens the row in place. */
+.rule-0 { font-weight: 600; color: var(--ink); }
+.rule-1 { color: var(--ink); }
+.rule-2 { color: var(--ink-2); }
+.rule-3 { color: var(--mute); }
+.ledger.rules .row { grid-template-columns: 200px 290px minmax(0, 1fr) 170px 84px; }
+.ledger.rules .row.head > .num, .ledger.rules .row > .num { text-align: right; }
+.ledger.rules .end { justify-self: end; }
+.ledger.hist .row { grid-template-columns: 64px 130px 150px 150px minmax(0, 1fr) 130px; }
+.rule-edit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; padding: 14px 10px 20px; margin: 0 -10px;
+  border-bottom: 1px solid var(--line-2); background: var(--accent-wash); }
+.rule-edit .choices-col { display: grid; align-content: start; }
+.rule-edit .choice { border-bottom: 1px solid var(--line); }
+.rule-edit .choice:last-child { border-bottom: 0; }
+.rule-edit .choice .tag { margin-left: auto; color: var(--mute); font-size: 12.5px; }
+.rule-edit .lbl { font-size: 12.5px; line-height: 18px; color: var(--mute); font-weight: 520; margin-bottom: 4px; }
+.rule-edit .edit-r { display: grid; gap: 14px; align-content: start; }
+.rule-edit .loosen { display: grid; gap: 10px; }
+@media (max-width: 900px) {
+  .rule-edit { grid-template-columns: minmax(0, 1fr); gap: 16px; margin: 0 -16px; padding: 8px 16px 20px; }
+  .ledger.rules .row > .clip, .ledger.hist .row > .clip { flex: 1 1 100%; }
+  .ledger.rules .row > .end { margin-left: auto; }
+}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { EnvelopeSimple, LinkedinLogo, Phone } from "@phosphor-icons/react";
 import { api } from "../api";
 import {
@@ -570,27 +570,17 @@ export function Settings() {
             <dt>Proposal open for</dt><dd>{s.proposal_ttl_days} business days, {s.urgent_proposal_ttl_days} for urgent plays</dd>
           </dl>
         </Section>
-        <Section title="Countries">
-          <div className="ledger">
-            {data.regions.map((r: any) => (
-              <div key={r.country} className="row" style={{ gridTemplateColumns: "48px minmax(0,1fr)", minHeight: 36 }}>
-                <span className="strong">{r.country}</span>
-                <span className="mute">{r.rule === "allowed" ? "Email allowed" : r.rule === "basis_required" ? "Needs a recorded legitimate interest" : r.rule === "consent_required" ? "Needs consent before a cold email" : "Not emailed"}</span>
-              </div>
-            ))}
-          </div>
-          <div className="small mute">A starting point. Counsel to confirm.</div>
+        <Section title="Plays suggested from calls">
+          <dl className="kv">
+            <dt>Heard at</dt><dd>{data.suggestion_rule.min_accounts} or more accounts that came in on one signal</dd>
+            <dt>Written by</dt><dd>{data.suggestion_rule.min_sdrs} or more different SDRs</dd>
+            <dt>Call notes from</dt><dd>The last {data.suggestion_rule.window_days} days</dd>
+            <dt>Gap needed</dt><dd>Heard far more often than elsewhere</dd>
+            <dt>Set aside</dt><dd>Comes back when heard at {data.suggestion_rule.regrow} times as many accounts as when it was set aside</dd>
+          </dl>
         </Section>
       </div>
-      <Section title="Plays suggested from calls">
-        <dl className="kv">
-          <dt>Heard at</dt><dd>{data.suggestion_rule.min_accounts} or more accounts that came in on one signal</dd>
-          <dt>Written by</dt><dd>{data.suggestion_rule.min_sdrs} or more different SDRs</dd>
-          <dt>Call notes from</dt><dd>The last {data.suggestion_rule.window_days} days</dd>
-          <dt>Gap needed</dt><dd>Heard far more often than elsewhere</dd>
-          <dt>Set aside</dt><dd>Comes back when heard at {data.suggestion_rule.regrow} times as many accounts as when it was set aside</dd>
-        </dl>
-      </Section>
+      <CountriesSection regions={data.regions} changes={data.region_changes} canEdit={(me?.user.role === "manager" || me?.user.role === "gtm") && !me?.public_demo} onDone={reload} />
       {me?.user.role === "manager" ? <Team /> : null}
       {data.kept ? <KeptInMarketDesk kept={data.kept} links={data.integration?.links ?? {}} /> : <IcpSection icp={data.icp} canEdit={canEdit} onDone={reload} />}
       {me && me.user.role !== "sdr" ? <ImportBox peopleOnly={!!data.kept} /> : null}
@@ -613,6 +603,117 @@ export function Settings() {
     </div>
   );
 }
+const RULE_WORD: Record<string, string> = { blocked: "Not emailed", consent_required: "Needs consent before a cold email",
+  basis_required: "Needs a recorded legitimate interest", allowed: "Email allowed" };
+const RULE_SHORT: Record<string, string> = { none: "No rule", blocked: "Not emailed", consent_required: "Needs consent",
+  basis_required: "Recorded interest", allowed: "Email allowed" };
+const RULE_ORDER = ["blocked", "consent_required", "basis_required", "allowed"];
+// Same order as the server (src/outbound/region_rules.py): a later rule, or turning individual consent off, is looser.
+const looser = (from: any, rule: string, ic: boolean) =>
+  RULE_ORDER.indexOf(rule) > RULE_ORDER.indexOf(from.rule) || (rule === from.rule && from.individual_consent && !ic);
+
+/** Country email rules. Change opens the row in place: the choices, why, and for a looser rule the country's name typed. */
+function CountriesSection({ regions, changes, canEdit, onDone }: { regions: any[]; changes: any[]; canEdit: boolean; onDone: () => void }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const [rule, setRule] = useState("");
+  const [ic, setIc] = useState(false);
+  const [why, setWhy] = useState("");
+  const [typed, setTyped] = useState("");
+  const [all, setAll] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [busy, run] = useBusy();
+  const start = (r: any) => { setOpen(r.country); setRule(r.rule); setIc(r.individual_consent); setWhy(""); setTyped(""); };
+  const close = () => setOpen(null);
+  const shown = changes.filter((c) => !filter.trim() || (regions.find((r) => r.country === c.country)?.name ?? c.country).toLowerCase().includes(filter.trim().toLowerCase()) || c.country.toLowerCase() === filter.trim().toLowerCase());
+  const nameOf = (code: string) => regions.find((r) => r.country === code)?.name ?? code;
+  const rows = all || filter ? shown : shown.slice(0, 8);
+  const edit = (r: any) => {
+    const loose = looser(r, rule, ic);
+    const same = rule === r.rule && ic === r.individual_consent;
+    const ok = !same && why.trim().length >= 10 && (!loose || typed.trim().toLowerCase() === r.name.toLowerCase());
+    return (
+      <div key={`${r.country}-edit`} className="rule-edit" onKeyDown={(e) => { if (e.key === "Escape") close(); }}>
+        <div className="choices-col">
+          <div className="lbl">Email rule for {r.name}</div>
+          {RULE_ORDER.map((k) => (
+            <label key={k} className="choice">
+              <input type="radio" name={`rule-${r.country}`} checked={rule === k} onChange={() => setRule(k)} />
+              <span className={rule === k ? "strong" : ""}>{RULE_WORD[k]}</span>
+              <span className="tag">{k === r.rule ? "today" : looser(r, k, ic) ? "looser" : "stricter"}</span>
+            </label>
+          ))}
+          <label className="choice">
+            <input type="checkbox" checked={ic} onChange={(e) => setIc(e.target.checked)} />
+            <span className={ic ? "strong" : ""}>A sole trader or partnership needs consent</span>
+            <span className="tag">{ic === r.individual_consent ? "today" : ic ? "stricter" : "looser"}</span>
+          </label>
+        </div>
+        <div className="edit-r">
+          <label className="field"><span>Reason</span>
+            <textarea className="input" rows={3} value={why} maxLength={500} placeholder="What changed, and who confirmed it" onChange={(e) => setWhy(e.target.value)} />
+          </label>
+          {loose && !same ? (
+            <div className="loosen">
+              <p className="strong">Looser than today: {r.name} could be cold-emailed with less than it needs now.</p>
+              <label className="field"><span>Type {r.name} to confirm</span>
+                <input className="input" style={{ width: 220 }} value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
+              </label>
+            </div>
+          ) : null}
+          <div className="actions">
+            <button className="btn ink" disabled={busy || !ok} onClick={() => run(async () => {
+              await api(`/api/region-rules/${r.country}`, { method: "PUT", body: { rule, individual_consent: ic, reason: why.trim(),
+                confirm: loose ? typed.trim() : null, from_rule: r.rule } });
+              close(); onDone();
+            }, `${r.name} changed.`)}>{loose && !same ? `Loosen ${r.name}` : `Change ${r.name}`}</button>
+            <button className="btn quiet" onClick={close}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+  return (
+    <>
+      <Section title="Countries" count={regions.length}>
+        <div className="ledger rules">
+          <div className="row head"><span>Country</span><span>Email rule</span><span>Source</span><span className="num">Last change</span><span /></div>
+          {regions.map((r: any) => (
+            <Fragment key={r.country}>
+              <div className="row" aria-selected={open === r.country ? true : undefined}>
+                <span><span className="strong">{r.name}</span> <span className="faint">{r.country}</span></span>
+                <span className={`rule-${RULE_ORDER.indexOf(r.rule)}`}>{RULE_WORD[r.rule]}</span>
+                <span className="mute clip" title={r.note}>{r.note === "Counsel to confirm." ? "" : r.note}</span>
+                <span className={`num ${r.changed_at ? "" : "faint"}`}>{r.changed_at ? `${day(r.changed_at)}${r.changed_by_name ? `, ${r.changed_by_name}` : ""}` : "Starting list"}</span>
+                <span className="end">{canEdit && open !== r.country ? <button className="btn quiet sm" aria-label={`Change the rule for ${r.name}`} onClick={() => start(r)}>Change</button> : null}</span>
+              </div>
+              {open === r.country ? edit(r) : null}
+            </Fragment>
+          ))}
+        </div>
+        <div className="small mute">A starting point. Counsel to confirm.</div>
+      </Section>
+      <Section title="Rule changes" count={changes.length} right={changes.length > 8 ? <input className="input" style={{ width: 220 }} placeholder="Filter by country" aria-label="Filter by country" value={filter} onChange={(e) => setFilter(e.target.value)} /> : null}>
+        {rows.length ? (
+          <div className="ledger hist">
+            <div className="row head"><span>When</span><span>Country</span><span>From</span><span>To</span><span>Why</span><span>Who</span></div>
+            {rows.map((c: any) => (
+              <div key={c.id} className="row">
+                <span className="mute">{day(c.at)}</span>
+                <span className="strong">{nameOf(c.country)}</span>
+                <span className="mute">{RULE_SHORT[c.from_rule]}{c.from_individual_consent !== c.to_individual_consent && c.from_rule === c.to_rule ? (c.from_individual_consent ? ", sole traders need consent" : "") : ""}</span>
+                <span className="strong">{RULE_SHORT[c.to_rule]}{c.from_individual_consent !== c.to_individual_consent && c.from_rule === c.to_rule ? (c.to_individual_consent ? ", sole traders need consent" : ", sole traders as a company") : ""}</span>
+                <span className="clip" title={c.reason}>{c.reason}</span>
+                <span className={`clip ${c.changed_by_name ? "" : "mute"}`}>{c.changed_by_name ?? "Desk setup"}</span>
+              </div>
+            ))}
+          </div>
+        ) : <Empty title="No changes yet" />}
+        {!all && !filter && shown.length > 8 ? <div><button className="btn line sm" onClick={() => setAll(true)}>Show {shown.length - 8} more</button></div> : null}
+      </Section>
+    </>
+  );
+}
+
 // Job names come with each job from /api/ops (src/outbound/jobs.py JOB_NAMES), the same words the alerts use.
 const JOB_STATUS: Record<string, string> = { queued: "Waiting", running: "Running", failed: "Will retry", dead: "Gave up" };
 

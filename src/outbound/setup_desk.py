@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from . import audit, db, jobs
+from . import audit, db, jobs, region_rules
 from .db import J
 from .seed import catalog as C
 from .signals import http_url, normalize_domain, normalize_name
@@ -102,11 +102,16 @@ def init(cur, cfg: DeskConfig) -> dict:
                key, label, adapter, cadence, paid, provider, enabled)
     db.run(cur, "insert into icp_versions (rules, note, published_by, published_at) values (%s, %s, %s, app_now())",
            J(C.ICP), "Starting ICP: edit it in Settings", gtm)
-    for country, rule in (cfg.region_rules or dict(C.REGION_RULES)).items():
+    # The starting rules are seeded by migration 0035. A rule the config sets differently goes through the same write
+    # function as an edit in Settings, so it has a history row.
+    for country, rule in (cfg.region_rules or {}).items():
+        row = db.one(cur, "select rule, individual_consent from region_rules where country = %s", country)
+        if row is not None and row["rule"] == rule:
+            continue
         call_rule, register = C.CALL_RULES.get(country, ("blocked", None))
-        db.run(cur, "insert into region_rules (country, rule, call_rule, dnc_register, note, individual_consent) "
-                    "values (%s,%s,%s,%s,%s,%s) on conflict do nothing", country, rule, call_rule, register,
-               C.REGION_NOTES.get(country, "Counsel to confirm."), country in C.INDIVIDUAL_CONSENT)
+        region_rules.change(cur, country, rule, row["individual_consent"] if row else country in C.INDIVIDUAL_CONSENT,
+                            "desk setup config", None, allow_new=True, note=C.REGION_NOTES.get(country, "Counsel to confirm."),
+                            call_rule=call_rule, dnc_register=register, skip_confirm=True)
     for vendor, cap in (cfg.budgets or dict(C.BUDGETS)).items():
         db.run(cur, "insert into budgets (vendor, monthly_cap_cents) values (%s,%s) on conflict do nothing", vendor, cap)
     for d in cfg.sending_domains:

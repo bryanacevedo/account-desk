@@ -12,6 +12,7 @@ import time
 from datetime import date, datetime, timezone
 
 import pytest
+from conftest import ensure_rule
 from test_guarantees import refused, scene, send  # noqa: F401  the shared scene fixture
 from test_postmaster import box, run_telemetry  # noqa: F401  the shared box fixture
 
@@ -27,12 +28,13 @@ def test_spain_and_the_netherlands_need_consent():
 
 
 def test_the_migration_moves_an_existing_desk_to_consent(cur):
-    db.run(cur, "insert into region_rules (country, rule) values ('ES', 'basis_required') "
-                "on conflict (country) do update set rule = 'basis_required'")
+    db.run(cur, "set local session_replication_role = replica")   # the migration ran before the history trigger existed
+    db.run(cur, "update region_rules set rule = 'basis_required' where country = 'ES'")
     text = (db.MIGRATIONS / "0028_compliance_gates.sql").read_text()
     sql = text[text.index("update region_rules set rule"):].split(";")[0]
     db.run(cur, sql)
     assert db.val(cur, "select rule from region_rules where country = 'ES'") == "consent_required"
+    db.run(cur, "set local session_replication_role = origin")
 
 
 def _live_env(monkeypatch, **extra):
@@ -85,8 +87,7 @@ def test_the_app_validates_settings_when_it_starts(monkeypatch):
 
 
 def _uk(cur, scene, subscriber):
-    db.run(cur, "insert into region_rules (country, rule, individual_consent) values ('GB', 'basis_required', true) "
-                "on conflict (country) do update set individual_consent = true")
+    ensure_rule(cur, "GB", "basis_required", True)
     db.run(cur, "update people set country = 'GB', timezone = 'Europe/London' where id = %s", scene["person"])
     db.run(cur, "update accounts set hq_country = 'GB', subscriber_type = %s where id = %s", subscriber, scene["account"])
     db.run(cur, "insert into contact_basis (person_id, basis) values (%s, 'legitimate_interest:LIA-1') "
