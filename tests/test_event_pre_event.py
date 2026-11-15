@@ -53,8 +53,19 @@ def link_off(monkeypatch):
         monkeypatch.delenv(k, raising=False)
 
 
+def _clear_cache():
+    with db.tx() as c:
+        db.run(c, "delete from settings where key like 'events_desk_campaign:%%'")
+
+
+def _age_cache():
+    with db.tx() as c:
+        db.run(c, "update settings set value = jsonb_set(value, '{day}', '\"2000-01-01\"') where key like 'events_desk_campaign:%%'")
+
+
 @pytest.fixture
-def link_on(monkeypatch):
+def link_on(monkeypatch, database):
+    _clear_cache()
     monkeypatch.setenv("EVENTS_DESK_URL", "https://events.example/")
     monkeypatch.setenv("EVENTS_DESK_READ_KEY", "k-read")
     calls = []
@@ -65,7 +76,8 @@ def link_on(monkeypatch):
     get.answer, get.status = dict(EVENT), 200
     monkeypatch.setattr(event_link.httpx, "get", get)
     get.calls = calls
-    return get
+    yield get
+    _clear_cache()
 
 
 # ---------------------------------------------------------------- the signal and the play
@@ -222,7 +234,7 @@ def test_the_booking_link_present_is_stored_in_the_signal_and_asked_once_a_day(c
     assert url == "https://events.example/api/desk/campaigns/cmp_1" and headers == {"authorization": "Bearer k-read"}
     sync(cur, crm, [at("targeted", crm_id="con_3", email="c@evt.example")])
     assert len(link_on.calls) == 1                                              # once per campaign per day
-    db.run(cur, "update settings set value = jsonb_set(value, '{day}', '\"2000-01-01\"') where key = 'events_desk_campaign:cmp_1'")
+    _age_cache()
     sync(cur, crm, [at("targeted", crm_id="con_4", email="d@evt.example")])
     assert len(link_on.calls) == 2
 
@@ -255,7 +267,7 @@ def test_a_link_added_later_reaches_the_waiting_signal(cur, desk, crm, events, l
     link_on.answer = {**EVENT, "booking_url": None}
     sync(cur, crm, [at("targeted")])
     assert _evidence(cur, aid)["event"]["booking_url"] is None
-    db.run(cur, "update settings set value = jsonb_set(value, '{day}', '\"2000-01-01\"') where key = 'events_desk_campaign:cmp_1'")
+    _age_cache()
     link_on.answer = dict(EVENT)
     sync(cur, crm, [at("targeted", crm_id="con_3", email="c@evt.example")])
     assert _evidence(cur, aid)["event"]["booking_url"] == LINK
@@ -422,3 +434,50 @@ def test_the_campaign_read_gives_counts_only(client, seeded, monkeypatch):
         assert needle not in r.text
     empty = client.get("/api/desk/campaigns/none/plays", headers={"Authorization": "Bearer right-key"}).json()
     assert empty["plays"] == []
+
+
+# ---------------------------------------------------------------- review fixes
+
+def test_a_decline_before_the_proposal_leaves_nothing_to_propose(cur, desk, crm, events, link_off):  # noqa: F811
+    aid, _ = _event_account(cur, desk)
+    sync(cur, crm, [at("targeted", days=3), at("registered", days=2, crm_id="con_1")])
+    sync(cur, crm, [at("declined", days=0)])
+    live(cur)
+    assert proposed(cur, aid)[0] is None
+
+
+def test_a_moved_status_before_the_proposal_sets_the_targeted_signal_aside(cur, desk, crm, events, link_off):  # noqa: F811
+    aid, _ = _event_account(cur, desk)
+    sync(cur, crm, [at("targeted", days=3)])
+    sync(cur, crm, [at("attended", days=1)])
+    live(cur)
+    assert [(r["type_key"], r["status"]) for r in db.all(cur, "select type_key, status from signals where account_id = %s order by id", aid)] == [
+        ("event_targeted", "ignored"), ("event_campaign_member", "matched")]
+    assert proposed(cur, aid)[1] == "event_follow_up"
+
+
+def test_a_failed_read_still_names_the_event_from_the_campaign(cur, desk, link_off):  # noqa: F811
+    _drafting(cur, desk, None)
+    db.run(cur, "update signals set evidence = %s where id = (select trigger_signal_id from account_plays where id = %s)",
+           J({"summary": "Someone at the company is a person we want to meet at AWS re:Invent 2026.", "quote": "x", "campaign_name": "AWS re:Invent 2026"}), desk["ap"])
+    db.run(cur, "update facts set text = 'Someone at the company is a person we want to meet at AWS re:Invent 2026.' where kind = 'signal:event_targeted'")
+    m = _draft(cur, desk, 0)
+    assert m["status"] == "awaiting_approval", m["gate"]
+    assert "None" not in m["body"] and "I'll be at AWS re:Invent 2026." in m["body"]
+    ap = db.one(cur, "select * from account_plays where id = %s", desk["ap"])
+    play = db.one(cur, "select * from plays where key = 'event_pre_event'")
+    db.run(cur, "update signals set evidence = '{\"summary\": \"x\", \"quote\": \"y\"}' where id = %s", ap["trigger_signal_id"])
+    assert outreach.event_context(cur, ap, play, play["sequence"][0]) is None          # no name anywhere: no event input
+
+
+def test_a_link_added_later_reaches_a_signal_whose_first_read_failed(cur, desk, crm, events, link_on):  # noqa: F811
+    aid, _ = _event_account(cur, desk)
+    link_on.status = 503
+    sync(cur, crm, [at("targeted")])
+    assert "event" not in _evidence(cur, aid)
+    _age_cache()
+    link_on.status, link_on.answer = 200, dict(EVENT)
+    sync(cur, crm, [at("targeted", crm_id="con_3", email="c@evt.example")])
+    ev = _evidence(cur, aid)
+    assert ev["event"]["booking_url"] == LINK and "Las Vegas" in ev["summary"]
+    assert db.val(cur, "select text from facts where account_id = %s and kind = 'signal:event_targeted'", aid) == ev["summary"]

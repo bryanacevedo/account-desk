@@ -70,9 +70,12 @@ def event_for(cur, ref: str) -> dict | None:
     if cached:
         return cached["value"].get("event")
     event = _read(ref)
-    db.run(cur, """insert into settings (key, value) values (%s, %s)
-                   on conflict (key) do update set value = excluded.value""",
-           key, J({"day": str(db.val(cur, "select app_now()::date")), "event": event}))
+    # The day's answer is written on a connection of its own and committed at once: the network wait above and this write
+    # never hold the sync's transaction (or a row in it) open longer than the sync itself.
+    with db.pool().connection() as conn:
+        conn.execute("""insert into settings (key, value) values (%s, %s)
+                        on conflict (key) do update set value = excluded.value""",
+                     (key, J({"day": str(db.val(cur, "select app_now()::date")), "event": event})))
     return event
 
 

@@ -529,11 +529,17 @@ def _who(m) -> str:
     return m.contact_crm_id or m.contact_email or "unknown"
 
 
-def stop_event_plays(cur, person_id: int, campaign_ref: str, reason: str, keys: tuple[str, ...]) -> int:
+def stop_event_plays(cur, person_id: int, campaign_ref: str, reason: str, keys: tuple[str, ...],
+                     ignore: tuple[str, ...] = ("event_targeted",)) -> int:
     """Stop one person's open enrolments in the named event plays that started from this campaign's signals, and close
     each account play that has nobody else open, so the account can be proposed the next play. Returns enrolments stopped."""
     from . import outreach
     prefix = f"member:{campaign_ref}:"
+    # Their stored signals for this campaign that no play has used are set aside, so the next match proposes nothing from them.
+    db.run(cur, """update signals s set status = 'ignored', status_reason = %s where s.person_id = %s and s.status = 'matched'
+                   and s.type_key = any(%s) and (s.campaign_ref = %s or left(s.external_id, %s) = %s)
+                   and not exists (select 1 from account_plays ap where ap.trigger_signal_id = s.id)""",
+           reason, person_id, list(ignore), campaign_ref, len(prefix), prefix)
     started = ("(s.campaign_ref = %s or left(s.external_id, %s) = %s)", [campaign_ref, len(prefix), prefix])
     rows = db.all(cur, f"""select e.id, e.account_play_id from enrollments e join account_plays ap on ap.id = e.account_play_id
                           join plays p on p.id = ap.play_id join signals s on s.id = ap.trigger_signal_id
@@ -595,7 +601,8 @@ def ingest_members(cur, members, events: dict | None = None) -> int:
         if m.status == "declined":
             _count(cur, "declined")
             if person:
-                stop_event_plays(cur, person["id"], m.campaign_ref, "declined_event", (PRE_EVENT, FOLLOW_UP))
+                stop_event_plays(cur, person["id"], m.campaign_ref, "declined_event", (PRE_EVENT, FOLLOW_UP),
+                                 ("event_targeted", "event_registered"))
             continue
         if m.status not in MEMBER_SIGNALS:
             continue
@@ -624,6 +631,7 @@ def ingest_members(cur, members, events: dict | None = None) -> int:
         what = m.event_name or m.campaign_name
         evidence = {"summary": f"Someone at the company {MEMBER_VERBS[m.status]} {what}.", "quote": f"{m.campaign_name}: {m.status}"}
         if m.status == "targeted":
+            evidence["campaign_name"] = what
             event = events.get(m.campaign_ref)
             where = event_link.words(event)
             evidence["summary"] = f"Someone at the company is a person we want to meet at {where or what}."
@@ -637,11 +645,19 @@ def ingest_members(cur, members, events: dict | None = None) -> int:
 
 
 def refresh_event_evidence(cur, events: dict) -> None:
-    """A link Events Desk added after someone was targeted reaches the signal that is still waiting to be drafted."""
+    """What Events Desk says now (a link added after someone was targeted, the city and dates) reaches the targeted signals
+    that have not started a play, and the fact a draft cites, so the draft and its evidence agree."""
+    from . import event_link
     for ref, event in events.items():
-        db.run(cur, """update signals set evidence = jsonb_set(evidence, '{event}', %s)
-                       where campaign_ref = %s and type_key = 'event_targeted' and evidence ? 'event'
-                         and evidence -> 'event' is distinct from %s""", J(event), ref, J(event))
+        where = event_link.words(event)
+        for r in db.all(cur, """select s.id, s.account_id, s.evidence from signals s where s.campaign_ref = %s
+                                and s.type_key = 'event_targeted' and s.evidence -> 'event' is distinct from %s
+                                and not exists (select 1 from account_plays ap where ap.trigger_signal_id = s.id)""", ref, J(event)):
+            old = r["evidence"]["summary"]
+            new = f"Someone at the company is a person we want to meet at {where}." if where else old
+            db.run(cur, "update signals set evidence = jsonb_set(jsonb_set(evidence, '{event}', %s, true), '{summary}', %s, true) where id = %s",
+                   J(event), J(new), r["id"])
+            db.run(cur, "update facts set text = %s where account_id = %s and kind = 'signal:event_targeted' and text = %s", new, r["account_id"], old)
 
 
 # ---------------------------------------------------------------- the first touch: may this person be contacted

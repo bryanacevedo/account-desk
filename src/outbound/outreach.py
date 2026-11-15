@@ -572,6 +572,13 @@ def seat_news_not_theirs(cur, fact: dict, person: dict) -> bool:
     return started is None or started < fact["observed_at"].date() - timedelta(days=30)
 
 
+# Given to the draft model inside the `event` input, so the drafting prompt (and its recordings) stay as they are for every play.
+EVENT_NOTE = ("This email is a note before the event: say you will be at the event (with its city and dates when given), citing "
+              "the signal fact that names it, and never that they are on a list. In a first email say a reply will find a time "
+              "there and write no link. Only when step.job is follow_up and booking_url is not null, add one sentence that gives "
+              "booking_url exactly as written as the way to book a time; otherwise write no link.")
+
+
 def event_context(cur, ap: dict, play: dict, step: dict) -> dict | None:
     """The event a note before an event is about, from what Events Desk said when the person was targeted (stored in the
     signal's evidence): {name, city, starts_on, ends_on, booking_url}. Only the day-7 follow-up of `event_pre_event` carries
@@ -579,9 +586,13 @@ def event_context(cur, ap: dict, play: dict, step: dict) -> dict | None:
     reply will find a time. None for every other play (alone, nothing about events reaches a draft)."""
     if play["key"] != "event_pre_event":
         return None
-    ev = db.val(cur, "select evidence -> 'event' from signals where id = %s and type_key = 'event_targeted'", ap["trigger_signal_id"]) or {}
+    sig = db.val(cur, "select evidence from signals where id = %s and type_key = 'event_targeted'", ap["trigger_signal_id"]) or {}
+    ev = {**(sig.get("event") or {})}
+    ev["name"] = ev.get("name") or sig.get("campaign_name")          # Events Desk did not answer: the CRM's campaign name
+    if not ev["name"]:
+        return None
     link = ev.get("booking_url") if step["job"] == "follow_up" and step["channel"] == "email" else None
-    return {"name": ev.get("name"), "city": ev.get("city"), "starts_on": ev.get("starts_on"), "ends_on": ev.get("ends_on"),
+    return {"instructions": EVENT_NOTE, "name": ev.get("name"), "city": ev.get("city"), "starts_on": ev.get("starts_on"), "ends_on": ev.get("ends_on"),
             "booking_url": signals.http_url(link) if link else None}
 
 
