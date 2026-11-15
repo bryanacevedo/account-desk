@@ -26,6 +26,34 @@ def test_no_job_died(world):
     assert q("select kind, last_error from jobs where status = 'dead'") == []
 
 
+def test_the_run_ends_with_every_crm_write_pushed(world):
+    """The last hour's sends queue their CRM writes after that hour's push; the run pushes once more as the clock stops,
+    so every email sent has its CRM activity (the shared-world audit)."""
+    assert q("select id, attempts, last_error from crm_outbox where status = 'pending' and kind = 'activity' "
+             "and payload->>'type' = 'email_sent'") == []
+    assert v("select count(*) from crm_outbox where kind = 'activity' and payload->>'type' = 'email_sent' "
+             "and status = 'done'") > 0
+
+
+def test_a_write_queued_in_the_last_hour_is_pushed_before_the_clock_stops(world, monkeypatch):
+    """The scheduler's push runs before the hour's sends, so a write a send queues in the last hour used to stay pending
+    when the run ended. Simulated here: the last hour's rep work queues one."""
+    from outbound.sim import runner
+    real = runner.act_as_reps
+
+    def reps_and_a_write(cur, rng, at, eagerness):
+        real(cur, rng, at, eagerness)
+        db.run(cur, "insert into crm_outbox (kind, payload, idempotency_key) values ('activity', %s, 'test:last-hour-write')",
+               db.J({"type": "note"}))
+    monkeypatch.setattr(runner, "act_as_reps", reps_and_a_write)
+    try:
+        runner.run(0, extra_hours=1, seed=3, slow_last_days=0, idle_hours=0)
+        assert v("select status from crm_outbox where idempotency_key = 'test:last-hour-write'") == "done"
+    finally:
+        with db.tx() as cur:
+            db.run(cur, "delete from crm_outbox where idempotency_key = 'test:last-hour-write'")
+
+
 def test_every_monitor_passes(world):
     """No check finds a fault in the system. A first email late because a person has not approved or rewritten its
     draft is the alert doing its job (simulated SDRs are sometimes slow), so those count only when the desk itself

@@ -632,6 +632,10 @@ def run(days: int, *, seed: int = 11, slow_last_days: int = 2, idle_hours: int =
         log.info("simulated day %s: %s", d + 1, totals)
     with db.tx() as cur:
         db.run(cur, "update sim_clock set at = %s", start + timedelta(hours=total_hours))
+        # The last hour's sends queue their CRM writes after that hour's crm_push ran, so the clock would stop with
+        # them pending. One more push as it stops: every email sent has its CRM activity (the shared-world audit).
+        jobs.enqueue(cur, "crm_push", {}, dedupe_key="periodic:crm_push")
+    totals["jobs"] += jobs.run_ready(limit=2000)
     return totals
 
 
