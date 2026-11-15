@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import psycopg
 import pytest
+from conftest import raw_rule
 
 from outbound import db
 from outbound.db import J
@@ -18,7 +19,7 @@ def scene(cur):
     a = db.val(cur, "insert into accounts (name, primary_domain, fit_tier) values ('Test Co', %s, 'A') returning id",
                f"test{id(cur)}.example")
     # A country with a rule: a person whose country has none, or is not known, is never cold-emailed (migration 0025).
-    db.run(cur, "insert into region_rules (country, rule) values ('US', 'allowed') on conflict do nothing")
+    raw_rule(cur, "US", "allowed")
     p = db.val(cur, """insert into people (account_id, full_name, first_name, email, email_status, email_verified_at, source,
                                            country, timezone)
                        values (%s, 'Ana Test', 'Ana', %s, 'valid', now(), 'test', 'US', 'America/New_York') returning id""",
@@ -117,7 +118,7 @@ def test_unverified_email_and_consent_countries_are_refused(cur, scene):
         db.run(cur, "update people set email_status = 'risky' where id = %s", scene["person"])
         refused(cur, scene["message"], "email not valid")
         db.run(cur, "update people set email_status = 'valid' where id = %s", scene["person"])
-    db.run(cur, "insert into region_rules (country, rule) values ('ZZ', 'consent_required') on conflict do nothing")
+    raw_rule(cur, "ZZ", "consent_required")
     db.run(cur, "update people set country = 'ZZ' where id = %s", scene["person"])
     refused(cur, scene["message"], "basis")
     db.run(cur, "insert into contact_basis (person_id, basis) values (%s, 'consent')", scene["person"])

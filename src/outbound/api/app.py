@@ -1313,6 +1313,7 @@ class RegionRuleChange(BaseModel):
     individual_consent: bool
     reason: str = Field(min_length=10, max_length=500)
     confirm: str | None = None
+    from_individual_consent: bool | None = None
     from_rule: str | None = None   # the rule the form was showing; a different current rule is a 409
 
 
@@ -1323,7 +1324,7 @@ def change_region_rule(country: str, body: RegionRuleChange, u: dict = Depends(w
     with db.tx() as cur:
         try:
             out = region_rules.change(cur, country, body.rule, body.individual_consent, body.reason, u["id"],
-                                      expect_rule=body.from_rule, confirm=body.confirm)
+                                      expect_rule=body.from_rule, expect_consent=body.from_individual_consent, confirm=body.confirm)
         except region_rules.RuleError as e:
             raise HTTPException(e.status, str(e) if e.current is None else f"{e} It is now {e.current}.") from e
         audit.log(cur, "person", "region_rule_changed", "region_rule", None,
@@ -1340,7 +1341,7 @@ def region_rules_list(u: dict = Depends(current_user)) -> dict:
 @app.get("/api/region-rules/{country}/changes")
 def region_rule_changes(country: str, u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
-        return {"changes": [c for c in region_rules.listing(cur)["changes"] if c["country"] == country.upper()]}
+        return {"changes": region_rules.changes_for(cur, country.upper())}
 
 
 class SignalWeight(BaseModel):

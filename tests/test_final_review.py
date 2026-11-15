@@ -12,7 +12,7 @@ import time
 from datetime import date, datetime, timezone
 
 import pytest
-from conftest import ensure_rule
+from conftest import ensure_rule, raw_rule
 from test_guarantees import refused, scene, send  # noqa: F401  the shared scene fixture
 from test_postmaster import box, run_telemetry  # noqa: F401  the shared box fixture
 
@@ -118,7 +118,7 @@ def _play(**kw):
 
 
 def test_a_play_on_legitimate_interest_needs_a_current_assessment(cur):
-    db.run(cur, "insert into region_rules (country, rule) values ('FR', 'basis_required') on conflict do nothing")
+    raw_rule(cur, "FR", "basis_required")
     assert plays.lia_problem(cur, _play()) is None
     assert "reference" in plays.lia_problem(cur, _play(lia_ref=None))
     assert "next reviewed" in plays.lia_problem(cur, _play(lia_review_due=None))
@@ -128,7 +128,7 @@ def test_a_play_on_legitimate_interest_needs_a_current_assessment(cur):
 
 
 def test_an_expired_assessment_records_no_new_basis(cur, scene):
-    db.run(cur, "insert into region_rules (country, rule) values ('FR', 'basis_required') on conflict do nothing")
+    raw_rule(cur, "FR", "basis_required")
     person = {"id": scene["person"], "country": "FR"}
     outreach._record_basis(cur, person, _play(lia_review_due=date(2000, 1, 1)))
     assert db.val(cur, "select basis from contact_basis where person_id = %s", scene["person"]) is None
@@ -199,7 +199,7 @@ def test_calls_follow_the_country_call_rule(cur, scene):
     assert "no_call_rule" in [r.code for r in gate.person_reasons(cur, pid, "call")]
     db.run(cur, "update people set country = 'ZZ' where id = %s", pid)
     assert "no_call_rule" in [r.code for r in gate.person_reasons(cur, pid, "call")]
-    db.run(cur, "insert into region_rules (country, rule, call_rule) values ('ZY', 'allowed', 'blocked')")
+    raw_rule(cur, "ZY", "allowed", "blocked")
     db.run(cur, "update people set country = 'ZY' where id = %s", pid)
     assert "call_blocked" in [r.code for r in gate.person_reasons(cur, pid, "call")]
     db.run(cur, "update region_rules set call_rule = 'allowed', dnc_register = 'National Do Not Call Registry' "
@@ -521,7 +521,7 @@ def test_previews_and_searches_are_rate_limited(client, bucket, call):
 def test_the_launch_gate_is_wired_into_the_api(client):
     with db.tx() as cur:
         pl = db.one(cur, "select id, lia_review_due from plays where status = 'live' order by id limit 1")
-        db.run(cur, "insert into region_rules (country, rule) values ('FR', 'basis_required') on conflict do nothing")
+        raw_rule(cur, "FR", "basis_required")
         db.run(cur, "update plays set status = 'paused', lia_review_due = '2000-01-01' where id = %s", pl["id"])
     try:
         r = client.post(f"/api/plays/{pl['id']}", json={"status": "live", "reason": "back on"}, headers=_user("manager"))

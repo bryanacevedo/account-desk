@@ -90,6 +90,43 @@ def test_a_raw_update_without_a_history_row_is_refused(cur):
             db.run(cur, "update region_rules set individual_consent = true where country = 'US'")
 
 
+def test_a_raw_insert_or_delete_is_refused(cur):
+    with pytest.raises(psycopg.errors.RaiseException, match="recorded reason"):
+        with cur.connection.transaction():
+            db.run(cur, "insert into region_rules (country, rule) values ('QQ', 'allowed')")
+    with pytest.raises(psycopg.errors.RaiseException, match="never deleted"):
+        with cur.connection.transaction():
+            db.run(cur, "delete from region_rules where country = 'US'")
+
+
+def test_change_works_inside_a_nested_transaction(cur):
+    with cur.connection.transaction():
+        with cur.connection.transaction():
+            region_rules.change(cur, "IT", "blocked", False, WHY, None)
+            region_rules.change(cur, "QQ", "allowed", False, WHY, None, allow_new=True)
+    assert db.val(cur, "select rule from region_rules where country = 'IT'") == "blocked"
+    assert db.val(cur, "select rule from region_rules where country = 'QQ'") == "allowed"
+    # The flag is cleared again: a raw update after the change is still refused.
+    with pytest.raises(psycopg.errors.RaiseException, match="recorded reason"):
+        with cur.connection.transaction():
+            db.run(cur, "update region_rules set rule = 'allowed' where country = 'IT'")
+
+
+def test_the_seed_adds_nothing_to_a_desk_that_already_has_rules(cur):
+    text = (db.MIGRATIONS / "0035_region_rule_changes.sql").read_text()
+    end = "where not exists (select 1 from region_rules);"
+    seed = text[text.index("insert into region_rules"):text.index(end) + len(end)]
+    assert "on conflict" not in seed
+    db.run(cur, "create temp table rr (like region_rules including defaults)")
+    sql = seed.replace("insert into region_rules", "insert into rr").replace("from region_rules", "from rr")
+    db.run(cur, "insert into rr (country, rule) values ('US', 'blocked')")
+    db.run(cur, sql)
+    assert db.val(cur, "select count(*) from rr") == 1
+    db.run(cur, "delete from rr")
+    db.run(cur, sql)
+    assert db.val(cur, "select count(*) from rr") == len(catalog.REGION_RULES)
+
+
 def test_a_history_row_for_another_change_does_not_open_the_guard(cur):
     region_rules.change(cur, "IT", "blocked", False, WHY, None)
     with pytest.raises(psycopg.errors.RaiseException, match="recorded reason"):

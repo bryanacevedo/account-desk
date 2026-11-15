@@ -35,7 +35,7 @@ export function Deliverability() {
   return (
     <div className="page">
       <div className="head"><div><h1>Inboxes</h1></div></div>
-      <AlertGroups alerts={data.alerts} canAck={!me?.public_demo} onDone={reload} />
+      <AlertGroups alerts={data.alerts} canAck={!me?.public_demo && me?.user.role !== "sdr"} onDone={reload} />
       <div className="figs">
         <Fig value={healthy} unit={`of ${data.mailboxes.length}`} label="Mailboxes able to send" />
         <Fig value={data.capacity} label="Emails a day, at today's limits" />
@@ -320,7 +320,7 @@ export function Ops() {
           </button>
         </div>
       </div>
-      <AlertGroups alerts={data.alerts} canAck={!me?.public_demo} onDone={reload} />
+      <AlertGroups alerts={data.alerts} canAck={!me?.public_demo && me?.user.role !== "sdr"} onDone={reload} />
       <div className="figs">
         <Fig value={<Status kind={data.kill_switch ? "stop" : "ok"}>{data.kill_switch ? "Stopped" : "On"}</Status>} label="Sending" sm />
         <Fig value={failing.length} unit={`of ${data.monitors.length}`} label="Checks finding problems" />
@@ -654,7 +654,7 @@ function CountriesSection({ regions, changes, canEdit, onDone }: { regions: any[
           <div className="actions">
             <button className="btn ink" disabled={busy || !ok} onClick={() => run(async () => {
               await api(`/api/region-rules/${r.country}`, { method: "PUT", body: { rule, individual_consent: ic, reason: why.trim(),
-                confirm: loose ? typed.trim() : null, from_rule: r.rule } });
+                confirm: loose ? typed.trim() : null, from_rule: r.rule, from_individual_consent: r.individual_consent } });
               close(); onDone();
             }, `${r.name} changed.`)}>{loose && !same ? `Loosen ${r.name}` : `Change ${r.name}`}</button>
             <button className="btn quiet" onClick={close}>Cancel</button>

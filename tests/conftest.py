@@ -79,6 +79,15 @@ def cur(database):
         tx.__exit__(psycopg.Rollback, psycopg.Rollback(), None)
 
 
+def raw_rule(cur, country: str, rule: str, call_rule: str = "blocked") -> None:
+    """Put a bare row in region_rules for a test that needs one to exist, keeping any row already there. Bypasses the
+    history trigger (session_replication_role), as the 0028 migration test does."""
+    db.run(cur, "set local session_replication_role = replica")
+    db.run(cur, "insert into region_rules (country, rule, call_rule) values (%s, %s, %s) on conflict do nothing",
+           country, rule, call_rule)
+    db.run(cur, "set local session_replication_role = origin")
+
+
 def ensure_rule(cur, country: str, rule: str, individual_consent: bool = False) -> None:
     """Put a country on a rule the way the desk does: through the write function, so the history trigger is satisfied."""
     from outbound import region_rules

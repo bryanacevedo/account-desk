@@ -63,7 +63,7 @@ def resolve(cur, kinds: list[str] | tuple[str, ...], *, object_kind: str | None 
     day raised it. Rows are kept for the audit trail and drawn nowhere."""
     return db.run(cur, """
         update alerts set resolved_at = app_now()
-        where resolved_at is null and kind = any(%s)
+        where resolved_at is null and acked_at is null and kind = any(%s)
           and (%s::text is null or object_kind = %s) and (%s::bigint is null or object_id = %s)
           and (%s::text is null or object_key = %s) and (%s::bigint is null or target_user = %s)""",
         list(kinds), object_kind, object_kind, object_id, object_id, object_key, object_key, target_user, target_user)

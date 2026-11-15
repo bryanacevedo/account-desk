@@ -65,7 +65,9 @@ def test_a_first_email_waits_when_a_colleague_heard_from_us_the_day_before(cur, 
 # ---------------------------------------------------------------- 6. a country with no rule
 
 def test_no_cold_email_to_a_country_without_a_rule(cur, scene):  # noqa: F811
+    db.run(cur, "set local session_replication_role = replica")
     db.run(cur, "delete from region_rules where country = 'SG'")
+    db.run(cur, "set local session_replication_role = origin")
     db.run(cur, "update people set country = 'SG' where id = %s", scene["person"])
     reasons = gate.person_reasons(cur, scene["person"], "email", enrollment_id=scene["enrollment"])
     assert [(r.code, r.permanent, r.message) for r in reasons if r.code == "no_region_rule"] == [

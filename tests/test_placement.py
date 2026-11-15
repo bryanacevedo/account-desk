@@ -3,6 +3,7 @@ goes quiet next to its peers raises an alert and asks for a seed test."""
 from __future__ import annotations
 
 import pytest
+from conftest import raw_rule
 
 from outbound import db, outreach, sending
 from outbound.db import J
@@ -91,7 +92,7 @@ def test_a_mailbox_gone_quiet_next_to_its_peers_raises_an_alert(cur, box):
                 "'economic_buyer', 'a') on conflict do nothing")
     play = db.val(cur, """insert into plays (key, name, hypothesis, trigger, personas, sequence, angle) values
                           (%s, 'P', 'h', '{}', '{cfo}', '[]', 'a') returning id""", f"pl{id(cur)}")
-    db.run(cur, "insert into region_rules (country, rule) values ('US', 'allowed') on conflict do nothing")
+    raw_rule(cur, "US", "allowed")
     # 70 sends from each mailbox for the same play: the peer gets 14 replies, ours gets 1 (its peers predict 14).
     for mb, replied in ((peer, 14), (box["id"], 1)):
         for i in range(70):

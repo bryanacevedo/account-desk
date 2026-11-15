@@ -337,7 +337,7 @@ def placement_tests(cur, payload: dict) -> None:
         if worst is None:
             continue
         rate, where, today = worst.inbox / worst.seeds, PROVIDER[worst.provider], db.val(cur, "select app_now()::date")
-        if rate >= pause:  # no longer bad enough to pause: the pause alert's condition has ended
+        if rate >= pause and mb["status"] == "active":  # a paused box keeps its alert until it is resumed (admin.py)
             alerts.resolve(cur, ["placement_pause"], object_kind="mailbox", object_id=mb["id"])
         if rate >= hold:  # back above the hold line
             alerts.resolve(cur, ["placement_hold"], object_kind="mailbox", object_id=mb["id"])

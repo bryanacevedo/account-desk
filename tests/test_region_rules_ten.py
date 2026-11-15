@@ -4,7 +4,7 @@ catalog says what each is, the contact gate gives its reason, and the database r
 from __future__ import annotations
 
 import pytest
-from conftest import ensure_rule
+from conftest import ensure_rule, raw_rule
 from test_guarantees import refused, scene, send  # noqa: F401  the shared scene fixture
 
 from outbound import db, gate
@@ -91,7 +91,7 @@ def test_a_sole_trader_or_unknown_subscriber_there_needs_consent(cur, scene, cou
 
 def test_the_sole_trader_rule_reaches_only_the_countries_that_ask_for_it(cur, scene):
     # France's rule is the same kind as Finland's, but nothing in the starting rules says its sole traders differ.
-    db.run(cur, "insert into region_rules (country, rule) values ('FR', 'basis_required') on conflict do nothing")
+    raw_rule(cur, "FR", "basis_required")
     db.run(cur, "update people set country = 'FR' where id = %s", scene["person"])
     db.run(cur, "update accounts set hq_country = 'FR', subscriber_type = 'individual' where id = %s", scene["account"])
     db.run(cur, "insert into contact_basis (person_id, basis) values (%s, 'legitimate_interest:LIA-1') "

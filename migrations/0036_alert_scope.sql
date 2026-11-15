@@ -47,5 +47,6 @@ alter table alerts add column gkey text generated always as (
   || case when object_kind is null and object_id is null and object_key is null
           then '|' || coalesce(target_user::text, '') || '|' || title else '' end) stored;
 
+-- alerts.resolve() looks open rows up by kind.
 create index alerts_open_idx on alerts (scope, severity, at desc) where acked_at is null and resolved_at is null;
 create index alerts_open_kind_idx on alerts (kind) where acked_at is null and resolved_at is null;
