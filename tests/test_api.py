@@ -344,3 +344,21 @@ def test_the_linkedin_webhook_needs_its_token(client, monkeypatch):
     assert client.post("/api/webhooks/linkedin/wrong", json={}).status_code == 404
     r = client.post("/api/webhooks/linkedin/tok-123", json={"event_type": "connection_request_sent"})
     assert r.status_code == 200 and r.json()["applied"] is False
+
+
+def test_health_ignores_the_frozen_clock_monitor_only_in_the_public_demo(client):
+    """Decision 80: the demo's frozen clock makes slow_first_touch true by design; it must not turn the uptime check red."""
+    old = CONFIG.public_demo
+    with db.tx() as cur:
+        cur.execute("insert into monitor_runs (monitor, at, ok, found) values ('slow_first_touch', app_now() + interval '1 hour', false, 3)")
+    try:
+        object.__setattr__(CONFIG, "public_demo", False)
+        before = client.get("/api/health").json()
+        assert before["monitors_failing"] >= 1 and before["ok"] is False
+        object.__setattr__(CONFIG, "public_demo", True)
+        demo = client.get("/api/health").json()
+        assert demo["monitors_failing"] == before["monitors_failing"] - 1
+    finally:
+        object.__setattr__(CONFIG, "public_demo", old)
+        with db.tx() as cur:
+            cur.execute("delete from monitor_runs where monitor = 'slow_first_touch' and not ok and found = 3 and at > app_now()")

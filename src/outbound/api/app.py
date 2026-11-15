@@ -300,6 +300,7 @@ def writer(request: Request, u: dict = Depends(current_user)) -> dict:
 
 
 PUBLIC_DEMO_MESSAGE = "Not available in the public demo."
+FROZEN_CLOCK_MONITORS = frozenset({"slow_first_touch"})
 
 
 def not_in_public_demo() -> None:
@@ -320,8 +321,12 @@ def health() -> dict:
         backlog = db.val(cur, "select count(*) from jobs where status = 'queued' and run_at < app_now() - interval '15 minutes'")
         dead = db.val(cur, "select count(*) from jobs where status = 'dead' and finished_at > app_now() - interval '1 day'")
         undelivered = db.val(cur, "select count(*) from alerts where delivered_at is null and at < app_now() - interval '30 minutes'")
-        failing = db.val(cur, """select count(*) from (select distinct on (monitor) ok from monitor_runs
-                                 order by monitor, at desc) m where not ok""")
+        # The public demo's clock is frozen on a morning with work waiting (the reps stop 40 hours before it opens), so
+        # "accepted, not contacted in time" is true there by design and must not turn the uptime check red. The Health
+        # tab still shows it. Everywhere else every monitor counts (decision 80).
+        quiet = sorted(FROZEN_CLOCK_MONITORS) if CONFIG.public_demo else []
+        failing = db.val(cur, """select count(*) from (select distinct on (monitor) monitor, ok from monitor_runs
+                                 order by monitor, at desc) m where not ok and monitor <> all(%s)""", quiet)
         now = db.val(cur, "select app_now()")
     ok = backlog < 50 and dead == 0 and undelivered == 0 and failing == 0
     return {"ok": ok, "now": now, "job_backlog": backlog, "dead_jobs_today": dead, "undelivered_alerts": undelivered,
