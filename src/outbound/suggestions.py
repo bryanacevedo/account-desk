@@ -272,8 +272,24 @@ def draft_for(cur, theme_id: int, segment: str) -> dict | None:
 
 # ---------------------------------------------------------------- what people see and decide
 
+# A live play already starts on the suggestion's signal type, so the suggestion is covered (DECISIONS 82). The row stays
+# open in the database (the rule and the coverage count read it there); the lists and the Plays count leave it out.
+COVERED = """exists (select 1 from plays cp where cp.status = 'live' and cp.trigger->'any_of' ? ps.segment_signal_type)"""
+
+
+def open_count(cur) -> int:
+    """Open suggestions a person still has to look at: those no live play covers."""
+    return db.val(cur, f"select count(*) from play_suggestions ps where ps.status = 'open' and not {COVERED}")
+
+
+def covered_by(cur, play_id: int) -> int:
+    """How many open suggestions this live play covers: its trigger holds their signal type."""
+    return db.val(cur, """select count(*) from play_suggestions ps join plays p on p.id = %s and p.status = 'live'
+                          where ps.status = 'open' and p.trigger->'any_of' ? ps.segment_signal_type""", play_id)
+
+
 def open_list(cur) -> list[dict]:
-    """Open suggestions, each saying whether its theme was set aside before and came back (rule 5)."""
+    """Open suggestions no live play covers, each saying whether its theme was set aside before and came back (rule 5)."""
     return db.all(cur, """
         select ps.id, ps.theme_id, t.label as theme, t.kind, ps.segment_signal_type as segment, st.label as segment_label,
                ps.evidence, ps.draft, ps.created_at,
@@ -281,7 +297,8 @@ def open_list(cur) -> list[dict]:
                  as set_aside_at
         from play_suggestions ps join learning_themes t on t.id = ps.theme_id
         join signal_types st on st.key = ps.segment_signal_type
-        where ps.status = 'open' order by (ps.evidence->>'p')::float, ps.id""")
+        where ps.status = 'open' and not """ + COVERED + """
+        order by (ps.evidence->>'p')::float, ps.id""")
 
 
 def set_aside_list(cur) -> list[dict]:

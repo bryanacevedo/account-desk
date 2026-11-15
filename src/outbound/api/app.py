@@ -349,7 +349,7 @@ def me(u: dict = Depends(current_user)) -> dict:
                                 u["id"], u["role"] != "sdr"),
             "replies": db.val(cur, "select count(*) from replies where needs_review and handled_at is null"),
             # Open play suggestions wait on a manager or GTM; an SDR never decides them.
-            "suggested": db.val(cur, "select count(*) from play_suggestions where status = 'open'") if u["role"] != "sdr" else 0,
+            "suggested": suggestions.open_count(cur) if u["role"] != "sdr" else 0,
         }
         now = db.val(cur, "select app_now()")
         sim = db.val(cur, "select enabled from sim_clock")

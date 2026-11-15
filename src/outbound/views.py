@@ -435,6 +435,7 @@ def plays_page(cur, *, money: bool) -> list[dict]:
                                                and t.direction = 'out') t on t.first_at is not null
                                  where ap.play_id = %s""", p["id"])
         row = {**p, "funnel": f, "approvals": approvals, "bounces": bounces, "median_hours_to_first_touch": latency,
+               "covers_suggested": suggestions.covered_by(cur, p["id"]),
                "lift": (lf := lifts(cur, p["id"]))[0], "deal_lift": lf[1], "promotion": promotion_check(cur, p),
                "cap_use": [{"key": k, "cap": float(v), "used": spend.play_month_used(cur, p["id"], "anthropic" if k == "anthropic_cents" else k)}
                            for k, v in (p.get("monthly_cap") or {}).items()] if money else []}

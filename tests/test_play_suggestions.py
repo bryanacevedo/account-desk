@@ -301,11 +301,18 @@ def client(world):
     return TestClient(app)
 
 
+def uncovered_segment(cur) -> str:
+    """A signal type that can start a play and that no live play starts on, so a suggestion on it is listed (DECISIONS 82)."""
+    return db.val(cur, """select key from signal_types st where enabled and weight > 0
+                          and not exists (select 1 from plays p where p.status = 'live' and p.trigger->'any_of' ? st.key)
+                          order by key limit 1""")
+
+
 @pytest.fixture
 def open_suggestion(world):
     with db.tx() as cur:
         t = db.val(cur, "insert into learning_themes (kind, label) values ('reason_to_buy', 'Zq api theme') returning id")
-        seg = db.val(cur, "select key from signal_types where key = 'new_exec'")
+        seg = uncovered_segment(cur)
         draft = {"name": "Zq suggested play", "hypothesis": "New finance leaders often need this, because of a reason.",
                  "trigger": {"any_of": [seg]}, "personas": ["cfo", "controller"], "angle": "Teams like theirs often find this."}
         sid = db.val(cur, """insert into play_suggestions (theme_id, segment_signal_type, evidence, draft) values
@@ -371,7 +378,7 @@ def test_the_list_shows_open_and_set_aside_and_never_one_that_became_a_play(clie
     """Open ones wait for a decision; set aside, dismissed and lapsed ones are listed to reconsider, unless their theme is
     back or has a play. One that became a play is the play now: in neither list (Bryan, 2026-11-12)."""
     with db.tx() as cur:
-        seg = "new_exec"
+        seg = uncovered_segment(cur)
         gtm = db.val(cur, "select id from users where role = 'gtm' order by id limit 1")
         ev = J({"accounts": 5, "segment_accounts": 6, "elsewhere": 1, "elsewhere_accounts": 30, "p": 0.0001, "alpha": 0.01,
                 "pairs_tested": 5, "sdrs": 2})
@@ -520,3 +527,31 @@ def test_erasure_takes_a_name_out_of_a_theme_label(cur, desk):
 def test_fisher_refuses_an_impossible_table():
     with pytest.raises(ValueError):
         stats.fisher_greater(0, 9, 9, 10)  # nine of ten in the group and nine heard it, yet none overlap
+
+
+def test_a_suggestion_a_live_play_already_covers_is_hidden_and_counted_on_the_play(client, open_suggestion):
+    """DECISIONS 82: an open suggestion whose signal type a live play starts on is not listed or counted as waiting; the
+    play shows how many it covers. It stays open in the database, and shows again when no live play covers it."""
+    sid, seg = open_suggestion["id"], open_suggestion["draft"]["trigger"]["any_of"][0]
+    h = _as("gtm")
+    with db.tx() as cur:
+        demoted = [r["id"] for r in db.all(cur, "select id from plays where status = 'live' and trigger->'any_of' ? %s", seg)]
+        db.run(cur, "update plays set status = 'draft' where id = any(%s)", demoted)
+        play = db.val(cur, """insert into plays (key, name, hypothesis, trigger, personas, sequence, angle, status, launched_by, launched_at)
+                              select 'zq_cover_play', 'Zq cover play', hypothesis, %s, personas, sequence, angle, 'live', launched_by, launched_at
+                              from plays where status = 'live' order by id limit 1 returning id""", J({"any_of": [seg]}))
+        base = db.val(cur, "select count(*) from play_suggestions where status = 'open'")
+    try:
+        got = client.get("/api/play-suggestions", headers=h).json()
+        assert sid not in {s["id"] for s in got["suggestions"]}
+        assert client.get("/api/me", headers=h).json()["counts"]["suggested"] < base
+        mine = next(p for p in client.get("/api/plays", headers=h).json()["plays"] if p["id"] == play)
+        assert mine["covers_suggested"] >= 1
+        with db.tx() as cur:
+            assert db.val(cur, "select status from play_suggestions where id = %s", sid) == "open"
+            db.run(cur, "update plays set status = 'retired' where id = %s", play)
+        assert sid in {s["id"] for s in client.get("/api/play-suggestions", headers=h).json()["suggestions"]}
+    finally:
+        with db.tx() as cur:
+            db.run(cur, "delete from plays where id = %s", play)
+            db.run(cur, "update plays set status = 'live' where id = any(%s)", demoted)

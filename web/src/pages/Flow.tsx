@@ -218,7 +218,7 @@ const STAGES = ["research", "draft", "supervised", "autonomous"];
  *  The one accent on the page is the last stage each play has earned. */
 function PlayRow({ p, i }: { p: any; i: number }) {
   const f = p.funnel, stage = Math.max(0, STAGES.indexOf(p.autonomy));
-  const meta = p.status === "live" ? null : p.status === "draft" ? "Draft, waiting for a manager" : cap(p.status);
+  const meta = p.status === "live" ? (p.covers_suggested ? `Covers ${p.covers_suggested} suggested` : null) : p.status === "draft" ? "Draft, waiting for a manager" : cap(p.status);
   return (
     <button className={`prow${p.status !== "live" ? " is-off" : ""}`} onClick={() => openSheet("play", p.id)}>
       <span className="prow-sigs">{(p.trigger?.any_of || []).slice(0, 3).map((t: string) => (
