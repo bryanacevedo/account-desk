@@ -345,7 +345,10 @@ def crm_sync(cur, payload: dict) -> None:
         db.run(cur, """insert into settings (key, value) values ('crm_owner_cursor', %s)
                        on conflict (key) do update set value = excluded.value""", J(owner_since))
     sync_accounts(cur, crm)
-    sync_campaign_members(cur, crm)
+    # The event members have their own job: reading Events Desk is a network call, and this transaction holds the deals,
+    # owners and accounts it has just written. Only a desk that runs beside Events Desk queues it (decision 95).
+    if integration.has("events_desk") and getattr(crm, "campaign_members_changed", None) is not None:
+        jobs.enqueue(cur, "crm_members", {}, dedupe_key="crm_members")
     signals.first_party_from_crm(cur)
 
 
@@ -473,6 +476,12 @@ PRE_EVENT, FOLLOW_UP = "event_pre_event", "event_follow_up"
 MOVED = frozenset({"registered", "attended", "met", "no_show"})
 # Statuses whose signal an earlier `declined` cancels, when the feed still carries the older row.
 DECLINE_CANCELS = frozenset({"targeted", "registered"})
+
+
+@jobs.handler("crm_members")
+def crm_members(cur, payload: dict) -> None:
+    """Event members from the CRM into signals, in a job of their own (see crm_sync)."""
+    sync_campaign_members(cur, adapters.get().crm)
 
 
 def sync_campaign_members(cur, crm) -> int:

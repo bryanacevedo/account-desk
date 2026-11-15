@@ -449,6 +449,7 @@ def test_an_event_member_becomes_a_signal_and_a_play_is_proposed(cur, desk, crm,
                  member("lee@evt.example", "attended", ctype="email", campaign="cmp_2"),
                  member("lee@evt.example", "sent", campaign="cmp_3")]
     pipeline.crm_sync(cur, {})
+    pipeline.crm_members(cur, {})                                       # the members' own job (decision 95)
     sig = {r["type_key"]: r for r in db.all(cur, "select * from signals where account_id = %s", aid)}
     assert set(sig) == {"event_campaign_member", "event_registered"}
     assert sig["event_campaign_member"]["external_id"] == "member:cmp_1:con_1:attended"
@@ -456,6 +457,7 @@ def test_an_event_member_becomes_a_signal_and_a_play_is_proposed(cur, desk, crm,
     assert sig["event_campaign_member"]["person_id"] == pid
     assert db.val(cur, "select count(*) from signals where source = 'crm' and external_id like 'member:%'") == 2   # the unknown, the email campaign and "sent" made none
     pipeline.crm_sync(cur, {})
+    pipeline.crm_members(cur, {})                                       # the members' own job (decision 95)
     assert db.val(cur, "select count(*) from signals where external_id like 'member:%'") == 2                  # read again: still two
     p = db.one(cur, "select * from plays where key = 'event_follow_up'")
     assert p["status"] == "live" and p["trigger"]["any_of"] == ["event_campaign_member", "event_registered"]
@@ -473,6 +475,7 @@ def test_a_person_already_in_a_sequence_is_not_started_again(cur, desk, crm, eve
     c = crm(Fake())
     c.members = [member(email, "attended")]
     pipeline.crm_sync(cur, {})
+    pipeline.crm_members(cur, {})                                       # the members' own job (decision 95)
     assert db.val(cur, "select count(*) from signals where account_id = %s and type_key = 'event_campaign_member'", desk["account"]) == 1
     db.run(cur, "update plays set holdout_pct = 0 where key = 'event_follow_up'")
     scoring.rescore(cur, desk["account"])
@@ -487,11 +490,13 @@ def test_without_events_desk_integrated_nothing_happens(cur, desk, crm, monkeypa
     c = crm(Fake())
     c.members = [member("lee@evt.example", "attended")]
     pipeline.crm_sync(cur, {})
+    pipeline.crm_members(cur, {})                                       # the members' own job (decision 95)
     assert db.val(cur, "select count(*) from signals where account_id = %s", aid) == 0
     assert db.val(cur, "select count(*) from plays where key = 'event_follow_up'") == 0
     assert db.val(cur, "select count(*) from signal_types where key like 'event_%%' and key <> 'event_attended'") == 0
     monkeypatch.setenv("INTEGRATED_WITH", "market_desk")
     pipeline.crm_sync(cur, {})
+    pipeline.crm_members(cur, {})                                       # the members' own job (decision 95)
     assert db.val(cur, "select count(*) from plays where key = 'event_follow_up'") == 0
 
 

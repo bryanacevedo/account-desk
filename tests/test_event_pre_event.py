@@ -28,6 +28,7 @@ def sync(cur, crm, rows):  # noqa: F811
     c = crm(Fake())
     c.members = rows
     pipeline.crm_sync(cur, {})
+    pipeline.crm_members(cur, {})                         # its own job since decision 95
     return c
 
 
@@ -481,3 +482,19 @@ def test_a_link_added_later_reaches_a_signal_whose_first_read_failed(cur, desk, 
     ev = _evidence(cur, aid)
     assert ev["event"]["booking_url"] == LINK and "Las Vegas" in ev["summary"]
     assert db.val(cur, "select text from facts where account_id = %s and kind = 'signal:event_targeted'", aid) == ev["summary"]
+
+
+# ---------------------------------------------------------------- the Events Desk call is not in the CRM sync (decision 95)
+
+def test_crm_sync_does_not_call_events_desk_and_its_own_job_does(cur, desk, crm, events, link_on):  # noqa: F811
+    _event_account(cur, desk)
+    c = crm(Fake())
+    c.members = [at("targeted")]
+    pipeline.crm_sync(cur, {})
+    assert link_on.calls == []                                             # the sync's transaction made no network call
+    assert db.val(cur, "select count(*) from jobs where kind = 'crm_members' and status = 'queued'") == 1
+    pipeline.crm_sync(cur, {})
+    assert db.val(cur, "select count(*) from jobs where kind = 'crm_members' and status = 'queued'") == 1   # one at a time
+    pipeline.crm_members(cur, {})
+    assert len(link_on.calls) == 1 and link_on.calls[0][0].endswith("/api/desk/campaigns/cmp_1")
+    assert db.val(cur, "select count(*) from signals where type_key = 'event_targeted'") == 1

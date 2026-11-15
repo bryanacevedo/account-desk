@@ -29,7 +29,7 @@ JOB_NAMES = {
     "research": "Researching accounts", "rescore": "Rescoring an account", "rescore_all": "Nightly rescoring",
     "rescore_batch": "Rescoring a batch of accounts", "classify_reply": "Reading replies",
     "resume": "Resuming after an out-of-office", "resume_after_positive": "Resuming colleagues after a positive reply",
-    "sla_check": "Checking reply answer times", "crm_push": "Writing to the CRM", "crm_sync": "Reading the CRM",
+    "sla_check": "Checking reply answer times", "crm_push": "Writing to the CRM", "crm_sync": "Reading the CRM", "crm_members": "Reading event members from the CRM",
     "crm_retry_held": "Retrying CRM deals waiting for an account", "mailbox_health": "Checking mailbox health",
     "telemetry": "Reading spam rates", "placement_tests": "Testing where mail lands", "dns_check": "Checking DNS records",
     "monitors": "Running the checks", "ingest_source": "Collecting signals", "deliver_alert": "Sending alerts to Slack",
