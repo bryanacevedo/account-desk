@@ -187,6 +187,8 @@ def sweep_sending(cur, payload: dict) -> None:
                             and sent_at < app_now() - interval '15 minutes' order by id for update skip locked"""):
         db.run(cur, "update messages set status = 'send_unknown' where id = %s", r["id"])
         jobs.enqueue(cur, "reconcile_send", {"message_id": r["id"]}, dedupe_key=f"reconcile:{r['id']}")
+    from . import reply_send  # answers to replies are settled the same way (decision 92)
+    reply_send.sweep(cur)
 
 
 def record_result(cur, message_id: int, outcome: str, provider_id: str | None, error: str | None) -> None:

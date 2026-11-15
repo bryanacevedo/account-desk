@@ -67,6 +67,7 @@ def test_1_every_outbox_kind_lands_once_on_a_retry(cur, name):
     p0 = w["people"][0]
     outbox = [
         ("activity", {"type": "email_sent", "person_id": p0, "message_id": f"{w['tag']}1", "subject": "Usage pricing"}),
+        ("activity", {"type": "email_sent", "person_id": p0, "reply_send_id": f"{w['tag']}9", "subject": "Re: Usage pricing"}),
         ("activity", {"task_id": f"{w['tag']}2", "kind": "call", "outcome": "no_answer", "person_id": p0}),
         ("activity", {"task_id": f"{w['tag']}3", "kind": "linkedin_connect", "outcome": "skipped", "person_id": p0}),
         ("activity", {"task_id": f"{w['tag']}4", "kind": "linkedin_message", "outcome": "sent", "person_id": p0}),

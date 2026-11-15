@@ -9,7 +9,7 @@ import psycopg
 import pytest
 from test_api import client  # noqa: F401  the shared app client (world fixture)
 
-from outbound import db, outreach, reply_send, views
+from outbound import adapters, db, outreach, reply_send, views
 
 
 class _Back(Exception):
@@ -58,7 +58,7 @@ def test_a_reply_that_asks_to_stop_or_is_automatic_cannot_be_answered(world):
     _rolled_back(go)
 
 
-def test_suppression_a_blocked_country_and_the_kill_switch_refuse_it(world):
+def test_suppression_and_the_kill_switch_refuse_it_but_a_blocked_country_does_not(world):
     def go(cur):
         r = _answerable(cur)
         person = db.one(cur, "select * from people where id = %s", r["person_id"])
@@ -67,7 +67,7 @@ def test_suppression_a_blocked_country_and_the_kill_switch_refuse_it(world):
         db.run(cur, "delete from suppressions where kind = 'email'")
         db.run(cur, "set local session_replication_role = replica")  # a rule change needs its history row; this is not that test
         db.run(cur, "update region_rules set rule = 'blocked' where country = %s", person["country"])
-        assert reply_send.refusal(cur, r).code == "region_blocked"
+        assert reply_send.refusal(cur, r) is None  # they wrote first (decision 92)
         db.run(cur, "update region_rules set rule = 'allowed' where country = %s", person["country"])
         db.run(cur, "set local session_replication_role = origin")
         db.run(cur, "update settings set value = 'true'::jsonb where key = 'kill_switch'")
@@ -204,4 +204,64 @@ def test_a_bounced_address_and_a_newer_unread_message_hold_the_answer(world):
         row_text = "Thanks, happy to talk."
         with pytest.raises(ValueError):
             reply_send.queue(cur, r, _sdr_of(cur, r), row_text)
+    _rolled_back(go)
+
+
+def _sending(cur):
+    r = _answerable(cur)
+    row = reply_send.queue(cur, r, _sdr_of(cur, r), "Thanks. Tuesday at 10:00 or Wednesday at 14:00 your time both work on my side.")
+    reply_send.send_reply(cur, {"reply_send_id": row["id"]})
+    db.run(cur, "update reply_sends set sent_at = app_now() - interval '20 minutes' where id = %s", row["id"])
+    return r, row
+
+
+def test_a_reply_to_a_blocked_country_is_sent_through_the_database_guard_and_a_first_email_is_not(world):
+    def go(cur):
+        r = _answerable(cur)
+        person = db.one(cur, "select * from people where id = %s", r["person_id"])
+        db.run(cur, "set local session_replication_role = replica")
+        db.run(cur, "update region_rules set rule = 'blocked' where country = %s", person["country"])
+        db.run(cur, "set local session_replication_role = origin")
+        row = reply_send.queue(cur, r, _sdr_of(cur, r), "Thanks. Tuesday at 10:00 or Wednesday at 14:00 your time both work on my side.")
+        reply_send.send_reply(cur, {"reply_send_id": row["id"]})
+        reply_send.send_reply_provider(cur, {"reply_send_id": row["id"]})
+        assert db.val(cur, "select status from reply_sends where id = %s", row["id"]) == "sent"
+        from outbound import gate
+        assert any("region" in str(x).lower() or "blocked" in str(x).lower() for x in gate.person_reasons(cur, person["id"], "email"))
+    _rolled_back(go)
+
+
+def test_a_sent_answer_writes_a_crm_activity_once(world):
+    def go(cur):
+        r, row = _sending(cur)
+        reply_send.send_reply_provider(cur, {"reply_send_id": row["id"]})
+        reply_send.send_reply_provider(cur, {"reply_send_id": row["id"]})
+        n = db.val(cur, "select count(*) from crm_outbox where kind = 'activity' and idempotency_key = %s", f"activity:reply:{row['id']}")
+        assert n == 1
+    _rolled_back(go)
+
+
+@pytest.mark.parametrize("outcome,status", [("sent", "sent"), ("failed", "failed"), ("unknown", "send_unknown")])
+def test_the_sweep_asks_the_provider_about_an_answer_stuck_in_sending(world, monkeypatch, outcome, status):
+    def go(cur):
+        r, row = _sending(cur)
+        monkeypatch.setattr(adapters.get().email, "lookup", lambda c, key: adapters.SendResult(outcome, "p1" if outcome == "sent" else None, None))
+        reply_send.sweep(cur)
+        assert db.val(cur, "select status from reply_sends where id = %s", row["id"]) == status
+        if status == "sent":
+            assert db.val(cur, "select outcome from replies where id = %s", r["id"]) == "answered"
+            assert db.val(cur, "select count(*) from crm_outbox where idempotency_key = %s", f"activity:reply:{row['id']}") == 1
+        if status == "send_unknown":
+            assert db.val(cur, "select count(*) from alerts where dedup_key = %s", f"unknown:reply:{row['id']}") == 1
+    _rolled_back(go)
+
+
+
+def test_the_sweep_leaves_an_answer_that_started_sending_a_moment_ago(world, monkeypatch):
+    def go(cur):
+        r, row = _sending(cur)
+        db.run(cur, "update reply_sends set sent_at = app_now() where id = %s", row["id"])
+        monkeypatch.setattr(adapters.get().email, "lookup", lambda c, key: pytest.fail("asked the provider too early"))
+        reply_send.sweep(cur)
+        assert db.val(cur, "select status from reply_sends where id = %s", row["id"]) == "sending"
     _rolled_back(go)

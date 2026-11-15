@@ -109,7 +109,8 @@ class CrmDeskCrm:
         when = {"occurred_at": queued.isoformat()} if queued else {}
         if kind == "activity" and payload.get("type") == "email_sent":
             body = {"type": "email", "direction": "out", "contact": email, "subject": payload.get("subject"),
-                    "external_id": f"message:{payload['message_id']}", **when}
+                    "external_id": (f"reply_send:{payload['reply_send_id']}" if payload.get("reply_send_id")
+                                    else f"message:{payload['message_id']}"), **when}
         elif kind == "activity":
             body = {"type": SDR_TYPES[payload["kind"]], "contact": email, "outcome": payload.get("outcome"),
                     "external_id": f"task:{payload['task_id']}", **when}

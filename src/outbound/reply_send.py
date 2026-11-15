@@ -4,8 +4,9 @@ A reply is a person writing back, not a step in a sequence, so its send has its 
 reason set and its own database guard (migration 0038). The reasons here are not `gate.person_reasons`: its cooldown
 and consent rules exist to stop cold outreach and would refuse every answer to someone who wrote to us. What stays is
 what protects the person and the sender: a reply that asks us to stop, a bounce or an automatic message is never
-answered; suppression, erasure, a person who left, the kill switch, a blocked country (Risk: legal, kept as for any
-send until Bryan decides) and the daily caps hold as they do for any email.
+answered; suppression, erasure, a person who left, the kill switch and the daily caps hold as they do for any email.
+A blocked country does not stop a reply: they wrote to us first (Bryan, 2026-11-15, decision 92; Risk: legal, counsel
+to confirm). A first email keeps the rule.
 
 The send is an outbox row and a job, never one transaction: the row is committed first, the job asks the database
 guard to let it go, and only then is the provider called.
@@ -70,8 +71,6 @@ def refusal(cur, r: dict) -> Refusal | None:
                         or (s.kind = 'domain' and s.value = split_part(%s, '@', 2))))""",
               p["email"], r["from_addr"], str(p["id"]), str(r["account_id"] or 0), p["email"]):
         return Refusal("suppressed", "They are on the do-not-contact list.")
-    if db.val(cur, "select exists (select 1 from region_rules where country = %s and rule = 'blocked')", p["country"]):
-        return Refusal("region_blocked", "Email is blocked for their country.")
     return None
 
 
@@ -186,19 +185,51 @@ def send_reply_provider(cur, payload: dict) -> None:
     except Exception as exc:  # we cannot know whether it left
         result = adapters.SendResult("unknown", None, f"{type(exc).__name__}: {exc}")
     if result.outcome == "sent":
-        db.run(cur, "update reply_sends set status = 'sent', provider_id = %s where id = %s", result.provider_id, rs["id"])
-        r = db.one(cur, "select * from replies where id = %s", rs["reply_id"])
-        if r["account_id"]:
-            db.run(cur, """insert into touches (account_id, person_id, channel, direction, kind, at, source, dedup_key)
-                           values (%s,%s,'email','out','reply_sent',app_now(),'desk',%s) on conflict do nothing""",
-                   r["account_id"], rs["person_id"], f"reply_send:{rs['id']}")
-        replies.handle(cur, r["id"], user_id=rs["user_id"], outcome="answered")
-        audit.log(cur, "person", "reply_sent", "reply", r["id"], {"reply_send_id": rs["id"]}, actor_id=rs["user_id"])
+        record_sent(cur, rs, result.provider_id)
     elif result.outcome == "unknown":
         db.run(cur, "update reply_sends set status = 'send_unknown', error = %s where id = %s", result.error, rs["id"])
     else:
         db.run(cur, "update reply_sends set status = 'failed', sent_at = null, error = %s where id = %s",
                (result.error or "The provider refused it")[:200], rs["id"])
+
+
+def record_sent(cur, rs: dict, provider_id: str | None) -> None:
+    """The answer left: mark it, write the touch and the CRM activity, mark the reply answered, audit it."""
+    db.run(cur, "update reply_sends set status = 'sent', provider_id = %s where id = %s", provider_id, rs["id"])
+    r = db.one(cur, "select * from replies where id = %s", rs["reply_id"])
+    if r["account_id"]:
+        db.run(cur, """insert into touches (account_id, person_id, channel, direction, kind, at, source, dedup_key)
+                       values (%s,%s,'email','out','reply_sent',app_now(),'desk',%s) on conflict do nothing""",
+               r["account_id"], rs["person_id"], f"reply_send:{rs['id']}")
+    db.run(cur, """insert into crm_outbox (kind, payload, idempotency_key) values ('activity', %s, %s)
+                   on conflict do nothing""",
+           db.J({"type": "email_sent", "person_id": rs["person_id"], "reply_send_id": rs["id"], "subject": rs["subject"]}),
+           f"activity:reply:{rs['id']}")
+    replies.handle(cur, r["id"], user_id=rs["user_id"], outcome="answered")
+    audit.log(cur, "person", "reply_sent", "reply", r["id"], {"reply_send_id": rs["id"]}, actor_id=rs["user_id"])
+
+
+def sweep(cur) -> None:
+    """Answers left in 'sending' for more than 15 minutes: a worker died mid-send. Ask the provider, never resend."""
+    from . import alerts
+    for rs in db.all(cur, """select * from reply_sends where status = 'sending'
+                             and sent_at < app_now() - interval '15 minutes' order by id for update skip locked"""):
+        try:
+            found = adapters.get().email.lookup(cur, f"reply-{rs['id']}")
+        except Exception as exc:  # the provider cannot say
+            found = adapters.SendResult("unknown", None, f"{type(exc).__name__}: {exc}")
+        if found.outcome == "sent":
+            record_sent(cur, rs, found.provider_id)
+        elif found.outcome == "failed":  # it never left: it may be sent again from the page
+            db.run(cur, "update reply_sends set status = 'failed', sent_at = null, error = %s where id = %s",
+                   "It did not leave after a crash. Send it again.", rs["id"])
+        else:
+            db.run(cur, "update reply_sends set status = 'send_unknown', error = %s where id = %s",
+                   "The provider cannot say whether it went out.", rs["id"])
+            alerts.raise_alert(cur, kind="send_unknown", severity="warn", channel="#outbound-ops",
+                               title="An answer's outcome is unknown",
+                               body="The provider cannot say whether the answer went out. Check the mailbox's sent folder.",
+                               object_kind="reply_send", object_id=rs["id"], dedup_key=f"unknown:reply:{rs['id']}")
 
 
 def refines_left(cur, reply_id: int) -> int:
