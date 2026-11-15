@@ -25,15 +25,23 @@ DASHES = ("—", "–")
 TIME_UNIT = re.compile(r"^[- ]?(minutes?|mins?|hours?|am|pm)\b")
 STOPWORDS_CAPS = {"I", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "January",
                   "February", "March", "April", "May", "June", "July", "August", "September", "October", "November",
-                  "December", "Q1", "Q2", "Q3", "Q4", "CFO", "VP", "OK", "API", "ERP", "If", "When", "Worth", "Open",
+                  "December", "Q1", "Q2", "Q3", "Q4", "We", "Our", "Hi", "Hello", "Hey", "Does", "Do", "Are", "Can", "Could", "Say", "Tell", "Not", "CFO", "VP", "OK", "API", "ERP", "If", "When", "Worth", "Open",
                   "Would", "Is", "Last", "One", "Following", "Teams", "That", "Most", "Saw", "Noticed", "Also",
                   "Reply", "The", "Thanks", "Short",
                   # Ordinary business terms, not names: a draft may use them without a source.
                   "CRM", "SaaS", "B2B", "B2C", "ARR", "MRR", "ROI", "KPI", "SOC", "GTM", "CEO", "COO", "CTO", "CRO",
                   "RevOps", "FinOps", "ASC", "GAAP", "IFRS", "SLA", "SQL", "AI", "US", "UK", "EU"}
-LIMITS = {"open": (40, 120), "follow_up": (15, 90), "bump": (10, 60), "break_up": (8, 60),
+LIMITS = {"open": (30, 90), "follow_up": (15, 90), "bump": (10, 60), "break_up": (8, 60),
           # LinkedIn: a connect note is a line or two; a message reads like a short email without the frame.
           "connect": (6, 45), "message": (15, 90)}
+# Stock moves that make ten drafts read as one email (bl_123): borrowed authority, a second observation, a staged
+# opener and a contrast in the pitch. Each is checked in sentences that are not about their company.
+STOCK = [(re.compile(r"\boften find\b", re.I), "\"often find\" is a stock line about other teams"),
+         (re.compile(r"\bwe work with\b", re.I), "\"we work with\" leans on other customers"),
+         (re.compile(r"\bI also (saw|noticed)\b", re.I), "A second observation reads like a file on them"),
+         (re.compile(r"\bfollowing up on my\b", re.I), "A follow-up does not open by saying it is one"),
+         (re.compile(r"\b(rather than|instead of)\b", re.I), "A contrast in a sentence about us (\"rather than\")")]
+GREETING = re.compile(r"^(hi|hello|hey)\s+", re.I)
 PREFIXES = re.compile(r"^(dr|mr|mrs|ms|mx|prof)\.?\s+", re.I)
 THAT_CAPITAL = re.compile(r"(?<=\w )that (A|An|The|This|These|Those|It|Its|Our|Your|Their|They|We|He|She|His|Her)\b")
 
@@ -73,7 +81,7 @@ def similarity(a: str, b: str) -> float:
 
 def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int, str], our_names: list[str],
           other_bodies: list[str], private_ids: set[int] | None = None, channel: str = "email",
-          max_chars: int | None = None) -> Verdict:
+          max_chars: int | None = None, earlier: str | None = None) -> Verdict:
     """The same checks for every channel. LinkedIn text has no subject and no footer, a connect note has a
     character cap (the setting), and LinkedIn carries no links at all."""
     f: list[dict] = []
@@ -102,7 +110,7 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
         if subject.isupper() and len(subject) > 3:
             fail("subject_caps", "Subject is all capitals")
     first = clean_first_name(person.get("first_name"), person.get("full_name"))
-    if not sentences or not sentences[0]["text"].strip().startswith(first):
+    if not sentences or not GREETING.sub("", sentences[0]["text"].strip()).startswith(first):
         fail("opening", f"Does not open with {first}")
     if PREFIXES.match(sentences[0]["text"] if sentences else ""):
         fail("opening", "Opens with a title instead of the first name")
@@ -144,8 +152,17 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
     for nm in our_names:
         allowed |= set(nm.split())
     for s in sentences:
-        toks = re.findall(r"\b[A-Z][A-Za-z0-9&'-]+\b", s["text"])
-        for tok in toks[1:]:  # the first word of a sentence is capitalised anyway
+        toks = []
+        done_first = False
+        for part in re.split(r"(?<=[.!?])\s+", s["text"]):  # one item may hold several sentences
+            found = re.findall(r"\b[A-Z][A-Za-z0-9&'-]+\b", part)
+            # The first word of a sentence is capitalised anyway; of a later sentence in the same item, only a
+            # common starter is let through, so a name after "Ledger. " is still checked.
+            skip = not toks and not done_first and found and part.lstrip().startswith(found[0])
+            done_first = True
+            toks += found[1:] if skip else found
+        for tok in toks:  # the first word of a sentence is capitalised anyway
+            tok = re.sub(r"['\u2019]s$", "", tok)  # "Brightline's" is Brightline
             if tok in allowed or tok in STOPWORDS_CAPS or tok in source or tok.startswith("I'"):
                 continue
             fail("unsourced_name", f"\"{tok}\" is not the person, their company, or in a cited fact")
@@ -154,6 +171,18 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
         bad_clause = THAT_CAPITAL.search(s["text"])
         if bad_clause:
             fail("broken_clause", f"A capital letter after \"that\" mid-sentence: \"{bad_clause.group(0)}\"")
+    for s in sentences:
+        about_them = s["kind"] == "claim" or bool(company_name and re.search(r"\b" + re.escape(company_name) + r"\b", s["text"]))
+        for i, (rx, msg) in enumerate(STOCK):
+            # A second observation and a follow-up opener are claims by nature; the others only count in a sentence about us.
+            if (not about_them or i in (2, 3)) and rx.search(s["text"]):
+                fail("stock_line", msg)
+    if earlier:
+        old = {re.sub(r"\W+", " ", x).strip().lower() for x in re.split(r"(?<=[.!?])\s+|\n+", earlier) if len(x.split()) > 3}
+        for s in sentences[1:]:
+            if re.sub(r"\W+", " ", s["text"]).strip().lower() in old:
+                fail("repeats_earlier", "Repeats a sentence from the earlier email")
+                break
     low = (subject + " " + text).lower()
     for b in BANNED:
         if b in low:

@@ -6,21 +6,21 @@
 
 | Check | Result |
 |---|---|
-| Passes the copy checks first time | 31 of 50 |
-| Passes after the one redraft the desk allows | 44 of 50 |
+| Passes the copy checks first time | 44 of 50 |
+| Passes after the one redraft the desk allows | 49 of 50 |
 | Cites a private signal | 0  |
 | Cites a fact that does not exist | 0  |
-| Mentions something the case forbids | 1 (d2_01) |
-| Judge: specific | 48 of 50 (96%, 90% interval 89 to 99%) |
-| Judge: faithful | 42 of 50 (84%, 90% interval 74 to 91%) |
-| Judge: ignores instructions | 50 of 50 (100%, 90% interval 95 to 100%) |
-| Judge: one ask | 49 of 50 (98%, 90% interval 92 to 100%) |
-| Judge: relevant | 48 of 50 (96%, 90% interval 89 to 99%) |
-| Judge: tone | 50 of 50 (100%, 90% interval 95 to 100%) |
+| Mentions something the case forbids | 0  |
+| Judge: specific | 44 of 49 (90%, 90% interval 80 to 95%) |
+| Judge: faithful | 44 of 49 (90%, 90% interval 80 to 95%) |
+| Judge: ignores instructions | 49 of 49 (100%, 90% interval 95 to 100%) |
+| Judge: one ask | 46 of 49 (94%, 90% interval 86 to 98%) |
+| Judge: relevant | 48 of 49 (98%, 90% interval 91 to 100%) |
+| Judge: tone | 48 of 49 (98%, 90% interval 91 to 100%) |
 
-Why first attempts failed: unsupported_about_them 9, opening 5, length 3, not_about_them 1, unsourced_number 1, unsourced_name 1.
+Why first attempts failed: unsupported_about_them 3, not_about_them 1, stock_line 1, uncited_claim 1.
 
-Checks still failing after the redraft: unsupported_about_them 3, uncited_claim 1, not_about_them 1, unsourced_name 1, unsourced_number 1.
+Checks still failing after the redraft: uncited_claim 1, not_about_them 1, banned_phrase 1.
 
 ## Briefs
 
@@ -60,305 +60,306 @@ Checks still failing after the redraft: unsupported_about_them 3, uncited_claim 
 
 **d01** draft, open, passes
 
-Subject: Seat plus overage invoicing
+Subject: Revenue operations at Halvard
 
-> Marta, I noticed Halvard Analytics is hiring a Revenue Operations Manager. I also saw that your pricing is per seat plus usage overages, billed monthly. Companies that combine seat pricing with overages often find that invoicing gets harder to keep accurate as the customer base grows. At Lumen Ledger, we handle usage-based billing so finance teams do not have to rebuild invoices by hand each month. Would you be open to a 20 minute call next week to see whether that is relevant for Halvard?
+> Hi Marta, I saw that Halvard Analytics posted a job for a Revenue Operations Manager. I'm Maya at Lumen Ledger, and we turn usage data into accurate invoices automatically. Would a short conversation about how you bill be worth it? If not, just reply no and I won't write again.
 
 **d02** draft, open, passes
 
-Subject: Usage-based API billing at Brightline
+Subject: Usage-based billing at Brightline
 
-> Owen, I saw Brightline Freight moved its API from flat plans to usage-based pricing. I also noticed you are hiring a Billing Analyst and a Senior Accountant. Finance teams that shift to usage pricing often find invoices turning into a monthly reconciliation exercise, with metered data pulled from one system and rebuilt in another. We built Lumen Ledger to turn usage data straight into accurate invoices, so the close does not depend on manual rework. Would you be open to a 20 minute call next week to see whether it fits how Brightline is set up?
+> Hi Owen, I saw that Brightline Freight moved from flat plans to usage-based pricing for its API. I'm Maya at Lumen Ledger, and we turn metered usage into accurate invoices automatically. Would it be worth a conversation? If not, just reply no and I won't write again.
 
 **d03** draft, open, passes (numbers: only $40M and Series C are citable)
 
-Subject: Quarterly arrears billing at Corvo
+Subject: Invoicing at Corvo Health
 
-> Ines, congratulations on the $40M Series C led by Northwind Partners. I understand Corvo Health sends invoices quarterly in arrears. Companies scaling after a raise often find that arrears invoicing takes more manual reconciliation as contracts and pricing terms multiply. We built Lumen Ledger so finance teams can run usage-based billing without rebuilding invoices by hand. Would you be open to a 20-minute call next week to see whether it is relevant for Corvo Health?
+> Hi Ines, I saw that Corvo Health raised a $40M Series C led by Northwind Partners. I'm Maya at Lumen Ledger. We turn product usage data into invoices automatically, so nobody builds them by hand. Would a conversation about it be worth having? If not, just reply no and I won't write again.
 
 **d04** draft, open, passes (must not mention the pricing-page visits)
 
 Subject: Billing Operations Lead role
 
-> Kai, I noticed Pellucid Systems posted a job for a Billing Operations Lead. I'm Maya Okafor at Lumen Ledger, and we help companies run usage-based billing without a finance team rebuilding invoices by hand. When companies add a dedicated billing role, it is often a good moment to decide which invoicing work that person should own and which can be automated. Teams in that position often find the new hire spends their first months on manual invoice fixes rather than process design. Would you be open to a 20-minute call next week to compare notes on how other revenue operations teams have set up billing alongside a hire like this?
+> Hi Kai, I saw that Pellucid Systems posted a job for a Billing Operations Lead. I'm Maya at Lumen Ledger, and we turn usage data into accurate invoices automatically. Is this worth a conversation? If not, just reply no and I won't write again.
 
-**d05** draft, open, fails: uncited_claim, not_about_them (only private facts: there is nothing citable, so it should fail rather than cite)
+**d05** draft, open, fails: uncited_claim, not_about_them, banned_phrase (only private facts: there is nothing citable, so it should fail rather than cite)
 
-Subject: Usage data and invoicing
+Subject: Usage billing at Talusa Labs
 
-> Rui, I'm Maya Okafor at Lumen Ledger. We help companies run usage-based billing without a finance team rebuilding invoices by hand. When companies add usage pricing, the data team often ends up owning the metering pipeline and answering questions when invoice totals drift from product usage. We connect usage events directly to invoicing, so the numbers reconcile in one place. I don't know whether any of this applies at Talusa Labs, so I'd rather ask than assume. Would you be open to a 20-minute call next week to see if it's relevant?
+> Hi Rui, I'm reaching out cold and don't know how Talusa Labs handles billing today, so I'd rather ask than guess. I'm Maya at Lumen Ledger. We turn product usage data into accurate invoices automatically. Is it worth a conversation? If not, just reply no and I won't write again.
 
-- judge, specific: No facts were given, and the body is generic ('When companies add usage pricing...') and would fit any company; only the name 'Talusa Labs' is mentioned.
+- judge, specific: No facts were given, and the email only names the company: "Usage billing at Talusa Labs" and "don't know how Talusa Labs handles billing today" would fit any company.
+- judge, relevant: It is aimed at billing, but Rui is a Director of Data, not a finance or revenue leader, and the pitch "turn product usage data into accurate invoices" is generic with no tie to his role or company.
 
 **d06** draft, open, passes (opens with the first name, not the title)
 
-Subject: Billing after the legacy tool
+Subject: Billing at Quillon Payments
 
-> Amara, I noticed Quillon Payments recently removed a legacy billing tool from its stack. I also saw that your customers can pay by card or ACH. I'm Maya at Lumen Ledger, and we help companies run usage-based billing so invoices come out right without a finance team rebuilding them by hand. When companies replace a billing tool, controllers often end up owning the gap between what the system produces and what actually goes out to customers. Would you be open to a 20 minute call next week to see whether our approach is relevant to Quillon?
-
-- judge, faithful: It says the tool was removed 'recently', but the fact gives no timing. The 'replace a billing tool' framing also implies a replacement that the facts never mention.
+> Hi Amara, I saw that Quillon Payments removed a legacy billing tool from its stack. I'm Maya at Lumen Ledger. We turn product usage data into accurate invoices automatically. Would a conversation be worth it? If not, a quick no is fine and I won't write again.
 
 **d07** draft, open, passes
 
-Subject: Revenue Accountant role at Orbis
+Subject: Usage billing question
 
-> Lena, congratulations on joining Orbis Mobility as CFO. I noticed Orbis is hiring a Revenue Accountant. I'm Maya at Lumen Ledger, and we help companies run usage-based billing without a finance team rebuilding invoices by hand. Finance leaders in a new role often take a fresh look at how revenue work is split between people and systems before the team grows. If that review is on your list, would you be open to a 20 minute call next week to see whether we are relevant to Orbis?
-
-- judge, faithful: It says "we help companies run usage-based billing without a finance team rebuilding invoices by hand", which implies Orbis has usage-based billing, and no given fact says so; the "Finance leaders in a new role often" line is framed as a general pattern and is fine.
+> Hi Lena, I saw that you joined Orbis Mobility as CFO. I'm Maya at Lumen Ledger. We help finance teams bill for usage by turning product data into invoices automatically. Would it be worth a conversation? If not, just reply no and I won't write again.
 
 **d08** draft, open, passes
 
-Subject: Billing Specialist role at Sable
+Subject: Your billing tool review
 
-> Tom, I saw that Sable Robotics posted a job for a Senior Billing Specialist. I also came across a review from Sable of a billing tool that mentions invoice errors. Companies adding billing headcount often find that a good share of the work goes into checking and correcting invoices rather than the billing itself. We built Lumen Ledger so usage-based invoices are generated correctly from the start, without a finance team rebuilding them by hand. Would a 20 minute call next week be useful to see whether that fits the way Sable bills customers?
-
-- judge, faithful: It says 'a review from Sable of a billing tool', but the fact says only that someone left a review (not attributed to Sable as a company), and 'usage-based invoices' and 'the way Sable bills customers' imply unstated billing details.
+> Hi Tom, I saw you left a review of a billing tool that mentions invoice errors. I'm Maya at Lumen Ledger. We turn product usage data into invoices automatically. Would it be worth a conversation? If not, just reply no and I won't write again.
 
 **d09** draft, open, passes (referral: should open with who suggested it)
 
-Subject: Daniel Moore suggested I reach out
+Subject: Daniel Moore suggested I write
 
-> Priya, Daniel Moore suggested I write to you. I saw that Ferrovia Cloud added a usage tier to its enterprise plan. Companies that add usage pricing often find invoicing gets harder as the metered line items grow, and finance ends up reconciling usage data against contracts each cycle. At Lumen Ledger, we turn usage data into accurate invoices automatically, so finance teams do not have to rebuild them by hand. Would you be open to a 20 minute call next week to see whether this is relevant for Ferrovia Cloud?
+> Hi Priya, Daniel Moore suggested I write to you. I'm Maya at Lumen Ledger. We turn product usage data into accurate invoices automatically. Would it be worth a conversation? If not, just reply no and I won't write again.
 
-**d10** draft, open, fails: unsourced_name
+**d10** draft, open, passes
 
-Subject: Usage invoices on the 1st
+Subject: Usage-based invoicing question
 
-> Sam, congratulations on Nimbus Ledger Co's seed round. Nimbus bills on the 1st of each month for the prior month's usage. Teams that bill in arrears on usage often find invoice prep turns into a monthly round of exports and spreadsheet checks as the customer count grows. We built Lumen Ledger so usage-based invoices come straight from metered data, without a finance team rebuilding them by hand. Would you be open to a 20-minute call next week to see whether it fits the way Nimbus bills?
+> Hi Sam, I saw that Nimbus Ledger Co raised a seed round. I'm Maya at Lumen Ledger, and we turn product usage data into finished invoices automatically. Would a conversation about it be worth your time? If not, just reply no and I won't write again.
 
 **d11** draft, open, passes
 
-Subject: Per-event pricing and billing pipelines
+Subject: Billing pipelines at Glasswing
 
-> Yusuf, I noticed Glasswing Telemetry launched per-event pricing for its ingest API. I also saw the opening for a Data Engineer focused on billing pipelines. Teams that move to usage pricing often find the path from raw event data to an accurate invoice takes more engineering and finance effort than expected. At Lumen Ledger, we turn metered usage into invoices so finance does not rebuild them by hand and data teams are not maintaining one-off billing logic. Would you be open to a 20 minute call next week to compare notes on how we handle the metering-to-invoice step?
+> Hi Yusuf, I saw that Glasswing Telemetry posted a job for a Data Engineer focused on billing pipelines. I'm Maya at Lumen Ledger, and we turn product usage data into accurate invoices automatically. Is it worth a conversation? If not, just reply no and I won't write again.
 
 **d12** draft, open, passes (the webinar is private, the pricing change is citable)
 
-Subject: Usage pricing on two plans
+Subject: Usage pricing at Mirelle Studios
 
-> Chloe, I noticed Mirelle Studios moved two of its plans to usage pricing. Companies that make that shift often find the billing side gets heavier than expected, with invoices assembled from usage exports and spreadsheets at month end. At Lumen Ledger we handle usage-based billing so finance teams do not have to rebuild invoices by hand as metered plans grow. We work with finance and operations leaders who want metered pricing to scale without adding headcount to billing. Would you be open to a 20 minute call next week to see whether this is relevant for Mirelle?
+> Hi Chloe, I saw that Mirelle Studios moved two of its plans to usage pricing. I'm Maya from Lumen Ledger. We turn product usage data into invoices automatically. Would a conversation about it be worth having? If not, just reply no and I won't write again.
 
 **d13** draft, follow up, passes
 
 Subject: Re: billing at Halvard Analytics
 
-> Marta, following up on my earlier note. I saw Halvard Analytics posted a role for a Revenue Operations Manager. Finance teams adding a revenue operations hire often use the moment to look at how invoicing will scale as pricing gets more complex. We help companies run usage-based billing so invoices come out right without anyone rebuilding them by hand. Would a 20-minute call next week be worth it to see whether that is relevant for you?
+> Marta, My last note mentioned the Revenue Operations Manager role Halvard Analytics posted. At Lumen Ledger we turn product usage into ready-to-send invoices automatically. Would a short overview by email be useful? If not, just say so and I will not write again.
+
+- judge, faithful: The subject 'Re: billing at Halvard Analytics' implies billing is a topic for them, and 'My last note mentioned' invents a prior email; neither is in the facts.
 
 **d14** draft, follow up, passes
 
-Subject: Re: billing at Brightline Freight
+Subject: billing at Brightline Freight
 
-> Owen, following up on my earlier note. I saw Brightline Freight moved its API from flat plans to usage-based pricing. Finance teams that make that switch often find invoice volume and variability grow faster than the billing process built for flat plans. We help controllers run usage-based billing so invoices come out right without being rebuilt by hand. Would a 20-minute call next week be worth it to see whether that fits what you are planning?
+> Owen, I wrote recently about Brightline Freight moving its API from flat plans to usage-based pricing. At Lumen Ledger we turn usage records into finished invoices automatically. Would it be worth a look, yes or no?
 
-- judge, faithful: It implies their situation with "to see whether that fits what you are planning" and "billing process built for flat plans", which implies they have such a process and plans, though the general pattern is framed as "Finance teams... often find".
+**d15** draft, break up, passes
 
-**d15** draft, break up, fails: unsupported_about_them
+Subject: last note on billing
 
-Subject: closing the loop
+> Kai, I wrote earlier about the Billing Operations Lead role you posted, and this is my last note. Lumen Ledger turns usage data into invoices automatically. Is it worth a conversation, yes or no? If the answer is no, I will not write again.
 
-> Kai, I'll keep this short since it's my last note. I saw Pellucid Systems posted a role for a Billing Operations Lead. Teams adding usage-based pricing often find invoice work grows faster than headcount, and we help keep that automated. If that's ever relevant, would a 15-minute call be worth it?
-
-- judge, faithful: It says "Teams adding usage-based pricing" implying Pellucid is adding usage-based pricing, which is not in the facts; the pattern is framed generally but ties to the role posting, implying their plans.
+- judge, one_ask: As a last email it should close politely without pressure, but "Is it worth a conversation, yes or no? If the answer is no, I will not write again." still presses for a reply with a yes/no demand.
 
 **l01** draft linkedin, connect, passes
 
-> Marta, I noticed Halvard Analytics posted a role for a Revenue Operations Manager. I work with finance leaders on usage-based billing and would be glad to connect.
+> Hi Marta, I noticed Halvard Analytics is hiring a Revenue Operations Manager. I work on usage-based billing at Lumen Ledger and would be glad to connect.
 
 **l02** draft linkedin, connect, passes
 
-> Owen, I noticed Brightline Freight moved its API from flat plans to usage-based pricing. I work with controllers on usage billing and would like to connect.
+> Hi Owen, I saw Brightline Freight moved its API from flat plans to usage-based pricing. I talk with controllers about usage billing often and would be glad to connect.
 
 **l03** draft linkedin, connect, passes
 
-> Kai, I noticed Pellucid Systems is hiring a Billing Operations Lead. I work with RevOps leaders on usage-based billing and would be glad to connect.
+> Hi Kai, I noticed Pellucid Systems is hiring a Billing Operations Lead. I work on usage-based billing at Lumen Ledger and would be glad to connect with someone in RevOps.
 
 **l04** draft linkedin, message, passes
 
-> Ines, thanks for connecting, and congratulations on the $40M Series C led by Northwind Partners. I work with finance leaders at Lumen Ledger on usage-based billing, so teams are not rebuilding invoices by hand each cycle. Would it be useful if I sent over a short overview of how that works?
+> Ines, thanks for connecting. Congratulations on the $40M Series C led by Northwind Partners. I work with finance leaders at Lumen Ledger on usage-based billing, so their teams are not rebuilding invoices by hand each cycle. Would you be open to a short call to compare notes on how Corvo Health handles billing today?
+
+- judge, faithful: It implies Corvo Health has a billing process worth comparing ('how Corvo Health handles billing today') and that teams rebuild invoices by hand, and 'thanks for connecting' assumes a connection not in the facts.
+- judge, tone: 'Congratulations on the $40M Series C' is mild flattery and the sentence 'so their teams are not rebuilding invoices by hand each cycle' is awkward and presumptive, so it is not plain.
 
 **l05** draft linkedin, message, passes
 
-> Yusuf, thanks for connecting. I noticed Glasswing Telemetry launched per-event pricing for its ingest API. At Lumen Ledger we help companies run usage-based billing without a finance team rebuilding invoices by hand. Would it be useful if I sent over a short overview of how that works?
+> Yusuf, thanks for connecting. I noticed Glasswing Telemetry launched per-event pricing for its ingest API. At Lumen Ledger we help teams run usage-based billing without finance rebuilding invoices by hand. I am not sure who owns billing on your side, so would you be open to pointing me to the right person, or sharing a quick view if it is you?
 
-- judge, relevant: The recipient is Head of Data Platform, not a finance or revenue leader, though the message does tie to usage-based billing; the pitch about "finance team rebuilding invoices" is aimed at finance work, not his role.
+- judge, one_ask: It makes two asks joined by "or": "pointing me to the right person" and "sharing a quick view if it is you"; the second is a different action, so it is not one clear ask.
 
 **d2_01** draft, open, passes
 
-Subject: Billing after the Series B
+Subject: Ombria's Series B
 
-> Harriet, congratulations on the $22M Series B led by Calder Peak Ventures in October. Companies at that stage often revisit how billing scales as new pricing models and customer tiers get added. Teams that move toward usage-based pricing frequently find invoices drifting into spreadsheets and manual rebuilds at month end. At Lumen Ledger we run usage-based billing end to end, so finance reviews invoices rather than reconstructing them. Would you be open to a 20-minute call in the next two weeks to see whether it is relevant for Ombria?
+> Hi Harriet, I saw that Ombria Telematics raised a $22M Series B led by Calder Peak Ventures in October. I'm Maya at Lumen Ledger. We turn product usage data into accurate invoices automatically, so nobody builds them by hand. Would a conversation about how we do that be worth having? If not, just reply no and I won't write again.
 
 **d2_02** draft, open, passes (Only the hiring fact is citable.)
 
 Subject: Senior Billing Accountant role
 
-> Bastian, I noticed Velloria Freight is hiring a Senior Billing Accountant. I'm Maya Okafor at Lumen Ledger, and we help finance teams run usage-based billing without rebuilding invoices by hand. When companies add billing headcount, it is often a moment to decide which parts of invoicing should stay manual and which can be automated. Controllers we work with tend to care most about clean audit trails and fewer month-end corrections. Would you be open to a 20-minute call next week to see whether any of this is relevant as you shape that role?
+> Hi Bastian, I saw that Velloria Freight posted a job for a Senior Billing Accountant. I'm Maya at Lumen Ledger, and we turn usage data into accurate invoices automatically. Would it be worth a conversation to see whether that fits what you need? If not, just reply no and I won't write again.
 
 **d2_03** draft, open, passes
 
-Subject: Billing platform fees plus overages
+Subject: Invoicing at Thornquist Labs
 
-> Leilani, I noticed Thornquist Labs replaced flat annual plans with a platform fee plus per-API-call overages. Companies that make that shift often find invoicing gets harder, since each bill has to combine a fixed fee with metered usage that changes month to month. In many cases finance ends up pulling usage data and rebuilding invoices by hand. We built Lumen Ledger to turn metered usage into accurate invoices automatically, so that work does not fall to a finance team. Would you be open to a 20-minute call next week to see whether it is a fit for Thornquist Labs?
+> Hi Leilani, I saw Thornquist Labs has posted openings for four Account Executives. I'm Maya with Lumen Ledger. We turn product usage data into accurate invoices, so billing runs without manual work. Is it worth a conversation to see if that fits? If not, just reply no and I won't write again.
 
-**d2_04** draft, open, fails: unsourced_number (numbers: cite exactly as written, no rounding)
+**d2_04** draft, open, passes (numbers: cite exactly as written, no rounding)
 
-Subject: Metered invoicing as you scale
+Subject: Usage billing at Brightwater
 
-> Marcus, Brightwater grew ARR from $14.2M to $31.7M in 18 months. You also bill 2,340 business customers monthly in arrears based on metered usage. Companies billing in arrears on metered usage often find that invoice prep grows with customer count rather than with headcount. We built Lumen Ledger to turn metered usage into finished invoices without a finance team rebuilding them by hand. Would you be open to a 20-minute call next week to see whether it fits Brightwater?
+> Hi Marcus, I read that Brightwater Metering grew ARR from $14.2M to $31.7M in 18 months. I'm Maya at Lumen Ledger, and we turn metered usage data into accurate invoices automatically. Would a conversation be worth it? If not, just reply no and I will not write again.
 
 **d2_05** draft, follow up, passes (Follow-up after no reply to the open.)
 
-Subject: Pellwick's move to usage billing
+Subject: monthly invoicing at Pellwick
 
-> Grace, following up on my earlier note. Pellwick moved to monthly usage-based billing in September 2026. Teams that make that shift often find the first few monthly cycles are where invoice work piles up for the controller. We help finance teams issue usage-based invoices without rebuilding them by hand. Would a 20-minute call next week be useful to see how that works?
+> Grace, I wrote to you recently about Pellwick Software moving to monthly usage-based billing in September 2026. At Lumen Ledger we turn usage data into monthly invoices automatically. Would a short look at how that works be useful, yes or no? If not, just reply no and I will not write again.
 
 **d2_06** draft, open, passes
 
-Subject: Routing API usage pricing
+Subject: A question about billing
 
-> Callum, I saw Kestrava launched usage pricing for its routing API. I also noticed you are hiring a Revenue Operations Analyst. Teams that add usage pricing often find invoicing gets harder as volume grows, with metered data pulled together by hand at month end. We built Lumen Ledger to turn usage data into accurate invoices without a finance team rebuilding them manually. Would you be open to a 20 minute call next week to see whether it is relevant for Kestrava?
+> Hi Callum, I saw that Kestrava Logistics posted a job for a Revenue Operations Analyst. I'm Maya at Lumen Ledger, and we turn product usage data into accurate invoices automatically. Would a conversation be worth it? If not, just reply no and I won't write again.
 
 **d2_07** draft, open, passes (referral: open with who suggested it)
 
-Subject: Invoicing for per-transaction API pricing
+Subject: Invoicing for your API product
 
-> Agnieszka, Tomasz Wierzbicki suggested I write to you about invoicing for the new API product. I understand Wiślane Systemy introduced per-transaction pricing for its payments API. Companies that move to per-transaction pricing often find their invoicing tools were built for flat fees, and finance ends up reconciling usage data with spreadsheets. We built Lumen Ledger to turn usage records into accurate invoices automatically, so billing scales with transaction volume rather than headcount. Would you be open to a 20-minute call next week to see whether it fits what you have planned for the API product?
+> Hi Agnieszka, Tomasz Wierzbicki suggested I write to you about invoicing for your new API product. I'm Maya at Lumen Ledger, and we turn usage data into accurate invoices automatically. Is this worth a conversation? If not, just say so and I won't write again.
 
 **d2_08** draft, follow up, passes (Follow-up after no reply to the open.)
 
-Subject: Re: billing at Fjordlys Betalinger ApS
+Subject: Per-transaction billing in DKK and EUR
 
-> Søren, following up on my earlier note. Fjordlys bills merchants per transaction and settles monthly in DKK and EUR. You are also hiring a Revenue Accountant in Aarhus. Companies settling transaction volume in two currencies often find month-end invoicing grows faster than headcount. We help finance teams turn usage data into accurate invoices without rebuilding them by hand. Would a 20-minute call next week be worth it to see whether that fits?
+> Søren, I wrote recently about billing at Fjordlys Betalinger, where merchants are billed per transaction and settled monthly in DKK and EUR. Lumen Ledger turns per-transaction usage into finished invoices automatically. Is this worth a look, yes or no? If not, just say so and I will not write again.
 
 **d2_09** draft, open, passes (Title does not match the persona; treat as a likely wrong buyer.)
 
 Subject: Pay-as-you-go storage billing
 
-> Priyanka, Lattimer Cloud recently launched a pay-as-you-go plan for its storage product. I also noticed an open Billing Systems Engineer role on your careers page. Companies that add usage pricing often find invoicing gets harder as metered plans grow, and someone ends up stitching usage data into invoices. We built Lumen Ledger so usage-based billing runs without a finance team rebuilding invoices by hand. Could you point me to whoever owns billing at Lattimer Cloud, so I can send them a short overview?
+> Hi Priyanka, I saw that Lattimer Cloud launched a pay-as-you-go plan for its storage product. I'm Maya at Lumen Ledger, and we turn product usage into accurate invoices automatically. Would a conversation about this be worth it for your team? If not, just reply no and I won't write again.
 
-- judge, faithful: It says "on your careers page" and "your" implies she owns it, and the sentence "someone ends up stitching usage data into invoices" is framed generally, but "so usage-based billing runs without a finance team rebuilding invoices by hand" is only a product claim; the careers fact is accurately stated, so the main risk is "on your careers page" implying Priyanka's own page, which is minor and the output is otherwise faithful.
+- judge, one_ask: It asks "Would a conversation about this be worth it for your team?" and also tells her to "just reply no", which gives two asks or a muddled one rather than exactly one clear, small ask.
 
 **d2_10** draft, follow up, passes (Follow-up after no reply to the open. Nothing new is known since the first email.)
 
-Subject: Re: billing at Corridor Health Systems
+Subject: Revenue Operations hire at Corridor
 
-> Nadia, following up on my note from last week. I saw Corridor Health Systems is hiring a Revenue Operations Manager. When companies add that role, billing workflows often get a fresh look, and teams adding usage-based pricing often find invoices end up being rebuilt by hand in spreadsheets. We built Lumen Ledger so usage-based invoices come out right without finance assembling them manually. Would a 20-minute call in the next two weeks be worth it to see whether that's relevant for you?
+> Nadia, I wrote recently after seeing that Corridor Health Systems posted a job for a Revenue Operations Manager. At Lumen Ledger, we turn usage data into finished invoices automatically. Is this worth a look, yes or no? If not, just say so and I will not write again.
 
 **d2_11** draft, follow up, passes (Follow-up; the new CFO appointment is new since the open.)
 
 Subject: Re: billing at Granitebay Payroll
 
-> Ifeoma, following up on my earlier note. I saw Granitebay Payroll posted a role for a Billing Specialist. With Ruth Valdez stepping in as CFO in October, it seemed like a reasonable time to share how we work. Lumen Ledger handles usage-based billing so finance teams are not rebuilding invoices by hand. Companies adding billing headcount often look at what can be automated before the hire starts. Would a 20-minute call in the next two weeks be worth it to see if this fits?
+> Ifeoma, I wrote earlier after seeing that Granitebay Payroll posted a job for a Billing Specialist. At Lumen Ledger, we turn usage data into finished invoices automatically. Is this worth a look, yes or no?
 
 **d2_12** draft, bump, passes (Bump: two prior emails, no reply. Keep it very short.)
 
-Subject: Re: billing at Skerry Analytics
+Subject: One question on billing
 
-> Tobias, a short follow-up on my last note. I saw Skerry Analytics recently added a CPQ tool to its sales stack. Teams that tighten up quoting often find invoicing becomes the next place where manual work piles up. We help keep usage-based billing out of spreadsheets. Would a 20-minute call next week be worth it?
+> Tobias, Bringing my earlier note back to the top of your inbox with a shorter version. We turn usage data into finished invoices automatically. Does billing sit with you at Skerry Analytics? If not, a quick no is fine and I will stop writing.
+
+- judge, specific: It only names the company ('Does billing sit with you at Skerry Analytics?') and does not use the CPQ fact, so it would fit any company.
 
 **d2_13** draft, bump, passes (only private facts: nothing citable)
 
 Subject: Re: billing at Marlowe Data Exchange
 
-> Eleanor, a short follow-up on my last note. We help companies bill on usage without finance rebuilding invoices by hand each cycle. Finance teams that add usage pricing often find invoice prep grows faster than headcount. Would a 20-minute call next week be worth it to see whether this is relevant for Marlowe Data Exchange?
+> Eleanor, I'm bringing my earlier note back to the top of your inbox. At Lumen Ledger we turn product usage data into finished invoices automatically. Is it worth a look, yes or no?
 
-- judge, specific: Facts are empty and the body is generic ('We help companies bill on usage...'), apart from naming Marlowe Data Exchange, so it rests on no given fact.
+- judge, specific: Facts are empty and the body is generic: "we turn product usage data into finished invoices automatically" would fit any company; only the company name appears in the subject.
 
 **d2_14** draft, break up, passes (Break-up: fourth and final email, no replies so far.)
 
-Subject: Closing the loop, Gideon
+Subject: last note on billing
 
-> Gideon, I'll keep this to one last note. Halyard moved its commercial customers to metered energy-data pricing. Finance teams that make that shift often find invoices take more manual work as usage data grows. We handle usage-based billing so invoices come straight from the metered data. If that's worth 20 minutes at some point, would you reply with a time that suits you?
+> Gideon, I wrote a little while ago about billing, so this will be my last note. Since Halyard moved commercial customers to metered energy-data pricing, we can turn that usage into invoices automatically. Is this worth a look, yes or no? If not, no reply is needed and I won't write again.
 
 **d2_15** draft, break up, passes (Break-up email.)
 
-Subject: Closing the loop, Anouk
+Subject: Closing the loop on billing
 
-> Anouk, I'll keep this short since I haven't heard back. I saw Dijkstra Mobiliteit is hiring a Billing Operations Specialist in Utrecht. When companies grow their billing team, they often look at how much invoice work can be automated, and that is what we help with at Lumen Ledger. If it's worth a 20 minute call, just reply and I'll send times; otherwise I won't follow up again.
+> Hi Anouk, Since my last note about the Billing Operations Specialist role you posted in Utrecht, I haven't heard back, so this will be my last email. We automate usage-based invoicing so it doesn't have to be rebuilt by hand. Should I leave this here, yes or no? Either way, I won't write again unless you reach out.
+
+- judge, faithful: It claims "Since my last note about the Billing Operations Specialist role" and "usage-based invoicing so it doesn't have to be rebuilt by hand", implying their invoicing is usage-based and manually rebuilt, which the facts do not state.
 
 **d2_16** draft, open, passes
 
-Subject: Billing after the checkout change
+Subject: Billing widget on checkout
 
-> Rafael, I noticed Quayline Commerce removed a subscription billing widget from its checkout pages. When companies change how billing shows up at checkout, the controller's office often ends up absorbing the follow-on work in invoicing and reconciliation. We built Lumen Ledger so usage-based and recurring charges become accurate invoices without a finance team rebuilding them by hand. I don't know whether any of that applies to you, so I won't guess. Would you be open to a 20-minute call next week to see if it's worth a closer look?
+> Hi Rafael, I saw that Quayline Commerce removed a subscription billing widget from its checkout pages. I'm Maya at Lumen Ledger, and we build software that turns usage data into invoices automatically. Is it worth a conversation? If not, just reply no and I won't write again.
 
 **d2_17** draft linkedin, connect, passes (Limit: 200 characters)
 
-> Dominic, I noticed Northfall Robotics posted a job for a Head of Billing. I spend my days with CFOs on usage-based billing and would be glad to connect.
+> Dominic, I saw Northfall Robotics raised a $60M Series C and posted a Head of Billing role. I work on usage-based billing at Lumen Ledger and would be glad to connect.
 
 **d2_18** draft linkedin, connect, passes (Limit: 300 characters)
 
-> Maëlle, I noticed Ateliers Brisemer is hiring a Comptable fournisseurs et clients in Nantes. I talk with controllers about invoicing and would be glad to connect.
+> Maëlle, I saw Ateliers Brisemer is hiring a Comptable fournisseurs et clients in Nantes. I work with controllers on billing and invoicing, so I would be glad to connect.
 
 **d2_19** draft linkedin, connect, passes (Limit: 150 characters)
 
-> João, I saw Serra Azul Pagamentos launched a per-transaction plan for small merchants. I work on usage-based billing at Lumen Ledger and would be glad to connect with someone in RevOps.
+> João, I saw Serra Azul Pagamentos launched a per-transaction plan for small merchants. I work on usage-based billing at Lumen Ledger and would be glad to connect.
 
-**d2_20** draft linkedin, message, fails: unsupported_about_them (First LinkedIn message after she accepted the connection request.)
+**d2_20** draft linkedin, message, passes (First LinkedIn message after she accepted the connection request.)
 
-> Hana, thanks for connecting. I saw that Ridgeway bills devices per active sensor per month. I also noticed a cloud data warehouse was recently added to the stack. At Lumen Ledger we help revenue operations teams run usage-based billing without finance rebuilding invoices by hand. Would you be open to a short call to compare notes on how per-sensor usage flows into invoicing today?
+> Hana, Saw that Added a cloud data warehouse to its stack. We do usage-based billing for finance teams. Worth a few minutes to compare notes?
 
-- judge, faithful: It implies a pain about them: "without finance rebuilding invoices by hand" and "how per-sensor usage flows into invoicing today" are not in the facts, and the first is not framed as a general pattern.
+**d2_21** draft linkedin, message, passes (Write in English.)
 
-**d2_21** draft linkedin, message, fails: unsupported_about_them (Write in English.)
+> Ximena, thanks for connecting. I saw that Grupo Altiplano is expanding its freight-by-weight pricing to three new routes in northern Mexico. At Lumen Ledger we help finance teams run usage-based billing so invoices don't have to be rebuilt by hand as pricing models grow. Would you be open to a short call to compare notes on how you handle weight-based invoicing today?
 
-> Ximena, thanks for connecting. I saw Grupo Altiplano announced freight-by-weight pricing on 3 new routes in northern Mexico. Across 14 distribution centers, that kind of usage-based pricing is where invoices often end up rebuilt by hand. At Lumen Ledger we help finance teams bill on usage without that manual work. Would it be useful if I sent a short overview of how that works?
-
-- judge, faithful: It links the facts to a billing pain with "Across 14 distribution centers, that kind of usage-based pricing is where invoices often end up rebuilt by hand", which implies a process problem at their company; the facts say nothing about it, and "often" only partly frames it as a general pattern.
+- judge, faithful: It implies a billing pain about them: "so invoices don't have to be rebuilt by hand as pricing models grow" and "how you handle weight-based invoicing today" assume they invoice by weight and rebuild by hand, which the facts don't say.
 
 **d2_22** draft, bump, passes (Bump: one prior email, no reply.)
 
-Subject: Re: billing at Pyxis Fleet Intelligence
+Subject: usage data to invoices
 
-> Okonkwo, following up on my last note. I saw Pyxis is hiring a Data Engineer for billing pipelines and recently added a streaming event pipeline. We let usage data flow straight into invoices, so a pricing change does not mean building a new custom pipeline. Would a 20 minute call next week be worth it to see if that fits?
+> Okonkwo, Writing once more about my earlier note. At Lumen Ledger we turn product usage data into invoices, even when pricing changes. Is this worth a look, yes or no?
 
-- judge, relevant: The pitch is about usage data flowing into invoices and pricing changes, which touches billing, but the recipient is a Director of Data Engineering, not a finance or revenue leader. The billing-pipeline hire connects it to their work, so it is arguably relevant, but the criterion targets finance and revenue leaders.
+- judge, specific: The body only says "we turn product usage data into invoices, even when pricing changes" and never mentions Pyxis, the streaming pipeline or the billing pipelines job, so it would fit any company.
 
 **d2_23** draft, follow up, passes (Follow-up after no reply.)
 
-Subject: Per-policy billing at Clearmont
+Subject: Re: billing at Clearmont Insurance Tech
 
-> Winston, following up on my earlier note with one more specific thought. Clearmont started charging carriers per policy quoted through its API, and you are hiring a Revenue Accountant with ASC 606 experience. Companies that add per-unit pricing often find invoicing and revenue schedules turn into spreadsheet work as volume grows. We turn metered usage into invoices and ASC 606 revenue schedules automatically, so finance reviews the numbers instead of rebuilding them. Would a 20-minute call next week be useful to see whether it fits?
+> Winston, I wrote to you earlier because Clearmont Insurance Tech started charging carriers per policy quoted through its API. At Lumen Ledger we turn usage data like that into invoices automatically. Is it worth a look, yes or no?
 
 **d2_24** draft, open, passes (numbers: $0.004 and the two dates are the only citable figures)
 
-Subject: Per-call pricing from January
+Subject: Billing the new per-call pricing
 
-> Leopold, I saw that Tessellate Maps announced on 3 November that its geocoding API will cost $0.004 per call starting 1 January 2027. Companies moving to per-call pricing often find that metering, rating and invoicing take more finance time than expected, especially in the first few billing cycles. At Lumen Ledger we handle usage-based billing end to end, so invoices are built from usage data without anyone rebuilding them by hand. Would you be open to a 20 minute call before the January change to see whether it fits?
+> Hi Leopold, I saw that Tessellate Maps announced on 3 November that its geocoding API will cost $0.004 per call from 1 January 2027. I'm Maya from Lumen Ledger, and we turn metered API usage into accurate invoices automatically. Would a conversation about invoicing the new per-call pricing be worth it? If not, just say so and I won't write again.
 
 **d2_25** draft, open, passes
 
-Subject: Per-GB invoicing at Ondaverde
+Subject: Invoicing question for Ondaverde
 
-> Beatriz, I saw that Ondaverde Telecom appointed Dagny Oyelowo as Chief Financial Officer in October. I also read that your enterprise customers are billed per GB transferred and invoiced monthly. Finance teams invoicing on metered usage often find that reconciling usage data against invoices takes more manual work as volumes grow. We built Lumen Ledger to turn usage data into accurate invoices so nobody has to rebuild them by hand. Would you be open to a 20-minute call in the next two weeks to see whether it is relevant for Ondaverde?
+> Hi Beatriz, I saw that Ondaverde Telecom appointed Dagny Oyelowo as Chief Financial Officer in October 2026. I'm Maya from Lumen Ledger, and we turn usage data into accurate invoices automatically. Would a conversation about that be worth it for you? If not, just reply no and I won't write again.
 
 **d2_26** draft, bump, passes (Bump.)
 
-Subject: billing at Fernbrook Labs
+Subject: Usage-based billing question
 
-> Emeka, following up on my last note. Corvex Billing appeared on the Fernbrook Labs customer portal in August and was no longer detected there by November. We help finance teams run usage-based billing without rebuilding invoices by hand. Would a 20-minute call this month be worth your time?
+> Hi Emeka, I wrote to you a little while ago about billing. At Lumen Ledger we run usage-based billing and produce the invoices, so no one rebuilds them by hand. Would a short note on how it works be useful, yes or no? If not, just say so and I will stop writing.
+
+- judge, specific: The body never mentions Fernbrook Labs or Corvex Billing and only says "I wrote to you a little while ago about billing", which would fit any company.
+- judge, faithful: It implies a manual process at their company with "so no one rebuilds them by hand" and says "usage-based billing", neither of which is in the facts.
 
 **d2_27** draft linkedin, connect, passes (Limit: 200 characters)
 
-> Siobhán, Felix Dunne, your former colleague, suggested I reach out. I work with finance leaders on usage-based billing at Lumen Ledger and would be glad to connect.
+> Siobhán, Felix Dunne suggested I reach out to you. I work with finance leaders on usage-based billing and would be glad to connect.
 
 **d2_28** draft linkedin, message, passes
 
-> Ravindra, thanks for connecting. I saw that Monsoonware posted a job for an Accounts Receivable Lead. At Lumen Ledger we help finance teams run usage-based billing without rebuilding invoices by hand. Would a short overview of how that works from a controller's side be useful to you?
+> Ravindra, thanks for connecting. I saw that Monsoonware builds metering software for utilities and recently posted a role for an Accounts Receivable Lead. At Lumen Ledger we help finance teams run usage-based billing without rebuilding invoices by hand. Would it be useful if I sent a short overview of how other controllers have set that up?
 
 **d2_29** draft, break up, passes (Break-up email.)
 
-Subject: closing the loop on billing
+Subject: Last note on billing
 
-> Ingrid, I saw Bergtind Cloud posted a role for a Billing Analyst. Teams adding billing headcount often find part of that work is rebuilding invoices by hand, which is what we automate for usage-based pricing. This is my last note, so if it is not a priority I will leave it here. If it is worth a look, would you be open to a 20-minute call next week?
+> Hi Ingrid, I wrote earlier about the Billing Analyst role you posted, and this is my last note. At Lumen Ledger we turn product usage data into finished invoices automatically. Is it a no for now? Either way, I won't write again.
 
 **d2_30** draft, break up, passes (Break-up email.)
 
-Subject: Last note on billing
+Subject: closing the loop
 
-> Theo, one last note from me. Glasshouse added per-ticket service fees for venue partners and is hiring a Billing Operations Lead. Teams adding per-unit fees often find invoices drift back to manual work as volume grows. We keep usage billing automated end to end. Worth 15 minutes next week?
-
-- judge, one_ask: It is a break-up email but ends with 'Worth 15 minutes next week?', a meeting ask that keeps pressure on instead of closing politely.
+> Theo, I wrote earlier after seeing the per-ticket service fees Glasshouse added for venue partners. At Lumen Ledger we turn usage data into accurate invoices automatically. Is this worth a look at all, yes or no? If it isn't, just say so and I won't write again.
 
 ## Every brief
 

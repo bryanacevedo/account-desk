@@ -125,9 +125,12 @@ def send_one(cur, payload: dict) -> None:
     # Lock the mailbox and its domain while counting, so two workers cannot both take the last slot.
     db.one(cur, "select id from mailboxes where id = %s for update", mailbox["id"])
     domain_cap = db.val(cur, "select daily_cap from sending_domains where domain = %s for update", mailbox["domain"])
-    domain_today = db.val(cur, """select count(*) from messages m join mailboxes mb on mb.id = m.mailbox_id
+    domain_today = db.val(cur, """select (select count(*) from messages m join mailboxes mb on mb.id = m.mailbox_id
                                   where mb.domain = %s and m.sent_at >= date_trunc('day', app_now())
-                                  and m.status in ('sent','sending','send_unknown')""", mailbox["domain"])
+                                  and m.status in ('sent','sending','send_unknown'))
+                                  + (select count(*) from reply_sends rs join mailboxes mb on mb.id = rs.mailbox_id
+                                  where mb.domain = %s and rs.sent_at >= date_trunc('day', app_now())
+                                  and rs.status in ('sent','sending','send_unknown'))""", mailbox["domain"], mailbox["domain"])
     if outreach.sent_today(cur, mailbox["id"]) >= outreach.mailbox_capacity(cur, mailbox) or domain_today >= domain_cap:
         later(timeutil.next_slot(now + timedelta(days=1), timezone=person["timezone"], country=person["country"],
                                  window=window, jitter_key=f"m{m['id']}c"), "mailbox at its daily cap")

@@ -30,26 +30,25 @@ def brief(p: dict) -> dict:
     return {"findings": findings, "angle": f"{p['company']}: {_lower_first(lead).rstrip('.')}." if lead else p["company"]}
 
 
-WHY = {
-    "cfo": ["New leaders usually find the gap between what was sold and what was invoiced in their first close.",
-            "That tends to show up first as a longer month-end close."],
-    "controller": ["That is usually when revenue recognition moves back into spreadsheets.",
-                   "It tends to land on the controller's team before anyone plans for it."],
-    "revops": ["That is usually where billing and the CRM stop agreeing on what was sold.",
-               "It tends to mean more manual invoice fixes each month."],
-    "data": ["That usually means finance and product start reporting two different usage numbers.",
-             "It tends to put a new pipeline between the product data and the ledger."],
-}
+# The stand-in drafts follow the same three beats the drafting prompt asks of the model (bl_123): the signal in one
+# sentence, who we are and what we do, one question, and a way to say no. They name no other company and no habit.
+INTRO = ["We do usage-based billing for finance teams.",
+         "We build usage-based billing for finance teams.",
+         "We do billing and invoicing for companies that charge on usage."]
 ASK = [
-    "Worth 20 minutes to compare how other finance teams handled it?",
-    "Open to a short call next week?",
-    "Is this on your list for this quarter?",
-    "Would it help to see how a team your size set this up?",
+    "If invoicing sits with you, is it worth a conversation?",
+    "Is billing something you look after, and is it worth a conversation?",
+    "Does this land with you, and is it worth a conversation?",
 ]
+DECLINE = ["If it isn't, say so and I won't follow up.",
+           "If not, tell me and I'll leave it there."]
 FOLLOW = [
-    "Following up on my last note, since {clause}. Teams that moved early kept month-end close from growing.",
-    "One more thought: since {clause}, this is usually where the manual invoice work starts.",
+    "I wrote earlier because {clause}.",
+    "I wrote a few days ago because {clause}.",
 ]
+FOLLOW_OFFER = ["Usage billing is what we do.", "Billing on usage is our whole job."]
+FOLLOW_ASK = ["Is that worth a conversation, or should I leave it there?",
+              "Is it worth a conversation, or should I close this out?"]
 BREAKUP = [
     "I'll stop here. If billing comes up later this year, I'm easy to find.",
     "Last note from me. If the timing changes, reply and I'll pick it up.",
@@ -95,34 +94,33 @@ def draft(p: dict) -> dict:
     signal_facts = [f for f in facts if f["kind"].startswith("signal:")]
     page_facts = [f for f in facts if f["kind"] in ("page:billing", "page:careers")]
     lead = signal_facts[0] if signal_facts else (page_facts[0] if page_facts else None)
-    support = next((f for f in page_facts if f is not lead), None)
-    persona = (p.get("persona_key") or "cfo")
     job = p["step"]["job"]
-    s: list[dict] = [{"text": f"{first},", "kind": "courtesy", "fact_ids": []}]
+    sender_first = (p.get("sender") or "").split(" ")[0] or "me"
+    greeting = f"Hi {first}," if job == "open" else f"{first},"
+    s: list[dict] = [{"text": greeting, "kind": "courtesy", "fact_ids": []}]
+    intro = f"I'm {sender_first} at {p.get('our_company') or 'our company'}. {r.choice(INTRO)}"
     if job == "open" and referral:
         who = referral["text"].split(" suggested ")[0]
         s.append({"text": f"{who} suggested I get in touch with you.", "kind": "claim", "fact_ids": [referral["id"]]})
-        c2 = _claim(company, lead) if lead else None
-        if c2:
-            s.append({"text": c2, "kind": "claim", "fact_ids": [lead["id"]]})
-        s.append({"text": r.choice(WHY.get(persona, WHY["cfo"])), "kind": "courtesy", "fact_ids": []})
+        s.append({"text": intro, "kind": "courtesy", "fact_ids": []})
         s.append({"text": r.choice(ASK), "kind": "ask", "fact_ids": []})
+        s.append({"text": r.choice(DECLINE), "kind": "courtesy", "fact_ids": []})
     elif job == "open":
         c = _claim(company, lead) if lead else None
         if c:
-            s.append({"text": c, "kind": "claim", "fact_ids": [lead["id"]]})
-        c2 = _claim(company, support) if support else None
-        if c2 and r.random() < 0.75:
-            s.append({"text": c2, "kind": "claim", "fact_ids": [support["id"]]})
-        s.append({"text": r.choice(WHY.get(persona, WHY["cfo"])), "kind": "courtesy", "fact_ids": []})
+            s.append({"text": c.replace("Saw that", "I saw that", 1).replace("Your docs say", "Your docs say", 1),
+                      "kind": "claim", "fact_ids": [lead["id"]]})
+        s.append({"text": intro, "kind": "courtesy", "fact_ids": []})
         s.append({"text": r.choice(ASK), "kind": "ask", "fact_ids": []})
+        s.append({"text": r.choice(DECLINE), "kind": "courtesy", "fact_ids": []})
     elif job == "follow_up":
         if lead:
             s.append({"text": r.choice(FOLLOW).format(clause=clause(company, lead["text"])), "kind": "claim",
                       "fact_ids": [lead["id"]]})
         else:
-            s.append({"text": "Following up on my last note about billing.", "kind": "courtesy", "fact_ids": []})
-        s.append({"text": r.choice(ASK), "kind": "ask", "fact_ids": []})
+            s.append({"text": "I wrote earlier about billing.", "kind": "courtesy", "fact_ids": []})
+        s.append({"text": r.choice(FOLLOW_OFFER), "kind": "courtesy", "fact_ids": []})
+        s.append({"text": r.choice(FOLLOW_ASK), "kind": "ask", "fact_ids": []})
     else:
         s.append({"text": r.choice(BREAKUP), "kind": "courtesy", "fact_ids": []})
     # Real drafts go wrong sometimes. Only on a first attempt, so a redraft with the failures listed comes back clean.
@@ -163,7 +161,7 @@ def draft_linkedin(p: dict) -> dict:
         if p.get("attempt", 1) == 1:
             s.append({"text": r.choice(CONNECT_WHY), "kind": "courtesy", "fact_ids": []})
     else:
-        s.append({"text": r.choice(WHY.get(p.get("persona_key") or "cfo", WHY["cfo"])), "kind": "courtesy", "fact_ids": []})
+        s.append({"text": r.choice(INTRO), "kind": "courtesy", "fact_ids": []})
         s.append({"text": r.choice(LI_ASK), "kind": "ask", "fact_ids": []})
     return {"sentences": s}
 
@@ -216,6 +214,19 @@ def suggest_reply(p: dict) -> dict:
                 "I'll bring a short walkthrough of how invoicing and the ledger stay in step.")
     else:
         body = f"{first}, good question. Short answer: yes, and I can show you how in 20 minutes. Want me to send two times?"
+    return {"body": body}
+
+
+@sim("refine_reply")
+def refine_reply(p: dict) -> dict:
+    """A stand-in rewrite: 'short' keeps the first two sentences, 'time' ends on a question about a time."""
+    ins = (p.get("instruction") or "").lower()
+    parts = re.split(r"(?<=[.!?])\s+", (p.get("current") or "").strip())
+    if "short" in ins:
+        parts = parts[:2]
+    body = " ".join(parts)
+    if "time" in ins:
+        body = body.rstrip("?") + (" " if body.endswith((".", "?")) else ". ") + "Would Tuesday at 10:00 or Wednesday at 14:00 your time work?"
     return {"body": body}
 
 

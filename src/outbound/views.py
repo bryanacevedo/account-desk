@@ -494,7 +494,7 @@ def promotion_check(cur, play: dict) -> dict:
 # ---------------------------------------------------------------- approvals and replies
 
 def message(cur, message_id: int) -> dict | None:
-    m = db.one(cur, """select m.*, email_no(m.enrollment_id, m.step_index) as email_no, pe.full_name, pe.photo_url, pe.first_name, pe.title, pe.email, pe.country, a.name as company,
+    m = db.one(cur, """select m.*, email_no(m.enrollment_id, m.step_index) as email_no, e.person_id, pe.full_name, pe.photo_url, pe.first_name, pe.title, pe.email, pe.country, a.name as company,
                               a.id as account_id, p.name as play, p.autonomy, ap.why_now, ap.brief, u.name as owner,
                               mb.address as mailbox
                        from messages m join enrollments e on e.id = m.enrollment_id
@@ -506,6 +506,13 @@ def message(cur, message_id: int) -> dict | None:
         return None
     ids = (m["citations"] or {}).get("ids", [])
     m["facts"] = db.all(cur, "select id, kind, text, source_url, observed_at from facts where id = any(%s)", ids) if ids else []
+    slot = outreach.message_slot(cur, message_id) if m["status"] in ("awaiting_approval", "failed_gate") else None
+    m["next_slot"] = slot["at"] if slot else None
+    m["slot_label"] = {k: v for k, v in slot.items() if k != "at"} if slot else None
+    if m["channel"] == "email" and m["status"] in ("awaiting_approval", "failed_gate"):
+        lo, hi = outreach.step_limits(cur, m)
+        m["limit"] = [lo, hi]
+        m["words"] = outreach.edit_words(m["body"])
     return m
 
 

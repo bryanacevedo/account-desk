@@ -401,7 +401,7 @@ def test_the_world_call_note_plants_are_the_legacy_reasons_on_real_signals():
     # The same reasons, so what the Tuesday routine does with each (set aside, dismiss, draft) still finds it.
     assert {r[1] for r in runner.MORE_PLANTED_WORLD} == {r[1] for r in runner.MORE_PLANTED}
     assert len(runner.MORE_PLANTED_WORLD) == len(runner.MORE_PLANTED)
-    assert runner.MORE_PLANTED_WORLD[-1][0] == runner.MORE_PLANTED[-1][0]     # the spread's own signal is the same
+    assert runner.MORE_PLANTED_WORLD[-1][1] == runner.MORE_PLANTED[-1][1] == runner.SPREAD[0]  # the last is the e-invoicing reason that the spread follows, on each mode's own signal (decision 91)
     assert set(runner.UNEDITED_WORLD) <= {p[0] for p in catalog.PLAYS}
     assert all(runner.UNEDITED < r < 0.92 for r in runner.UNEDITED_WORLD.values())
 

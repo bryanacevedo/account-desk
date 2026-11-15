@@ -261,6 +261,8 @@ class SimEmail:
         self.unknown_rate = 0.004
 
     def send(self, cur, message: dict, mailbox: dict, person: dict, headers: dict) -> SendResult:
+        if message.get("kind") == "reply":  # a person answered a reply: the simulated buyer does not answer back
+            return SendResult("sent", f"sim-{message['id']}")
         rng = random.Random(f"send:{message['id']}")
         if rng.random() < self.unknown_rate:
             return SendResult("unknown", None, "timeout talking to the mail provider")

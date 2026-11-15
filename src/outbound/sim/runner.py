@@ -421,14 +421,14 @@ MORE_PLANTED = [
     # on this signal and the rule needs 1.5 times as many accounts as when it was set aside (five, then eight), so a
     # lower share left it a few accounts short on a build (2026-11-12). The dismissed one sits on the hiring signal and the
     # set-aside one at 0.9, as in the world build: a thin segment lost each of them once the reps' call hours changed (2026-11-14).
-    ("pricing_change", REASONS[5][0], 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
-    ("pricing_change", REASONS[5][0], 0.95, datetime(2026, 10, 1, tzinfo=UTC), None),
+    ("pricing_visit", REASONS[5][0], 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
+    ("pricing_visit", REASONS[5][0], 0.95, datetime(2026, 10, 1, tzinfo=UTC), None),
     ("pricing_visit", ERP, 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),          # heard for a while, then not
     ("hiring_function", PORTAL, 0.8, None, None),
     ("pricing_change", COMMITS, 0.8, None, None),
     ("pricing_visit", CREDITS, 0.7, None, None),
     ("pricing_visit", TOOLS[1][0], 0.9, None, None),                                 # a competitor
-    ("hiring_function", EINVOICE, 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
+    ("pricing_visit", EINVOICE, 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),  # web visits have the calls: it opens, then lapses
 ]
 # World mode (decision 74): the same plants on the signals the world's first calls come in on. A world build books about
 # a third of the legacy desk's first calls on a web visit and a tenth as many on a new executive, and the pattern rule

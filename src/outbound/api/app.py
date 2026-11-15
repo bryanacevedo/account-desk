@@ -40,6 +40,7 @@ from .. import (  # noqa: F401
     plays,
     region_rules,
     replies,
+    reply_send,
     scheduler,
     scoring,
     sdr_steps,
@@ -455,9 +456,75 @@ def replies_page(view: Literal["mine", "all", "hot", "needs_person"] = "mine", u
 def reply(reply_id: int, u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
         r = views.reply(cur, reply_id)
+        if r is not None:
+            r["studio"] = reply_send.view(cur, r, u)
     if r is None:
         raise HTTPException(404, "No such reply.")
     return r
+
+
+def _own_reply(cur, reply_id: int, u: dict) -> dict:
+    r = views.reply(cur, reply_id)
+    if r is None:
+        raise HTTPException(404, "No such reply.")
+    if u["role"] == "sdr" and r["account_id"]:
+        owner = reply_send.owner_of(cur, r)
+        if owner not in (None, u["id"]):
+            raise HTTPException(403, "This reply belongs to another SDR's account.")
+    return r
+
+
+class ReplyText(BaseModel):
+    body: str = Field(max_length=4000)
+
+
+class ReplyRefine(BaseModel):
+    instruction: str = Field(min_length=2, max_length=300)
+    current: str = Field(max_length=4000)
+
+
+@app.post("/api/replies/{reply_id}/check")
+def check_reply_text(reply_id: int, body: ReplyText, u: dict = Depends(current_user)) -> dict:
+    """The copy checks on the text as typed. No model call, nothing written; allowed in the public demo."""
+    from ..copy_gate import check_suggestion
+    with db.tx() as cur:
+        r = _own_reply(cur, reply_id, u)
+    return {"problems": [x["message"] for x in check_suggestion(body.body, r["cleaned"])]}
+
+
+@app.post("/api/replies/{reply_id}/refine")
+def refine_reply(reply_id: int, body: ReplyRefine, u: dict = Depends(writer)) -> dict:
+    with db.tx() as cur:
+        r = _own_reply(cur, reply_id, u)
+        why = reply_send.refusal(cur, r)
+        if why:
+            raise HTTPException(409, why.message)
+        try:
+            return reply_send.refine(cur, r, body.instruction, body.current)
+        except ValueError as exc:
+            raise bad_request(exc) from exc
+
+
+@app.post("/api/replies/{reply_id}/send")
+def send_reply(reply_id: int, body: ReplyText, u: dict = Depends(writer)) -> dict:
+    """Queue the person's answer. It goes out through the send guard and their own mailbox, in a job."""
+    not_in_public_demo()
+    with db.tx() as cur:
+        r = _own_reply(cur, reply_id, u)
+        why = reply_send.refusal(cur, r)
+        if why:
+            raise HTTPException(409, why.message)
+        if CONFIG.mode == "live" and not CONFIG.live_send:
+            raise HTTPException(409, "Sending is not switched on.")
+        try:
+            reply_send.queue(cur, r, u, body.body)
+        except LookupError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise bad_request(exc) from exc
+        out = views.reply(cur, reply_id)
+        out["studio"] = reply_send.view(cur, out, u)
+        return out
 
 
 @app.get("/api/deliverability")
@@ -566,6 +633,22 @@ def decide(ap_id: int, body: Decide, u: dict = Depends(writer)) -> dict:
     if CONFIG.worker_inline:
         jobs.run_ready(limit=50)
     return {"ok": True}
+
+
+class Check(BaseModel):
+    subject: str | None = Field(None, max_length=200)
+    body: str = Field(max_length=6000)
+
+
+@app.post("/api/messages/{message_id}/check")
+def check_message(message_id: int, body: Check, u: dict = Depends(current_user)) -> dict:
+    """What approving this edit would check, as advice. Writes nothing; allowed in the public demo."""
+    with db.tx() as cur:
+        _own_message(cur, message_id, u)
+        status = db.val(cur, "select status from messages where id = %s", message_id)
+        if status not in ("awaiting_approval", "failed_gate"):
+            raise HTTPException(409, f"This email is {status}, not waiting for approval.")
+        return outreach.check_edit(cur, message_id, body.subject, body.body)
 
 
 class Approve(BaseModel):

@@ -175,8 +175,8 @@ A play is: a hypothesis, a trigger, who to reach, the sequence, the angle, its a
 
 **Copy gate** (code, `copy_gate.py`). A draft passes only if all hold:
 1. No unresolved merge field (`{{`, `[First`, `<name>`).
-2. Length: step 1 body 40 to 120 words; follow-ups 20 to 90; subject 1 to 6 words, not all caps.
-3. Opens with the person's first name as recorded (prefixes like "Dr." are stripped from the record, not invented).
+2. Length: step 1 body 30 to 90 words; follow-ups 15 to 90; subject 1 to 6 words, not all caps.
+3. Opens with the person's first name as recorded, after an optional "Hi" (prefixes like "Dr." are stripped from the record, not invented).
 4. Every sentence that states a fact about the account cites at least one fact id that exists for that account; at least one sentence cites a fact (it is about them).
 5. Every number in the body appears in a cited fact.
 6. No phrase from the banned list (stock openers, hype, fake familiarity), no em dashes, no exclamation marks beyond one.
@@ -597,6 +597,8 @@ Risk: legal, high. Counsel to confirm the starting list (decisions 72, 73, 76) b
 **Tests.** Unsubscribe, bounce, OOO and "stop emailing" in a long reply cannot be sent (API 409 and no Send in the page); send goes through the gate, cap and region guard; refine keeps invented numbers out (check applies); a reply to a suppressed person is refused; a sent reply marks the reply handled and logs audit; the message uses the SDR's mailbox and the thread headers; public demo 403; SDR cannot reply on another SDR's account.
 
 ### 23.5 Open questions
+
+_Built 2026-11-15 (decisions 88 to 90): the answers taken were 2 (columns `original_subject` and `original_body`), 4 (a new `reply_sends` table) and 5 (the owner's mailbox). Questions 1 and 3 are still Bryan's._
 
 1. Country rules in the legacy desk build: `setup_desk.py` accepts `cfg.region_rules` to override the starting list. With the migration seeding the rows, should that config become a write through the new endpoint (with a history row, who = system), or be dropped?
 2. Original text for per-change restore (23.3): `messages` stores no original. Keep it in `attempts` or add `original_subject` and `original_body` columns? Needs a decision before build; it affects 0036 if bundled.

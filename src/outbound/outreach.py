@@ -482,8 +482,10 @@ def mailbox_sendable(cur, mailbox: dict) -> str | None:
 
 
 def sent_today(cur, mailbox_id: int) -> int:
-    return db.val(cur, """select count(*) from messages where mailbox_id = %s and status in ('sent', 'sending', 'send_unknown')
-                          and sent_at >= date_trunc('day', app_now())""", mailbox_id)
+    return db.val(cur, """select (select count(*) from messages where mailbox_id = %s and status in ('sent', 'sending', 'send_unknown')
+                                  and sent_at >= date_trunc('day', app_now()))
+                                + (select count(*) from reply_sends where mailbox_id = %s and status in ('sent', 'sending', 'send_unknown')
+                                  and sent_at >= date_trunc('day', app_now()))""", mailbox_id, mailbox_id)
 
 
 def pick_mailbox(cur, owner_id: int, account_play_id: int) -> int | None:
@@ -589,11 +591,12 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
     not_theirs = {f["id"] for f in facts if seat_news_not_theirs(cur, f, person)}
     facts = [f for f in facts if f["id"] not in not_theirs]
     fact_map = {f["id"]: f["text"] for f in facts}
-    prev = db.one(cur, "select subject from messages where enrollment_id = %s and step_index < %s and channel = 'email' "
+    prev = db.one(cur, "select subject, body from messages where enrollment_id = %s and step_index < %s and channel = 'email' "
                        "order by step_index desc limit 1", enrollment_id, step_index)
     others = [r["body"] for r in db.all(cur, """select m.body from messages m join enrollments en on en.id = m.enrollment_id
                                                where en.account_play_id = %s and en.id <> %s and m.status not in
                                                ('rejected', 'cancelled')""", ap["id"], enrollment_id)]
+    earlier = (prev["body"] or "").split("\n\n--\n")[0] if prev and prev["body"] and not step["channel"].startswith("linkedin") else None
     linkedin = step["channel"].startswith("linkedin")
     max_chars = None
     if step["channel"] == "linkedin_connect":
@@ -611,7 +614,8 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
                               "title": person["title"]},
                    "step": {"index": step_index, "job": step["job"]}, "persona_key": e["persona_key"],
                    "facts": [{"id": f["id"], "kind": f["kind"], "text": f["text"]} for f in facts],
-                   "previous_subject": prev["subject"] if prev else None, "attempt": attempt,
+                   "previous_subject": prev["subject"] if prev else None,
+                   "previous_body": earlier, "attempt": attempt,
                    "failures": [x["message"] for x in failures], "limits": limits_for(step["job"], linkedin, max_chars)}
         if linkedin:
             payload["max_chars"] = max_chars
@@ -620,7 +624,7 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
                                               account["id"], [f"signal:{k}" for k in PRIVATE_SIGNALS])}
         verdict = copy_gate.check(out, job=step["job"], person=person, account=account, facts=fact_map,
                                   our_names=OUR_NAMES + [owner["name"]], other_bodies=others, private_ids=private_ids,
-                                  channel="linkedin" if linkedin else "email", max_chars=max_chars)
+                                  channel="linkedin" if linkedin else "email", max_chars=max_chars, earlier=earlier)
         if verdict.passed:
             unsupported = check_claims(cur, out, fact_map, account["name"], account["id"])
             if unsupported:
@@ -652,7 +656,8 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
                               template_key, mailbox_id, body_hash)
         values (%s,%s,'email',%s,%s,%s,%s,%s,%s,%s,%s,'')
         on conflict (enrollment_id, step_index) do update set subject = excluded.subject, body = excluded.body,
-          citations = excluded.citations, status = excluded.status, gate = excluded.gate, attempts = excluded.attempts
+          citations = excluded.citations, status = excluded.status, gate = excluded.gate, attempts = excluded.attempts,
+          edited = false, original_subject = null, original_body = null
         returning *""",
         enrollment_id, step_index, out["subject"], body, J({"ids": citations, "sentences": out["sentences"]}), status,
         J(verdict.as_dict()), J(attempts), f"{play['key']}:v{play['version']}:{step_index}", e["mailbox_id"])
@@ -700,15 +705,44 @@ def approve(cur, message_id: int, *, user_id: int, subject: str | None = None, b
     edited = False
     if (subject is not None and subject != m["subject"]) or (body is not None and body != m["body"]):
         edited = True
-        db.run(cur, "update messages set subject = coalesce(%s, subject), body = coalesce(%s, body), edited = true "
-                    "where id = %s", subject, body, message_id)
-        m = db.one(cur, "select * from messages where id = %s", message_id)
-        problems = _edit_checks(m, cur)
+        # Checked on the text as it would be, before anything is written: a caller that does not roll back (the
+        # simulation) must not be left with a failing body marked as edited.
+        problems = _edit_checks({**m, "subject": m["subject"] if subject is None else subject,
+                                 "body": m["body"] if body is None else body}, cur)
         if problems:
             raise ValueError("; ".join(problems))
+        db.run(cur, "update messages set original_subject = case when original_body is null then subject else original_subject end, "
+                    "original_body = coalesce(original_body, body), "
+                    "subject = coalesce(%s, subject), body = coalesce(%s, body), edited = true where id = %s",
+               subject, body, message_id)
+        m = db.one(cur, "select * from messages where id = %s", message_id)
     _approve(cur, m, user_id=user_id, mode="person")
     audit.log(cur, "person", "approved", "message", message_id, {"edited": edited}, actor_id=user_id)
     return db.one(cur, "select * from messages where id = %s", message_id)
+
+
+def edit_words(body: str) -> int:
+    """Words in what the person writes: the greeting and the signature block are not counted, as in the copy check."""
+    paras = [p for p in body.split("\n\n--\n")[0].split("\n\n") if p.strip()]
+    if len(paras) >= 3:
+        paras = paras[1:-1]
+    elif len(paras) == 2:
+        paras = paras[1:]
+    return copy_gate.words(" ".join(paras))
+
+
+def step_limits(cur, m: dict) -> tuple[int, int]:
+    job = db.val(cur, """select p.sequence -> %s ->> 'job' from enrollments e join account_plays ap on ap.id = e.account_play_id
+                         join plays p on p.id = ap.play_id where e.id = %s""", m["step_index"], m["enrollment_id"])
+    return copy_gate.LIMITS.get(job, (10, 120))
+
+
+def check_edit(cur, message_id: int, subject: str | None, body: str) -> dict:
+    """A dry run of what `approve` checks on an edit. Writes nothing."""
+    m = db.one(cur, "select * from messages where id = %s", message_id)
+    m = {**m, "body": body, "subject": m["subject"] if subject is None else subject}
+    lo, hi = step_limits(cur, m)
+    return {"problems": _edit_checks(m, cur), "words": edit_words(body), "limit": [lo, hi]}
 
 
 def _edit_checks(m: dict, cur=None) -> list[str]:
@@ -716,6 +750,11 @@ def _edit_checks(m: dict, cur=None) -> list[str]:
     no link in a first email, and every number and name must be in the account's citable facts."""
     out = []
     text = m["body"].split("\n\n--\n")[0]
+    if cur is not None:
+        lo, hi = step_limits(cur, m)
+        n = edit_words(m["body"])
+        if not lo <= n <= hi:
+            out.append(f"{n} words; this step needs {lo} to {hi}")
     low = (m["subject"] or "").lower() + " " + text.lower()
     out += [f"Uses \"{b}\"" for b in copy_gate.BANNED if b in low]
     out += [f"Spam-filter word \"{w}\"" for w in copy_gate.SPAM_HARD if re.search(r"\b" + re.escape(w) + r"\b", low)]
@@ -727,7 +766,7 @@ def _edit_checks(m: dict, cur=None) -> list[str]:
         facts = " ".join(f["text"] for f in account_facts(cur, e["account_id"], 30))
         for num in copy_gate.NUMBER.findall(text):
             core = num.strip("$%.,")
-            if core and core not in facts.replace(",", "") and not re.search(re.escape(num) + r"[- ]?(min|minutes|hour)", text):
+            if core and core.replace(",", "") not in facts.replace(",", "") and not re.search(re.escape(num) + r"[- ]?(min|minutes|hour)", text):
                 out.append(f"The number {num} is not in any fact we hold about them")
     if "To stop hearing from us" not in m["body"] and "won't write again" not in m["body"]:
         out.append("The opt-out line at the bottom has to stay")
@@ -767,7 +806,6 @@ def activate(cur, enrollment_id: int) -> None:
     e = db.one(cur, "select * from enrollments where id = %s", enrollment_id)
     ap = db.one(cur, "select * from account_plays where id = %s", e["account_play_id"])
     person = db.one(cur, "select * from people where id = %s", e["person_id"])
-    stagger = int(db.val(cur, "select value from settings where key = 'stagger_days'") or 2)
     # Each colleague's first email goes two business days, in their own time, after the last colleague's first email
     # at this account: the one actually sent, or the one scheduled. A start date alone is not enough, because a first
     # email can wait days behind a send window, a holiday or a full mailbox (found 2026-11-11). The account row lock
@@ -775,11 +813,7 @@ def activate(cur, enrollment_id: int) -> None:
     # no-key lock: a full one blocks the ledger rows that paid calls write about this account on their own connection,
     # and the transaction holding it then waits on itself (found when the 3,000-account build hung).
     db.one(cur, "select id from accounts where id = %s for no key update", ap["account_id"])
-    last = last_colleague_first_email(cur, ap["account_id"], enrollment_id)
-    now = db.val(cur, "select app_now()")
-    start = now
-    if last is not None:
-        start = max(now, timeutil.add_business_days(last, stagger, country=person["country"], timezone=person["timezone"]))
+    start = first_email_start(cur, e, ap, person)
     db.run(cur, "update enrollments set state = 'active', started_at = %s, next_at = %s, step_index = 0 where id = %s",
            start, start, enrollment_id)
     if ap["state"] == "approving":
@@ -787,6 +821,44 @@ def activate(cur, enrollment_id: int) -> None:
     m = db.one(cur, "select id from messages where enrollment_id = %s and step_index = 0", enrollment_id)
     if m:
         schedule_message(cur, m["id"])  # when the first step is a task, the email waits for its own day
+
+
+def first_email_start(cur, e: dict, ap: dict, person: dict):
+    """When a person's sequence starts once their first email is approved: now, or two business days (in their own
+    time) after the last colleague's first email at the account. `activate` and the approval sheet's slot share this."""
+    stagger = int(db.val(cur, "select value from settings where key = 'stagger_days'") or 2)
+    last = last_colleague_first_email(cur, ap["account_id"], e["id"])
+    now = db.val(cur, "select app_now()")
+    if last is None:
+        return now
+    return max(now, timeutil.add_business_days(last, stagger, country=person["country"], timezone=person["timezone"]))
+
+
+def message_slot(cur, message_id: int) -> dict | None:
+    """The moment `approve` would give this message, worked out the way `activate` and `schedule_message` do it (same
+    start, same window, same jitter key), without writing anything. None while it waits for an earlier step."""
+    m = db.one(cur, "select * from messages where id = %s", message_id)
+    if m["channel"] != "email":
+        return None
+    e = db.one(cur, "select * from enrollments where id = %s", m["enrollment_id"])
+    person = db.one(cur, "select first_name, full_name, timezone, country from people where id = %s", e["person_id"])
+    now = db.val(cur, "select app_now()")
+    if m["status"] == "scheduled":
+        at = m["scheduled_for"]
+    elif m["status"] not in ("awaiting_approval", "failed_gate", "approved"):
+        return None
+    else:
+        if e["state"] == "pending" and m["step_index"] == 0:
+            ap = db.one(cur, "select * from account_plays where id = %s", e["account_play_id"])
+            planned = max(first_email_start(cur, e, ap, person), now)
+        elif e["state"] == "active" and m["step_index"] == e["step_index"]:
+            planned = max(e["next_at"] or now, now)
+        else:
+            return None
+        at = timeutil.next_slot(planned, timezone=person["timezone"], country=person["country"], window=_window(cur),
+                                jitter_key=f"m{message_id}")
+    return {"at": at, "recipient_tz": person["timezone"],
+            "recipient_first_name": copy_gate.clean_first_name(person["first_name"], person["full_name"])}
 
 
 def last_colleague_first_email(cur, account_id: int, enrollment_id: int):

@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-14. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 77. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-15. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 77. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -155,7 +155,7 @@ Cache markers, tests and cache-aware cost accounting are in; measured with real 
 
 Landed and live (health `ok: true`): decision 80 (health ignores the frozen-clock monitor in the public demo), 81 (prompt caching, cache read rate re-measured: 86% extract, 71% draft_play), 82 (suggestions a live play covers are hidden), 83 (Results alignment), 84 (clickable sources), 85 (editable country email rules with history, migration 0035), 86 (alerts on Inboxes and Health, migration 0036), 87 (complaint rate 0.35% in the world build only; the legacy demo coverage had regressed), plus the final-hour CRM push drain. Directions drawn in `~/Developer/account-desk-review/findings/` (country-rules, tab-alerts, approval-sheet, reply-studio, outbound-copy).
 
-Left to do, in this order (SPEC section 23 is reviewed and holds the plan; migrations 0037 for the approval sheet's original text, 0038 for the reply studio):
+Left to do at that time (all three are built in part 2 below; SPEC section 23 holds the plan; migrations 0037 for the approval sheet's original text, 0038 for the reply studio):
 - bl_122 Approve and send, direction B (Margin): `next_slot` must mirror `activate`'s stagger for first emails, not `schedule_message`; word limits come from `copy_gate.LIMITS`; add `original_subject` and `original_body` columns; the check endpoint is a dry run of `_edit_checks`.
 - bl_123 outbound copy, direction A (plain note); also rewrite the stand-in drafts in `sim_llm.py` and lower the first-touch floor from 40 words; use the humanizer skill; re-record the draft eval.
 - bl_121 reply studio, direction A (composer in the reply sheet): a new `reply_sends` table with its own guard trigger (kill switch, suppression, erasure, person status, blocked region, hash); its own reason set rather than `gate.person_reasons` (cooldown and no_consent would refuse every answer; Risk: legal, counsel to confirm); mailbox and domain cap counts must include it; outbox pattern, not one transaction.
@@ -165,3 +165,13 @@ Left to do, in this order (SPEC section 23 is reviewed and holds the plan; migra
 
 World 1.2.0 at lumen-world 74ed630, CRM Desk 7241eed and Market Desk aec5263 as detached worktrees, Account Desk at d6cacd4; own database prefix `adfix2_`, port 8878. `stage/rehearse.py --verify`: the journal has 13,234 steps (13,070 from Account Desk), all three desks replayed identically (5, 1 and 4 checks). `stage/audit.py`: 9 of 9 ok (1,477 emails over 65 days match CRM Desk activities day by day; 233 meetings on both sides, none dead; every email in its recipient's send window). Nothing needed fixing. `world/journal.jsonl` is regenerated, not committed.
 
+## Findings batch, part 2 (2026-11-15, branch `adfix2/findings`)
+
+Built, in this order (decisions 88 to 90; SPEC 23.3 and 23.4). The directions are provisional builds of the recommendation; Bryan picks later.
+- **bl_122 Approve and send, direction B Margin** (migration 0037): 960 wide sheet, live checks in the margin, per-change restore, "Approve and send" with the slot under it, cmd+enter. `next_slot` shares `first_email_start` with `activate`; `POST /api/messages/{id}/check` is a dry run.
+- **bl_123 outbound copy, direction A plain note**: new draft prompt, gate (30 to 90 words, "Hi Name," greeting, stock lines, earlier-email repeats), stand-in drafts rewritten, draft eval re-recorded live (49 of 50 pass after one redraft; about 1.1 USD).
+- **bl_121 Reply studio, direction A** (migration 0038): `reply_sends` with its own guard trigger, its own reason set, caps that count these sends, refine and check endpoints, a composer in the reply sheet.
+
+Risk: legal, high. A reply to someone in a blocked country is refused as any send is, until Bryan decides; consent-required countries are not applied to replies. Counsel to confirm both.
+
+Open for Bryan or the next writer: the draft prompt has no fallback when a case has no signal fact and does not say to restate the offer in different words (both need a re-recording, past the 2 USD approved); reply sends write no CRM activity and have no sweep for a crash mid-send; the alert-age question (23.5, 3) and the legacy `setup_desk` region-rules question (23.5, 1) are unanswered.

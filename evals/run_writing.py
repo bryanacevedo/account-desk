@@ -19,6 +19,7 @@ every draft and brief in full. Writes evals/WRITING.md.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import zlib
@@ -29,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # judge.py and thresho
 from judge import judge, rate  # noqa: E402
 
 from outbound import copy_gate, db, llm, sim_llm  # noqa: F401  (sim_llm registers the stand-in)
+from outbound.config import CONFIG
 from outbound.outreach import PRIVATE_SIGNALS, check_claims, limits_for
 
 HERE = Path(__file__).resolve().parent
@@ -80,7 +82,7 @@ def draft(cur, c: dict) -> dict:
                    "person": {"id": person["id"], "first_name": person["first_name"], "title": person["title"]},
                    "step": {"index": 0 if c["job"] in ("open", "connect") else 2, "job": c["job"]},
                    "persona_key": c["persona_key"], "facts": shown, "limits": limits_for(c["job"], linkedin, NOTE_LIMIT if c["job"] == "connect" else None), "previous_subject": "billing at " + c["company"]
-                   if c["job"] != "open" else None, "attempt": attempt, "failures": [x["message"] for x in failures]}
+                   if c["job"] != "open" else None, "previous_body": None, "attempt": attempt, "failures": [x["message"] for x in failures]}
         if linkedin:
             payload["max_chars"] = NOTE_LIMIT if c["job"] == "connect" else None
         out = llm.run(cur, c["task"], payload)
@@ -146,7 +148,17 @@ def brief(cur, b: dict) -> dict:
 def run(cur) -> tuple[list[dict], list[dict]]:
     drafts = load("drafts.jsonl") + load("drafts_v2.jsonl")
     briefs = load("briefs.jsonl") + load("briefs_v2.jsonl")
-    return [draft(cur, c) for c in drafts], [brief(cur, b) for b in briefs]
+    out_briefs = []
+    for b in briefs:
+        # LIVE_ONLY=drafts re-records the drafts and replays the briefs (their prompt did not change), to keep the spend down.
+        keep = CONFIG.anthropic_live
+        if os.environ.get("LIVE_ONLY") == "drafts":
+            object.__setattr__(CONFIG, "anthropic_live", False)
+        try:
+            out_briefs.append(brief(cur, b))
+        finally:
+            object.__setattr__(CONFIG, "anthropic_live", keep)
+    return [draft(cur, c) for c in drafts], out_briefs
 
 
 def judged_table(rows: list[dict], criteria: list[tuple[str, str]]) -> list[str]:

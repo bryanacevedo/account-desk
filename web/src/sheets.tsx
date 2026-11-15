@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowSquareOut, Buildings, CalendarCheck, ChatCircleText, CheckSquare, EnvelopeSimple, Lightbulb, LinkedinLogo, ListChecks, Phone, UserCircle, X } from "@phosphor-icons/react";
 import { api } from "./api";
+import { changes, ledger, restoreOne, slotLabel } from "./approve";
 import { Avatar, Logo } from "./marks";
 import { SignalIcon, SignalLabel } from "./signalIcons";
 import { PlayEditor, PlayPreview } from "./PlayEditor";
@@ -46,7 +47,7 @@ const kindOf = (crumb: ReactNode): string => {
   return Object.keys(KIND).find((k) => w.startsWith(k)) || "task";
 };
 
-function Frame({ crumb, children, foot, kind }: { crumb: ReactNode; children: ReactNode; foot?: ReactNode; kind?: string }) {
+function Frame({ crumb, children, foot, kind, wide }: { crumb: ReactNode; children: ReactNode; foot?: ReactNode; kind?: string; wide?: boolean }) {
   const k = KIND[kind || kindOf(crumb)];
   const KIcon = k.icon;
   const detail = typeof crumb === "string" && crumb.toLowerCase() === k.label.toLowerCase() ? null : crumb;
@@ -69,7 +70,7 @@ function Frame({ crumb, children, foot, kind }: { crumb: ReactNode; children: Re
   return (
     <>
       <div className="scrim" onClick={closeSheet} aria-hidden="true" />
-      <aside className={`sheet kind-${k.tone}`} role="dialog" aria-modal="true" aria-label={k.label} tabIndex={-1} ref={ref}>
+      <aside className={`sheet kind-${k.tone}${wide ? " wide" : ""}`} role="dialog" aria-modal="true" aria-label={k.label} tabIndex={-1} ref={ref}>
         <div className="sheet-top">
           {from ? <button className="iconbtn" onClick={back} aria-label="Back"><ArrowLeft size={18} /></button> : null}
           <div className="sheet-kind"><span className="kind-mark" aria-hidden="true"><KIcon size={15} weight="bold" /></span>{k.label}</div>
@@ -1025,6 +1026,144 @@ async function nextEmail(done: number) {
   }
 }
 
+/** An email waiting for a person: one editable page with the facts, the checks and every change in the margin. */
+function Approving({ m, id, reload }: { m: any; id: number; reload: () => void }) {
+  const cut = (b: string) => { const i = b.indexOf("\n\n--\n"); return i < 0 ? [b, ""] : [b.slice(0, i), b.slice(i + 2)]; };
+  const [main0, footer] = cut(m.body);
+  const original = cut(m.original_body ?? m.body)[0];
+  const originalSubject = m.original_subject ?? m.subject ?? "";
+  const [text, setText] = useState(main0);
+  const [subject, setSubject] = useState(m.subject || "");
+  const [check, setCheck] = useState<{ problems: string[]; words: number; limit: number[] }>({ problems: [], words: m.words ?? 0, limit: m.limit || [0, 0] });
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  const [busy, run] = useBusy();
+  const area = useRef<HTMLTextAreaElement>(null);
+  const seq = useRef(0);
+  const now = useNowIso();
+  const failures: any[] = m.gate?.failures || [];
+  const body = footer ? `${text}\n\n${footer}` : text;
+  const dirty = text !== main0 || subject !== (m.subject || "");
+  const changed = text !== original || subject !== originalSubject;
+  const idOf = useMemo(() => new Map<number, number>((m.facts || []).map((f: any, i: number) => [f.id, i + 1])), [m]);
+  // A draft that failed its checks is approved only once it has been rewritten.
+  const mustEdit = m.status === "failed_gate" && !dirty;
+  useEffect(() => {
+    const mine = ++seq.current;
+    const t = window.setTimeout(async () => {
+      try {
+        const r = await api<any>(`/api/messages/${id}/check`, { method: "POST", body: { subject, body } });
+        if (mine === seq.current) setCheck(r);
+      } catch { /* the real check runs in approve and says the same */ }
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [text, subject]);
+  useEffect(() => {
+    const el = area.current;
+    if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight + 2}px`; }
+  }, [text]);
+  useEffect(() => { window.addEventListener("focus", reload); return () => window.removeEventListener("focus", reload); }, [reload]);
+  const lg = ledger(check.problems);
+  const [lo, hi] = check.limit;
+  const wordsBad = check.words < lo || check.words > hi;
+  const canApprove = !busy && !mustEdit && (!dirty || !check.problems.length);
+  const approve = () => run(async () => {
+    await api(`/api/messages/${id}/approve`, { method: "POST", body: dirty ? { subject, body } : {} });
+    await nextEmail(id);
+  }, "Approved. It goes out in their send window.");
+  const reject = () => run(async () => {
+    await api(`/api/messages/${id}/reject`, { method: "POST", body: { reason } });
+    await nextEmail(id);
+  }, "Rejected.");
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canApprove && !rejecting) { e.preventDefault(); approve(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  const diff = useMemo(() => changes(original, text), [original, text]);
+  const slot = slotLabel(m, now);
+  const foot = rejecting ? (
+    <>
+      <input className="input" style={{ flex: 1 }} placeholder="Why, in a few words" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Reason for rejecting" autoFocus />
+      <button className="btn line" onClick={() => setRejecting(false)}>Cancel</button>
+      <button className="btn ink" disabled={busy || reason.trim().length < 3} onClick={reject}>Reject</button>
+    </>
+  ) : (
+    <>
+      <button className="btn quiet" onClick={() => setRejecting(true)}>Reject</button>
+      <div className="send">
+        <button className="btn lead" disabled={!canApprove} onClick={approve}>Approve and send <span className="kbd" aria-hidden="true">{/Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl"}+Enter</span></button>
+        <span className="slot small mute">{slot || "Sends when the sequence reaches this step"}</span>
+      </div>
+    </>
+  );
+  return (
+    <Frame kind="email" crumb={<>Email {m.email_no ?? m.step_index + 1}</>} foot={foot} wide>
+      <div className="mg">
+        <div className="mg-main">
+          {failures.length ? (
+            <Section title="Why it needs a rewrite">
+              <ul className="facts">{failures.map((f: any, i: number) => <li key={i}><Status kind="stop">{""}</Status><span>{f.message}</span></li>)}</ul>
+            </Section>
+          ) : null}
+          <input className="mg-subject" value={subject} onChange={(e) => setSubject(e.target.value)} aria-label="Subject" placeholder="Subject" />
+          <textarea ref={area} className="mg-text" value={text} onChange={(e) => setText(e.target.value)} aria-label="Email" spellCheck />
+          <div className="mg-foot" aria-label="Footer, locked">
+            {footer.replace(/^--\n/, "").split("\n").map((l, i) => <div key={i}>{l}</div>)}
+          </div>
+        </div>
+        <div className="mg-side">
+          <div className="mg-who">
+            <span className="small mute">To</span>
+            <button className="link-row mg-name" onClick={() => openSheet("person", m.person_id ?? "")}>{m.full_name}</button>
+            <span className="mute small">{m.title}, {m.company}</span>
+            <span className="small"><span className="mute">Play </span>{m.play}</span>
+          </div>
+          <section>
+            <h3 className="mg-h">Checks</h3>
+            <dl className="mg-rows">
+              <dt>Words</dt><dd className={wordsBad ? "bad" : ""}>{check.words} <span className="mute">of {lo} to {hi}</span></dd>
+              {lg.rows.map((r) => <Fragment key={r.label}><dt>{r.label}</dt><dd className={r.bad ? "bad" : "mute"}>{r.value}</dd></Fragment>)}
+            </dl>
+            {lg.other.map((o, i) => <p key={i} className="bad small">{o}</p>)}
+          </section>
+          {changed ? (
+            <section>
+              <h3 className="mg-h">Changes{diff.hunks.length ? <span className="mute"> {diff.hunks.length}</span> : null}
+                <button className="btn quiet sm" onClick={() => { setText(original); setSubject(originalSubject); }}>Restore original</button></h3>
+              {subject !== originalSubject ? <p className="small">Subject was <span className="mute">{originalSubject || "empty"}</span></p> : null}
+              <ul className="mg-changes">
+                {diff.hunks.map((h, k) => (
+                  <li key={`${h.oStart}-${h.nStart}`}>
+                    <span className="small">{h.was ? <><span className="mute">{h.now ? "Was " : "Removed "}</span>{h.was}</> : <span className="mute">Added</span>}</span>
+                    {h.now ? <span className="small">{h.was ? <span className="mute">Now </span> : null}{h.now}</span> : null}
+                    <button className="btn quiet sm" onClick={() => setText(restoreOne(original, text, k))}>Restore</button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          <section>
+            <h3 className="mg-h">Cited</h3>
+            {m.facts.length ? (
+              <ul className="facts">
+                {m.facts.map((f: any) => (
+                  <li key={f.id}><span className="id">{idOf.get(f.id)}</span>
+                    <span>{f.text} <span className="mute small">{f.kind.startsWith("signal:") ? "Signal" : "Their website"}, {day(f.observed_at)}</span>
+                      {f.source_url ? <> <SourceLink url={f.source_url} /></> : null}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mute small">No facts cited</p>}
+          </section>
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
 export function MessageSheet({ id }: { id: number }) {
   const { data: m, error, reload } = useData<any>(`/api/messages/${id}`);
   const [editing, setEditing] = useState(false);
@@ -1038,9 +1177,10 @@ export function MessageSheet({ id }: { id: number }) {
     (m?.facts || []).forEach((f: any, i: number) => map.set(f.id, i + 1));
     return map;
   }, [m]);
-  if (error) return <Frame crumb="Email"><Failed error={error} retry={reload} /></Frame>;
+  if (error && !m) return <Frame crumb="Email"><Failed error={error} retry={reload} /></Frame>;
   if (!m) return <Frame crumb="Email"><Loading rows={8} /></Frame>;
   const open = m.status === "awaiting_approval" || m.status === "failed_gate";
+  if (open && m.channel === "email") return <Approving key={`${id}:${m.status}`} m={m} id={id} reload={reload} />;
   const sentences: any[] = m.citations?.sentences || [];
   const footer = m.body.split("\n\n--\n")[1];
   const failures: any[] = m.gate?.failures || [];
@@ -1134,6 +1274,56 @@ export function MessageSheet({ id }: { id: number }) {
 
 // ---------------------------------------------------------------- a reply
 
+/** The answer, written where the reply is read: the desk's suggestion as an editable page, a line to refine it, the copy
+ *  checks and Send. A reply the desk must not answer shows what it did instead, and has no editor. */
+function Composer({ r, id }: { r: any; id: number }) {
+  const studio = r.studio;
+  const [text, setText] = useState<string>(r.extracted?.suggested || "");
+  const [ins, setIns] = useState("");
+  const [problems, setProblems] = useState<string[]>([]);
+  const [busy, run] = useBusy();
+  const seq = useRef(0);
+  const last = studio.sends?.[0];
+  const inFlight = last && ["queued", "sending", "sent"].includes(last.status);
+  useEffect(() => {
+    if (!text.trim()) { setProblems([]); return; }
+    const mine = ++seq.current;
+    const t = window.setTimeout(async () => {
+      try {
+        const o = await api<any>(`/api/replies/${id}/check`, { method: "POST", body: { body: text } });
+        if (mine === seq.current) setProblems(o.problems);
+      } catch { /* Send runs the same check */ }
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [text]);
+  const refine = () => run(async () => {
+    const o = await api<any>(`/api/replies/${id}/refine`, { method: "POST", body: { instruction: ins, current: text } });
+    setText(o.body); setProblems(o.problems); setIns("");
+  });
+  const send = () => run(() => api(`/api/replies/${id}/send`, { method: "POST", body: { body: text } }), "Queued. It goes out from your mailbox in a moment.");
+  const ok = text.trim().length > 0 && !problems.length && !busy && !inFlight;
+  return (
+    <Section title="Your answer" right={<button className="btn quiet sm" onClick={() => { navigator.clipboard?.writeText(text); toast("Copied. Paste it into your own inbox."); }}>Copy</button>}>
+      <div className="composer">
+        <textarea className="input" rows={7} value={text} onChange={(e) => setText(e.target.value)} aria-label="Your answer" disabled={!!inFlight} />
+        <div className="composer-refine">
+          <input className="input" value={ins} onChange={(e) => setIns(e.target.value)} placeholder="Shorter, ask for a time"
+            aria-label="How to change it" disabled={!!inFlight}
+            onKeyDown={(e) => { if (e.key === "Enter" && ins.trim().length > 1 && !busy) { e.preventDefault(); refine(); } }} />
+          <button className="btn line" disabled={busy || ins.trim().length < 2 || !!inFlight || studio.refines_left < 1} onClick={refine}>Refine</button>
+        </div>
+        {problems.length ? <ul className="facts">{problems.map((p, i) => <li key={i}><span className="bad">{p}</span></li>)}</ul>
+          : text.trim() ? <div className="small mute">Copy checks pass</div> : null}
+        {last?.status === "failed" || last?.status === "cancelled" ? <div className="small bad">{last.error || "It did not go out."}</div> : null}
+        <div className="composer-send">
+          <span className="small mute clip">{studio.from_mailbox ? `From ${studio.from_mailbox}` : ""}</span>
+          <button className="btn lead" disabled={!ok} onClick={send}>{inFlight ? (last.status === "sent" ? "Sent" : "Sending") : "Send"}</button>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 export function ReplySheet({ id }: { id: number }) {
   const { data: r, error, reload } = useData<any>(`/api/replies/${id}`);
   const [busy, run] = useBusy();
@@ -1197,10 +1387,12 @@ export function ReplySheet({ id }: { id: number }) {
         </Section>
       ) : null}
       {r.hot && r.account_id && !r.handled_at && r.colleagues_waiting ? <ColleaguesChoice replyId={id} count={r.colleagues_waiting} /> : null}
-      {ex.suggested && open ? (
-        <Section title="A reply you could send" right={<button className="btn quiet sm" onClick={() => { navigator.clipboard?.writeText(ex.suggested); toast("Copied. Paste it into your own inbox."); }}>Copy</button>}>
-          <div className="quote ours">{ex.suggested}</div>
-        </Section>
+      {open && r.studio && r.studio.can_send ? <Composer key={id} r={r} id={id} /> : null}
+      {open && r.studio && !r.studio.can_send && r.studio.no_send && r.studio.no_send.code !== "needs_review" ? (
+        <Section title="What the desk did"><div className="quote ours">{r.studio.no_send.message}</div></Section>
+      ) : null}
+      {open && !r.studio && ex.suggested ? (
+        <Section title="A reply you could send"><div className="quote ours">{ex.suggested}</div></Section>
       ) : null}
       <details>
         <summary className="small mute" style={{ cursor: "pointer" }}>The full email as received</summary>
