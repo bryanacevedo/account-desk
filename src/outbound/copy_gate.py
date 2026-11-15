@@ -81,7 +81,8 @@ def similarity(a: str, b: str) -> float:
 
 def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int, str], our_names: list[str],
           other_bodies: list[str], private_ids: set[int] | None = None, channel: str = "email",
-          max_chars: int | None = None, earlier: str | None = None) -> Verdict:
+          max_chars: int | None = None, earlier: str | None = None,
+          allowed_links: set[str] | None = None) -> Verdict:
     """The same checks for every channel. LinkedIn text has no subject and no footer, a connect note has a
     character cap (the setting), and LinkedIn carries no links at all."""
     f: list[dict] = []
@@ -138,12 +139,12 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
         fail("not_about_them", "Says nothing sourced about their company")
     source = " ".join(cited_text)
     for s in sentences:
-        for mt in NUMBER.finditer(s["text"]):
+        for mt in NUMBER.finditer(URL.sub(" ", s["text"])):
             num = mt.group(0)
             core = num.strip("$%.,")
             if not core or core in source.replace(",", ""):
                 continue
-            after = s["text"][mt.end():mt.end() + 12].lower()
+            after = URL.sub(" ", s["text"])[mt.end():mt.end() + 12].lower()
             # An ask may name a meeting length or a time ("20 minutes", "10:00"); that is not a claim about them.
             if s["kind"] == "ask" and (TIME_UNIT.match(after) or ":" in num):
                 continue
@@ -154,7 +155,7 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
     for s in sentences:
         toks = []
         done_first = False
-        for part in re.split(r"(?<=[.!?])\s+", s["text"]):  # one item may hold several sentences
+        for part in re.split(r"(?<=[.!?])\s+", URL.sub(" ", s["text"])):  # one item may hold several sentences
             found = re.findall(r"\b[A-Z][A-Za-z0-9&'-]+\b", part)
             # The first word of a sentence is capitalised anyway; of a later sentence in the same item, only a
             # common starter is let through, so a name after "Ledger. " is still checked.
@@ -198,6 +199,11 @@ def check(draft: dict, *, job: str, person: dict, account: dict, facts: dict[int
         fail("link", "First emails carry no links")
     elif len(links) > 1:
         fail("link", "More than one link")
+    if allowed_links is not None and not linkedin:
+        # A play that may carry only a link someone gave us (decision 94): any other address is an invented one.
+        for lk in links:
+            if lk.rstrip(".,;:)\"'") not in allowed_links:
+                fail("link", "A link that was not given to this email")
     for sp in SPAM_HARD:
         if re.search(r"\b" + re.escape(sp) + r"\b", low):
             fail("spam_word", f"Spam-filter word \"{sp}\"")

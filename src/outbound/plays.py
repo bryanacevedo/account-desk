@@ -27,7 +27,8 @@ ALLOWED = {
 # Cooldown in days before the account can be proposed again, by close reason (22.19).
 COOLDOWN = {"research_failed": 7, "nothing_approved": 30, "no_meeting": 60, "no_opportunity": 90,
             "sequence_finished": 90, "skipped": 30, "expired": 14, "not_interested": 180, "held_out": 90,
-            "no_reachable_people": 60, "manual": 30, "play_paused": 14}
+            "no_reachable_people": 60, "manual": 30, "play_paused": 14,
+            "declined_event": 0, "event_status_moved": 0}
 
 
 class BadTransition(Exception):
@@ -201,34 +202,43 @@ def expire_proposals(cur, payload: dict) -> None:
 
 
 def ensure_event_play(cur) -> int | None:
-    """Event follow-up as a play, when Events Desk is beside this desk (INTEGRATED_WITH). Alone it does not exist. The
-    signal types and the play are added once and live, written by a GTM user and launched by a manager (a play needs two
-    people); with no such pair of users nothing is added and None comes back. Returns the play's id."""
+    """The event plays, when Events Desk is beside this desk (INTEGRATED_WITH). Alone they do not exist. The signal types
+    and each missing play are added, live, written by a GTM user and launched by a manager (a play needs two people); an
+    install that already has `event_follow_up` gets `event_pre_event` on its next sweep. With no such pair of users no play
+    is added. Returns the id of `event_follow_up`, or None."""
     from .seed import catalog as C
     for key, label, because, level, weight, half in C.EVENT_SIGNAL_TYPES:
         db.run(cur, """insert into signal_types (key, label, because, level, weight, half_life_days)
                        values (%s,%s,%s,%s,%s,%s) on conflict (key) do nothing""", key, label, because, level, weight, half)
     db.run(cur, """insert into signal_sources (key, label, adapter, cadence_minutes, paid) values ('crm', 'CRM', 'sim', 360, false)
                    on conflict (key) do nothing""")
-    key, name, hyp, trig, personas, maxp, seq, angle, autonomy, urgent, latency = C.EVENT_PLAY
-    have = db.val(cur, "select id from plays where key = %s", key)
-    if have:
-        return have
-    author = db.val(cur, "select id from users where role = 'gtm' and active order by id limit 1")
-    launcher = db.val(cur, "select id from users where role = 'manager' and active and id is distinct from %s order by id limit 1", author)
-    if author is None or launcher is None:
-        return None
-    pid = db.val(cur, """insert into plays (key, name, hypothesis, trigger, personas, max_people, sequence, angle, autonomy, status,
-                                            holdout_pct, owner_id, created_by, launched_by, launched_at, urgent, latency_hours,
-                                            lia_ref, lia_review_due, monthly_cap)
-                         values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'live',20,%s,%s,%s,app_now(),%s,%s,
-                                 (select value #>> '{}' from settings where key = 'lia_ref'),
-                                 (select (value #>> '{}')::date from settings where key = 'lia_review_due'), %s)
-                         returning id""",
-                 key, name, hyp, J(trig), personas, maxp, J(seq), angle, autonomy, author, author, launcher, urgent, latency,
-                 J(C.PLAY_CAP))
-    audit.log(cur, "desk", "play_added", "play", pid, {"key": key, "why": "events_desk is integrated"})
-    return pid
+    author = launcher = None
+    first = None
+    for play in (C.EVENT_PLAY, C.EVENT_PRE_PLAY):
+        key, name, hyp, trig, personas, maxp, seq, angle, autonomy, urgent, latency = play
+        have = db.val(cur, "select id from plays where key = %s", key)
+        if have:
+            if key == C.EVENT_PLAY[0]:
+                first = have
+            continue
+        if author is None:
+            author = db.val(cur, "select id from users where role = 'gtm' and active order by id limit 1")
+            launcher = db.val(cur, "select id from users where role = 'manager' and active and id is distinct from %s order by id limit 1", author)
+        if author is None or launcher is None:
+            continue
+        pid = db.val(cur, """insert into plays (key, name, hypothesis, trigger, personas, max_people, sequence, angle, autonomy, status,
+                                                holdout_pct, owner_id, created_by, launched_by, launched_at, urgent, latency_hours,
+                                                lia_ref, lia_review_due, monthly_cap)
+                             values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'live',20,%s,%s,%s,app_now(),%s,%s,
+                                     (select value #>> '{}' from settings where key = 'lia_ref'),
+                                     (select (value #>> '{}')::date from settings where key = 'lia_review_due'), %s)
+                             returning id""",
+                     key, name, hyp, J(trig), personas, maxp, J(seq), angle, autonomy, author, author, launcher, urgent, latency,
+                     J(C.PLAY_CAP))
+        audit.log(cur, "desk", "play_added", "play", pid, {"key": key, "why": "events_desk is integrated"})
+        if key == C.EVENT_PLAY[0]:
+            first = pid
+    return first
 
 
 def close_if_empty(cur, account_play_id: int) -> None:

@@ -572,6 +572,19 @@ def seat_news_not_theirs(cur, fact: dict, person: dict) -> bool:
     return started is None or started < fact["observed_at"].date() - timedelta(days=30)
 
 
+def event_context(cur, ap: dict, play: dict, step: dict) -> dict | None:
+    """The event a note before an event is about, from what Events Desk said when the person was targeted (stored in the
+    signal's evidence): {name, city, starts_on, ends_on, booking_url}. Only the day-7 follow-up of `event_pre_event` carries
+    the booking link, and only the one Events Desk gave; every other step has booking_url None, and the first email says a
+    reply will find a time. None for every other play (alone, nothing about events reaches a draft)."""
+    if play["key"] != "event_pre_event":
+        return None
+    ev = db.val(cur, "select evidence -> 'event' from signals where id = %s and type_key = 'event_targeted'", ap["trigger_signal_id"]) or {}
+    link = ev.get("booking_url") if step["job"] == "follow_up" and step["channel"] == "email" else None
+    return {"name": ev.get("name"), "city": ev.get("city"), "starts_on": ev.get("starts_on"), "ends_on": ev.get("ends_on"),
+            "booking_url": signals.http_url(link) if link else None}
+
+
 def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
     e = db.one(cur, "select * from enrollments where id = %s", enrollment_id)
     ap = db.one(cur, "select * from account_plays where id = %s", e["account_play_id"])
@@ -602,6 +615,10 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
     if step["channel"] == "linkedin_connect":
         from .sdr_steps import note_limit
         max_chars = note_limit(cur)
+    event = event_context(cur, ap, play, step)
+    allowed_links = None
+    if play["key"] in ("event_pre_event", "event_follow_up") and not linkedin:
+        allowed_links = {event["booking_url"]} if event and event.get("booking_url") else set()
     attempts = []
     failures: list[dict] = []
     out = None
@@ -619,12 +636,15 @@ def draft_step(cur, enrollment_id: int, step_index: int) -> dict:
                    "failures": [x["message"] for x in failures], "limits": limits_for(step["job"], linkedin, max_chars)}
         if linkedin:
             payload["max_chars"] = max_chars
+        if event is not None:
+            payload["event"] = event
         out = llm.run(cur, "draft_linkedin" if linkedin else "draft", payload, account_id=account["id"])
         private_ids = {r["id"] for r in db.all(cur, "select id from facts where account_id = %s and kind = any(%s)",
                                               account["id"], [f"signal:{k}" for k in PRIVATE_SIGNALS])}
         verdict = copy_gate.check(out, job=step["job"], person=person, account=account, facts=fact_map,
                                   our_names=OUR_NAMES + [owner["name"]], other_bodies=others, private_ids=private_ids,
-                                  channel="linkedin" if linkedin else "email", max_chars=max_chars, earlier=earlier)
+                                  channel="linkedin" if linkedin else "email", max_chars=max_chars, earlier=earlier,
+                                  allowed_links=allowed_links)
         if verdict.passed:
             unsupported = check_claims(cur, out, fact_map, account["name"], account["id"])
             if unsupported:

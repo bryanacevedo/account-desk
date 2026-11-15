@@ -9,6 +9,7 @@ import hmac
 import ipaddress
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -20,7 +21,7 @@ from pathlib import Path
 from typing import Literal
 
 import psycopg
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -334,6 +335,43 @@ def health() -> dict:
     ok = backlog < 50 and dead == 0 and undelivered == 0 and failing == 0
     return {"ok": ok, "now": now, "job_backlog": backlog, "dead_jobs_today": dead, "undelivered_alerts": undelivered,
             "monitors_failing": failing, "mode": CONFIG.mode, "public_demo": CONFIG.public_demo}
+
+
+@app.get("/api/desk/campaigns/{campaign_ref}/plays")
+def desk_campaign_plays(campaign_ref: str, authorization: str | None = Header(None)) -> dict:
+    """What Events Desk may ask: how the plays started from one event's signals are going, as counts. No names, no
+    addresses, no ids of people (decision 94). Needs DESK_READ_KEY: unset answers 404 (the read does not exist), a wrong
+    or missing key answers 401. Plays from signals made before migration 0040 carry no campaign and are not counted."""
+    key = os.environ.get("DESK_READ_KEY", "").strip()
+    if not key:
+        raise HTTPException(404, "Not found.")
+    token = authorization[7:].strip() if authorization and authorization[:7].lower() == "bearer " else ""
+    if not token or not hmac.compare_digest(token.encode(), key.encode()):
+        raise HTTPException(401, "A valid key is needed.")
+    with db.tx() as cur:
+        rows = db.all(cur, """select p.key, p.name, ap.state, count(*) as n from account_plays ap join plays p on p.id = ap.play_id
+                              join signals s on s.id = ap.trigger_signal_id where s.campaign_ref = %s
+                              group by p.key, p.name, ap.state""", campaign_ref)
+        people = db.all(cur, """select p.key, e.state, e.pause_reason, e.stop_reason, count(*) as n from enrollments e
+                                join account_plays ap on ap.id = e.account_play_id join plays p on p.id = ap.play_id
+                                join signals s on s.id = ap.trigger_signal_id where s.campaign_ref = %s
+                                group by p.key, e.state, e.pause_reason, e.stop_reason""", campaign_ref)
+        now = db.val(cur, "select app_now()")
+    out: dict[str, dict] = {}
+    for r in rows:
+        out.setdefault(r["key"], {"key": r["key"], "name": r["name"], "states": {}, "people": {}})["states"][r["state"]] = int(r["n"])
+    for r in people:
+        if r["key"] not in out:
+            continue
+        if r["state"] == "stopped":
+            why = r["stop_reason"] or ""
+            name = "stopped_" + (why if re.fullmatch(r"[a-z_]{1,40}", why) else "other")
+        elif r["state"] == "paused" and r["pause_reason"] in ("reply_received", "account_reply"):
+            name = "replied"
+        else:
+            name = r["state"]
+        out[r["key"]]["people"][name] = out[r["key"]]["people"].get(name, 0) + int(r["n"])
+    return {"campaign_ref": campaign_ref, "plays": sorted(out.values(), key=lambda x: x["key"]), "as_of": now}
 
 
 @app.get("/api/me")

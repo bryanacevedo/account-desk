@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-15. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 92. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-15. **Spec:** `docs/SPEC.md` (sections 1 to 21, then 22 with every review decision, which wins where they differ). **Decisions:** `docs/DECISIONS.md`, 1 to 94. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -15,6 +15,10 @@ Checked by running them (the date is on each line):
 - `ruff check src tests evals`, `tsc --noEmit` and `vite build`: clean on 2026-11-12.
 - `make demo` (fresh build into database `outbound_release`, 2026-11-12, current code): 3,000 accounts, six SDRs plus a manager and GTM, 90 simulated days (13 August to 11 November 2026) in 514 s, a 125 MB database. People: 24,667 in the world at the start; 14,429 on the desk after 90 days (`people`); 11,092 still hidden in the simulation (`sim_hidden_people`). 894 accounts proposed (126 to 190 per SDR), 785 accepted, 237 held back; 1,636 emails sent, 103 positive replies; 201 meetings (74 booked by SDRs, 127 inbound); 36 sourced deals worth $4,147,000 (6 won, $673,000). Plays: six shipped plus one draft from a suggestion; 3 suggestions. Coverage: 89 of 93 scenarios shown, none missing, 4 of the chance ones absent. A later build of the same day with the suggestion plant (`outbound_check2`, decision 62): suggestions in every state (three open, one drafted, two set aside, one back, one dismissed, one lapsed); coverage 97 of 99, none missing. A fourth planted reason (prepaid credits) was added after it for margin. The build `outbound_release` is kept for reuse.
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Since then two fresh design reviews and checks at 375 wide (see below).
+
+## Events Desk step 6 part 3, Account Desk half (2026-11-15, branch ev6d/part3, not pushed)
+
+Decision 94, SPEC 25, migration 0040. Signal `event_targeted` and play `event_pre_event` (added by `ensure_event_play` on any install with `INTEGRATED_WITH=events_desk`, old ones included); `declined` stops the person's event plays and `waitlist` is counted; a moved status stops the pre-event note and frees the account for `event_follow_up`; the booking link is read from Events Desk once per campaign per day (`EVENTS_DESK_URL`, `EVENTS_DESK_READ_KEY`) and only the day-7 email carries it; `GET /api/desk/campaigns/<ref>/plays` (`DESK_READ_KEY`) serves counts to Events Desk. Tests: `tests/test_event_pre_event.py`. Next: the Events Desk half, then step 6 part 4. Alone, nothing changes.
 
 ## Findings batch closed out (2026-11-15, branch adfix2/findings)
 

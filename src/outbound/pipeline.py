@@ -460,10 +460,19 @@ if not getattr(scoring.fit, "__wrapped_by_crm__", False):
 # ---------------------------------------------------------------- event members, read from a CRM that keeps campaigns
 
 # A member of an event or webinar campaign becomes a signal. Attended or met is the stronger one; registered, and no
-# show, is "registered, did not attend" and is its own type with a lighter weight (DESIGN.md 2b, option A).
+# show, is "registered, did not attend" and is its own type with a lighter weight (DESIGN.md 2b, option A). `targeted`
+# (someone we want to meet at the event, before it) starts the pre-event play. `waitlist` makes no signal and is counted;
+# `declined` makes none either and stops the person's event plays (decision 94).
 MEMBER_SIGNALS = {"registered": ("event_registered", 0.5), "no_show": ("event_registered", 0.3),
-                  "attended": ("event_campaign_member", 0.8), "met": ("event_campaign_member", 0.95)}
-MEMBER_VERBS = {"registered": "registered for", "no_show": "registered for but missed", "attended": "attended", "met": "met us at"}
+                  "attended": ("event_campaign_member", 0.8), "met": ("event_campaign_member", 0.95),
+                  "targeted": ("event_targeted", 0.4)}
+MEMBER_VERBS = {"registered": "registered for", "no_show": "registered for but missed", "attended": "attended", "met": "met us at",
+                "targeted": "is on the list for"}
+PRE_EVENT, FOLLOW_UP = "event_pre_event", "event_follow_up"
+# A status that ends the pre-event note: the person answered or the event is behind them (the follow-up play takes over).
+MOVED = frozenset({"registered", "attended", "met", "no_show"})
+# Statuses whose signal an earlier `declined` cancels, when the feed still carries the older row.
+DECLINE_CANCELS = frozenset({"targeted", "registered"})
 
 
 def sync_campaign_members(cur, crm) -> int:
@@ -477,9 +486,10 @@ def sync_campaign_members(cur, crm) -> int:
     failure = None
     while True:
         try:
+            batch = read(cur, since, 200)
+            events = _events_for(cur, batch)           # the network calls, before the ingest transaction opens
             with cur.connection.transaction():
-                batch = read(cur, since, 200)
-                made += ingest_members(cur, batch)
+                made += ingest_members(cur, batch, events)
         except Exception as exc:
             failure = exc
             break
@@ -495,32 +505,143 @@ def sync_campaign_members(cur, crm) -> int:
     return made
 
 
-def ingest_members(cur, members) -> int:
+def _events_for(cur, members) -> dict:
+    """The event behind each campaign that has someone newly targeted, from Events Desk (once per campaign per day)."""
+    from . import event_link
+    out = {}
+    for ref in {m.campaign_ref for m in members if m.status == "targeted" and m.campaign_type in ("event", "webinar")}:
+        event = event_link.event_for(cur, ref)
+        if event:
+            out[ref] = event
+    return out
+
+
+def _member_person(cur, m):
+    person = None
+    if m.contact_email:
+        person = db.one(cur, "select id, account_id, email, linkedin_url from people where email = %s", m.contact_email.lower())
+    if person is None and m.contact_crm_id:
+        person = db.one(cur, "select id, account_id, email, linkedin_url from people where crm_id = %s", m.contact_crm_id)
+    return person
+
+
+def _who(m) -> str:
+    return m.contact_crm_id or m.contact_email or "unknown"
+
+
+def stop_event_plays(cur, person_id: int, campaign_ref: str, reason: str, keys: tuple[str, ...]) -> int:
+    """Stop one person's open enrolments in the named event plays that started from this campaign's signals, and close
+    each account play that has nobody else open, so the account can be proposed the next play. Returns enrolments stopped."""
+    from . import outreach
+    prefix = f"member:{campaign_ref}:"
+    started = ("(s.campaign_ref = %s or left(s.external_id, %s) = %s)", [campaign_ref, len(prefix), prefix])
+    rows = db.all(cur, f"""select e.id, e.account_play_id from enrollments e join account_plays ap on ap.id = e.account_play_id
+                          join plays p on p.id = ap.play_id join signals s on s.id = ap.trigger_signal_id
+                          where e.person_id = %s and e.state in ('pending', 'active', 'paused') and p.key = any(%s)
+                            and {started[0]}""", person_id, list(keys), *started[1])
+    for r in rows:
+        outreach.stop_enrollment(cur, r["id"], reason, close_play=False)
+    # Plays proposed from this person's own signal that nobody has started yet close as well.
+    aps = {r["account_play_id"] for r in rows} | {r["id"] for r in db.all(
+        cur, f"""select ap.id from account_plays ap join plays p on p.id = ap.play_id join signals s on s.id = ap.trigger_signal_id
+                 where s.person_id = %s and p.key = any(%s) and ap.state in ('proposed', 'accepted', 'researching', 'approving', 'active')
+                   and {started[0]}""", person_id, list(keys), *started[1])}
+    for ap_id in sorted(aps):
+        ap = db.one(cur, "select id, state from account_plays where id = %s for update", ap_id)
+        if ap["state"] not in ("proposed", "accepted", "researching", "approving", "active"):
+            continue            # engaged or in a meeting: someone answered, so the play is no longer only a note
+        if db.val(cur, "select exists (select 1 from enrollments where account_play_id = %s and state in ('pending', 'active', 'paused'))", ap_id):
+            continue
+        plays.set_state(cur, ap_id, "stopped", reason=reason, cooldown_key=reason)
+    if rows:
+        audit.log(cur, "desk", "event_plays_stopped", "person", person_id, {"campaign": campaign_ref, "reason": reason, "enrollments": len(rows)})
+    return len(rows)
+
+
+def _count(cur, name: str, n: int = 1) -> None:
+    """Members that make no signal are counted (settings `crm_member_counts`), so the desk can say how many it saw."""
+    cur_counts = db.val(cur, "select value from settings where key = 'crm_member_counts'") or {}
+    cur_counts[name] = int(cur_counts.get(name, 0)) + n
+    _set_setting(cur, "crm_member_counts", cur_counts)
+
+
+def ingest_members(cur, members, events: dict | None = None) -> int:
     """Turn members of event campaigns into signals, once each (the external id carries campaign, contact and status).
-    A person the desk holds, or an account it works, is needed; nobody is created here."""
-    from . import signals
+    A person the desk holds, or an account it works, is needed; nobody is created here. `events` is what Events Desk said
+    about each campaign (event_link.event_for), fetched by the caller before this runs."""
+    from . import event_link, signals
+    events = events or {}
+    members = [m for m in members if m.campaign_type in ("event", "webinar")]
+    declined: dict[tuple[str, str], object] = {}
+    for m in members:
+        if m.status == "declined":
+            k = (m.campaign_ref, _who(m))
+            at = signals.parse_observed(m.updated_at) if m.updated_at else db.val(cur, "select app_now()")
+            declined[k] = max(declined.get(k) or at, at)
+            db.run(cur, "insert into audit_log (actor, action, object_kind, object_id, detail) values ('desk', 'member_declined', 'campaign', null, %s)",
+                   J({"key": f"{m.campaign_ref}:{_who(m)}", "at": at.isoformat()}))
+    moved: dict[tuple[str, str], object] = {}
+    for m in members:
+        if m.status in MOVED and m.updated_at:
+            k = (m.campaign_ref, _who(m))
+            at = signals.parse_observed(m.updated_at)
+            moved[k] = max(moved.get(k) or at, at)
     raws = []
     for m in members:
-        if m.campaign_type not in ("event", "webinar") or m.status not in MEMBER_SIGNALS:
+        if m.status == "waitlist":
+            _count(cur, "waitlist")
             continue
-        person = None
-        if m.contact_email:
-            person = db.one(cur, "select id, account_id, email, linkedin_url from people where email = %s", m.contact_email.lower())
-        if person is None and m.contact_crm_id:
-            person = db.one(cur, "select id, account_id, email, linkedin_url from people where crm_id = %s", m.contact_crm_id)
+        person = _member_person(cur, m)
+        if m.status == "declined":
+            _count(cur, "declined")
+            if person:
+                stop_event_plays(cur, person["id"], m.campaign_ref, "declined_event", (PRE_EVENT, FOLLOW_UP))
+            continue
+        if m.status not in MEMBER_SIGNALS:
+            continue
+        if m.status in MOVED and person:
+            stop_event_plays(cur, person["id"], m.campaign_ref, "event_status_moved", (PRE_EVENT,))
+        at = signals.parse_observed(m.updated_at) if m.updated_at else None
+        if m.status in DECLINE_CANCELS:
+            later = declined.get((m.campaign_ref, _who(m)))
+            if later is None:
+                later = db.val(cur, """select max((detail ->> 'at')::timestamptz) from audit_log
+                                       where action = 'member_declined' and detail ->> 'key' = %s""", f"{m.campaign_ref}:{_who(m)}")
+            if later is not None and (at is None or at <= later):
+                continue                                # declined after this row: no signal from the older one
+        if m.status == "targeted":
+            passed = moved.get((m.campaign_ref, _who(m)))
+            if (passed is not None and (at is None or at <= passed)) or db.val(
+                    cur, "select exists (select 1 from signals where source = 'crm' and external_id = any(%s))",
+                    [f"member:{m.campaign_ref}:{_who(m)}:{x}" for x in sorted(MOVED)]):
+                continue                                # they already answered: a note before the event is too late
         account_id = person["account_id"] if person else None
         if account_id is None and m.account_domain:
             account_id, _ = signals.resolve_account(cur, m.account_domain, None)
         if account_id is None:
             continue
         kind, strength = MEMBER_SIGNALS[m.status]
-        who = m.contact_crm_id or m.contact_email or "unknown"
-        raws.append({"type": kind, "external_id": f"member:{m.campaign_ref}:{who}:{m.status}", "observed_at": m.updated_at,
-                     "account_id": account_id, "strength": strength,
-                     "evidence": {"summary": f"Someone at the company {MEMBER_VERBS[m.status]} {m.event_name or m.campaign_name}.",
-                                  "quote": f"{m.campaign_name}: {m.status}"},
+        what = m.event_name or m.campaign_name
+        evidence = {"summary": f"Someone at the company {MEMBER_VERBS[m.status]} {what}.", "quote": f"{m.campaign_name}: {m.status}"}
+        if m.status == "targeted":
+            event = events.get(m.campaign_ref)
+            where = event_link.words(event)
+            evidence["summary"] = f"Someone at the company is a person we want to meet at {where or what}."
+            if event:
+                evidence["event"] = event
+        raws.append({"type": kind, "external_id": f"member:{m.campaign_ref}:{_who(m)}:{m.status}", "observed_at": m.updated_at,
+                     "account_id": account_id, "strength": strength, "campaign_ref": m.campaign_ref, "evidence": evidence,
                      **({"person": {"email": person["email"], "linkedin_url": person["linkedin_url"]}} if person else {})})
+    refresh_event_evidence(cur, events)
     return signals.ingest(cur, "crm", raws)["matched"] if raws else 0
+
+
+def refresh_event_evidence(cur, events: dict) -> None:
+    """A link Events Desk added after someone was targeted reaches the signal that is still waiting to be drafted."""
+    for ref, event in events.items():
+        db.run(cur, """update signals set evidence = jsonb_set(evidence, '{event}', %s)
+                       where campaign_ref = %s and type_key = 'event_targeted' and evidence ? 'event'
+                         and evidence -> 'event' is distinct from %s""", J(event), ref, J(event))
 
 
 # ---------------------------------------------------------------- the first touch: may this person be contacted

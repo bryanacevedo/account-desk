@@ -99,6 +99,8 @@ EVENT_SIGNAL_TYPES = [
      "person", 16, 21),
     ("event_registered", "Registered for an event", "Someone from the company registered for an event but did not come: a lighter reason to write.",
      "person", 7, 14),
+    ("event_targeted", "Likely at an event", "Someone at the company is on the list of people we want to meet at an event the CRM records.",
+     "person", 10, 21),
 ]
 
 SIGNAL_SOURCES = [
@@ -196,6 +198,17 @@ EVENT_PLAY = (
          (9, "email", "break_up", "desk")),
     "Name the event first. If they came, say what we heard there; if they only registered, send what was covered.",
     "draft", True, 24)
+
+# The note before the event (decision 94). Day 0 says a reply will find a time; only the day-7 email may carry the event's
+# booking link, and only the one Events Desk gave (copy_gate refuses a link in a first email).
+EVENT_PRE_PLAY = (
+    "event_pre_event", "Before the event",
+    "A short note before the event, with a way to book time there, gets answered more often than one after it.",
+    {"any_of": ["event_targeted"], "fit_tiers": ["A", "B"], "min_priority": 20, "within_days": 30},
+    ["revops", "controller", "cfo"], 2,
+    _seq((0, "email", "open", "desk"), (3, "linkedin_connect", "connect", "sdr"), (7, "email", "follow_up", "desk")),
+    "Say we will be at the event and that a reply will find a time there. Nothing about a list or about tracking.",
+    "draft", False, 48)
 
 HOLIDAYS = [
     ("US", "2026-09-07", "Labor Day"),

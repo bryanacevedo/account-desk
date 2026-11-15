@@ -84,6 +84,23 @@ def _claim(company: str, f: dict) -> str | None:
     return None
 
 
+def _event_claim(p: dict) -> tuple[str, int] | None:
+    """For a note before an event (the draft input `event` is present): 'I'll be at <event>.' from the signal fact that
+    names it. The event and its dates are written the way the fact has them, so every name in the sentence is sourced."""
+    if p.get("event") is None:
+        return None
+    from . import event_link
+    fact = next((f for f in p["facts"] if f["kind"] == "signal:event_targeted"), None)
+    if fact is None:
+        return None
+    where = event_link.words(p["event"]) or fact["text"].partition(" meet at ")[2].rstrip(".")
+    return (f"I'll be at {where}.", fact["id"]) if where else None
+
+
+EVENT_OPEN_REPLY = ["Reply here and I will find a time that suits you there.", "If you reply, I will find a time there."]
+EVENT_BOOK = ["You can book a time at {url}", "A time can be booked at {url}"]
+
+
 @sim("draft")
 def draft(p: dict) -> dict:
     r = _rng(p["person"]["id"], p["step"]["index"], p.get("attempt", 1))
@@ -105,6 +122,20 @@ def draft(p: dict) -> dict:
         s.append({"text": intro, "kind": "courtesy", "fact_ids": []})
         s.append({"text": r.choice(ASK), "kind": "ask", "fact_ids": []})
         s.append({"text": r.choice(DECLINE), "kind": "courtesy", "fact_ids": []})
+    elif p.get("event") is not None and (ec := _event_claim(p)) and job in ("open", "follow_up"):
+        # A note before an event (decision 94): we will be there. The first email says a reply will find a time and carries
+        # no link; the follow-up gives the booking link Events Desk gave, when it gave one, and never any other.
+        s.append({"text": ec[0], "kind": "claim", "fact_ids": [ec[1]]})
+        if job == "open":
+            s.append({"text": intro, "kind": "courtesy", "fact_ids": []})
+            s.append({"text": r.choice(ASK), "kind": "ask", "fact_ids": []})
+            s.append({"text": r.choice(EVENT_OPEN_REPLY), "kind": "courtesy", "fact_ids": []})
+        else:
+            s.append({"text": r.choice(FOLLOW_OFFER), "kind": "courtesy", "fact_ids": []})
+            url = p["event"].get("booking_url")
+            s.append({"text": r.choice(EVENT_BOOK).format(url=url) if url else r.choice(EVENT_OPEN_REPLY),
+                      "kind": "courtesy", "fact_ids": []})
+            s.append({"text": r.choice(FOLLOW_ASK), "kind": "ask", "fact_ids": []})
     elif job == "open":
         c = _claim(company, lead) if lead else None
         if c:
@@ -153,8 +184,11 @@ def draft_linkedin(p: dict) -> dict:
     public = [f for f in facts if f["kind"].startswith("signal:")] + [f for f in facts if f["kind"] in ("page:billing", "page:careers")]
     lead = public[0] if public else None
     s: list[dict] = [{"text": f"{first},", "kind": "courtesy", "fact_ids": []}]
-    c = _claim(company, lead) if lead else None
-    if c:
+    ec = _event_claim(p)
+    c = _claim(company, lead) if lead and not ec else None
+    if ec:
+        s.append({"text": ec[0], "kind": "claim", "fact_ids": [ec[1]]})
+    elif c:
         s.append({"text": c, "kind": "claim", "fact_ids": [lead["id"]]})
     if p["step"]["job"] == "connect":
         # A redraft after a length failure drops the courtesy line, the way a person would trim it.

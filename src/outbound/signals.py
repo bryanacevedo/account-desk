@@ -117,12 +117,12 @@ def ingest(cur, source_key: str, raws: Iterable[dict]) -> dict:
             raw = {**raw, "person": {**raw["person"], "linkedin_url": http_url(raw["person"]["linkedin_url"])}}
         row = db.one(cur, """
             insert into signals (type_key, source, external_id, account_id, person_id, raw_domain, raw_company,
-                                 observed_at, strength, evidence, status, status_reason)
-            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                 observed_at, strength, evidence, status, status_reason, campaign_ref)
+            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             on conflict (source, external_id) do nothing returning id""",
             t["key"], source_key, str(raw["external_id"]), account_id, person_id, normalize_domain(raw.get("domain")),
             raw.get("company"), raw["observed_at"], max(0.0, min(1.0, float(raw.get("strength", 0.6)))), J(ev),
-            status, reason)
+            status, reason, raw.get("campaign_ref"))
         if row is None:
             counts["duplicates"] += 1
             continue
