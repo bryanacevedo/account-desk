@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, useLayoutEffe
 import { api } from "./api";
 import { STATUS_ICONS } from "./statusIcons";
 import { STATUS_MEANING } from "./statusMeaning";
-import { CheckCircle, Clock, PauseCircle, WarningCircle, type Icon } from "@phosphor-icons/react";
+import { ArrowSquareOut, CheckCircle, Clock, PauseCircle, WarningCircle, type Icon } from "@phosphor-icons/react";
 
 // ---------------------------------------------------------------- routing: the path is the state
 
@@ -133,6 +133,27 @@ export function useNowIso(): number { return NOW; }
 export function safeUrl(u: string | null | undefined): string | undefined {
   const t = (u || "").trim();
   return /^https?:\/\/[^\s/]+/i.test(t) ? t : undefined;
+}
+
+/** The host a source URL points at, as the label of its link ("www." dropped), or undefined when it is not an http(s) URL. */
+export function sourceHost(u: string | null | undefined): string | undefined {
+  const ok = safeUrl(u);
+  if (!ok) return undefined;
+  try { return new URL(ok).hostname.replace(/^www\./i, "") || undefined; } catch { return undefined; }
+}
+
+/** A research citation (a fact, a signal's evidence, a brief's source). An http(s) URL opens in a new tab and is labelled
+ *  with its host. Anything else the data holds is shown as text, never linked; with no value it renders nothing, so a
+ *  source is never invented. */
+export function SourceLink({ url, className }: { url: string | null | undefined; className?: string }) {
+  const ok = safeUrl(url), host = sourceHost(url);
+  if (ok && host) return (
+    <a className={`cite${className ? ` ${className}` : ""}`} href={ok} target="_blank" rel="noopener noreferrer" title={ok}>
+      <span>{host}</span><ArrowSquareOut size={12} aria-hidden="true" />
+    </a>
+  );
+  const text = (url || "").trim();
+  return text ? <span className={`cite is-text mute small${className ? ` ${className}` : ""}`}>{text}</span> : null;
 }
 
 export function day(iso: string | null | undefined): string {

@@ -2,10 +2,9 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Avatar } from "../marks";
 import { SIGNAL_NAME, SignalIcon, SignalLabel } from "../signalIcons";
-import { ArrowSquareOut } from "@phosphor-icons/react";
 import {
   Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, day, n0, navigate, pct, usePath, useData,
-  safeUrl, withParam, useBusy,
+  SourceLink, withParam, useBusy,
 } from "../lib";
 import { LABEL, STAGE, openSheet } from "../sheets";
 
@@ -122,14 +121,14 @@ function Feed({ rows }: { rows: any[] }) {
   return (
     <div className="ledger">
       {rows.map((s: any) => (
-        <div key={s.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) minmax(0,1.6fr) 84px 36px" }}>
+        <div key={s.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) minmax(0,1.6fr) 84px 150px" }}>
           <SignalIcon type={s.type_key} />
           {s.account_id
             ? <button className="cell-main" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }} onClick={() => openSheet("account", s.account_id)}><span className="t">{s.name}</span><span className="s">{s.label}</span></button>
             : <div className="cell-main"><span className="t">{s.raw_domain || s.raw_company || "Unknown company"}</span><span className="s">{s.label}</span></div>}
           <span className="clip hide-sm">{s.evidence.summary}</span>
           <span className="num mute small hide-sm">{ago(s.ingested_at)}</span>
-          {safeUrl(s.evidence.url) ? <a className="iconbtn" href={safeUrl(s.evidence.url)} target="_blank" rel="noreferrer noopener" aria-label="Open the source"><ArrowSquareOut size={15} /></a> : <span />}
+          <span className="num"><SourceLink url={s.evidence.url} /></span>
         </div>
       ))}
     </div>

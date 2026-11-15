@@ -224,7 +224,7 @@ def task(cur, task_id: int) -> dict | None:
     t["sources"] = db.all(cur, "select id, kind, text, source_url as url from facts where id = any(%s)", ids) if ids else []
     t["outcomes"] = LINKEDIN_OUTCOMES.get(t["kind"]) or (CALL_OUTCOMES if t["kind"] == "call" else {"done": "Done"})
     # Why the call, and what this person has already had, so the SDR does not dial cold.
-    t["why"] = db.one(cur, """select st.label, s.evidence->>'summary' as summary, s.observed_at from account_plays ap
+    t["why"] = db.one(cur, """select st.label, s.evidence->>'summary' as summary, s.evidence->>'url' as url, s.observed_at from account_plays ap
                               join signals s on s.id = ap.trigger_signal_id join signal_types st on st.key = s.type_key
                               where ap.id = %s""", t["account_play_id"]) if t["account_play_id"] else None
     t["so_far"] = db.all(cur, """select m.step_index, email_no(m.enrollment_id, m.step_index) as email_no, m.channel, m.subject, m.sent_at from messages m

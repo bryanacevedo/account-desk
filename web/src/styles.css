@@ -753,3 +753,9 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .num .unit { display: inline-block; min-width: 5.4em; margin-left: 6px; text-align: left; }
 .num .unit.is-num { min-width: 3.4em; text-align: right; }
 @media (max-width: 900px) { .num .unit, .num .unit.is-num { min-width: 0; } }
+
+/* A research citation: the source's host, muted, with a small arrow. No underline; ink on hover. */
+.cite { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; color: var(--mute); font-size: 12px; white-space: nowrap; }
+.cite > span { overflow: hidden; text-overflow: ellipsis; }
+a.cite:hover { color: var(--ink); }
+.cite.is-text { overflow: hidden; text-overflow: ellipsis; }

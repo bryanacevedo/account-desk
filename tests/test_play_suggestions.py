@@ -555,3 +555,17 @@ def test_a_suggestion_a_live_play_already_covers_is_hidden_and_counted_on_the_pl
         with db.tx() as cur:
             db.run(cur, "delete from plays where id = %s", play)
             db.run(cur, "update plays set status = 'live' where id = any(%s)", demoted)
+
+
+def test_a_task_sheet_hands_the_web_the_trigger_signals_source_url_and_never_makes_one_up(cur, world):
+    """DECISIONS 84: the Why now box on a call or LinkedIn task links its signal's source. The url is the evidence's own
+    url when it has one and None when it has none; the web links only http(s) and shows anything else as text."""
+    from outbound import views
+    row = db.one(cur, """select t.id as task_id, ap.trigger_signal_id as sig from tasks t
+                         join account_plays ap on ap.id = t.account_play_id
+                         where ap.trigger_signal_id is not null order by t.id limit 1""")
+    assert row, "the world has a task that started from a signal"
+    db.run(cur, "update signals set evidence = evidence - 'url' where id = %s", row["sig"])
+    assert views.task(cur, row["task_id"])["why"]["url"] is None
+    db.run(cur, "update signals set evidence = evidence || %s where id = %s", J({"url": "https://www.example.com/news/1"}), row["sig"])
+    assert views.task(cur, row["task_id"])["why"]["url"] == "https://www.example.com/news/1"

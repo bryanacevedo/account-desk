@@ -7,7 +7,7 @@ import { PlayEditor, PlayPreview } from "./PlayEditor";
 import { ElsewhereAccount, ElsewherePerson, keptBy, useIntegration } from "./elsewhere";
 import {
   Bar, Empty, Seg, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTime, late, money, n0, navigate, pct,
-  safeUrl, toast, useBusy, useData, useNowIso, withParam, type Glyph,
+  safeUrl, SourceLink, toast, useBusy, useData, useNowIso, withParam, type Glyph,
 } from "./lib";
 
 // ---------------------------------------------------------------- the sheet frame
@@ -262,7 +262,7 @@ export function PersonSheet({ id }: { id: number }) {
                     <span className="s" style={{ whiteSpace: "normal" }}>{h.r.cleaned}</span>
                   </button>
                 ) : (
-                  <div className="cell-main"><span className="t">{h.g.label}</span><span className="s" style={{ whiteSpace: "normal" }}>{h.g.evidence.summary}</span></div>
+                  <div className="cell-main"><span className="t">{h.g.label}</span><span className="s" style={{ whiteSpace: "normal" }}>{h.g.evidence.summary}{h.g.evidence.url ? <> <SourceLink url={h.g.evidence.url} /></> : null}</span></div>
                 )}
               </li>
             ))}
@@ -369,7 +369,7 @@ export function TaskSheet({ id }: { id: number }) {
             {t.sources.map((f: any) => (
               <div key={f.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
                 <span style={{ whiteSpace: "normal" }}>{f.text}</span>
-                {safeUrl(f.url) ? <a className="mute" href={safeUrl(f.url)} target="_blank" rel="noreferrer noopener" aria-label="Source"><ArrowSquareOut size={14} /></a> : <span />}
+                <span className="num"><SourceLink url={f.url} /></span>
               </div>
             ))}
           </div>
@@ -785,7 +785,7 @@ function WhyNow({ why }: { why: any }) {
       <div className="because">{why.because}</div>
       <div className="actions small mute" style={{ justifyContent: "space-between" }}>
         <span>{why.label}, {ago(why.observed_at)}</span>
-        {safeUrl(why.url) ? <a className="src" href={safeUrl(why.url)} target="_blank" rel="noreferrer noopener">Source <ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a> : null}
+        <SourceLink url={why.url} />
       </div>
     </div>
   );
@@ -954,7 +954,7 @@ export function SignalTimeline({ signals }: { signals: any[] }) {
           <SignalIcon type={s.type_key} />
           <div className="cell-main" style={{ whiteSpace: "normal" }}>
             <span className="t" style={{ whiteSpace: "normal" }}>{s.label}</span>
-            <span className="s" style={{ whiteSpace: "normal" }}>{s.evidence.summary}{safeUrl(s.evidence.url) ? <> <a href={safeUrl(s.evidence.url)} target="_blank" rel="noreferrer noopener" className="mute src-link" aria-label="Source"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
+            <span className="s" style={{ whiteSpace: "normal" }}>{s.evidence.summary}{s.evidence.url ? <> <SourceLink url={s.evidence.url} /></> : null}</span>
           </div>
         </li>
       ))}
@@ -1118,7 +1118,7 @@ export function MessageSheet({ id }: { id: number }) {
             {m.facts.map((f: any) => (
               <li key={f.id}><span className="id">{idOf.get(f.id)}</span>
                 <span>{f.text} <span className="mute small">{f.kind.startsWith("signal:") ? "Signal" : "Their website"}, {day(f.observed_at)}</span>
-                  {safeUrl(f.source_url) ? <> <a href={safeUrl(f.source_url)} target="_blank" rel="noreferrer noopener" className="mute"><ArrowSquareOut size={12} style={{ verticalAlign: -1 }} /></a></> : null}</span>
+                  {f.source_url ? <> <SourceLink url={f.source_url} /></> : null}</span>
               </li>
             ))}
           </ul>
