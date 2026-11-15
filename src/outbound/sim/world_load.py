@@ -35,6 +35,7 @@ TRUTH = "truth/"      # the folder that holds what only the simulated vendors an
 PUBLIC = "public/"
 
 KNOWN_SHARE = 0.55    # of the people in seats on the first day, the share the CRM already holds (legacy: 55%)
+NO_COUNTRY_SHARE = 0.01  # of the people the CRM holds, the share whose record has no country (a contact entered by hand)
 UNOWNED_SHARE = 0.12  # accounts that arrive with no owner (legacy: 12%)
 # Account Desk's users that already exist under another address: the roster renames Grace Osei to Leah Ahn.
 ALIASES = {"grace.osei@lumenledger.example": "leah.ahn@lumenledger.example"}
@@ -344,7 +345,8 @@ def build(cur, *, start: datetime, n_accounts: int | None = None, root: Path | s
                                         world_id)
                     values (%s,%s,%s,%s,%s,%s,%s,'unknown',%s,%s,%s,'crm',%s,%s,%s,%s,%s) returning id""",
                     aid, p["full_name"], p["first_name"], p["last_name"], p["title"], p["seniority"], email,
-                    p["linkedin_url"], p["country"], p["timezone"], f"CRM-C{p['person_id'][3:]}",
+                    p["linkedin_url"], None if frac("no_country:" + p["person_id"]) < NO_COUNTRY_SHARE else p["country"],
+                    p["timezone"], f"CRM-C{p['person_id'][3:]}",
                     max(start - timedelta(days=random.Random("created:" + p["person_id"]).randint(10, 700)),
                         datetime.combine(started, start.timetz())), champion, photo, p["person_id"])
                 db.run(cur, """insert into sim_people (person_id, true_email, email_truth, responsiveness, phone_truth,

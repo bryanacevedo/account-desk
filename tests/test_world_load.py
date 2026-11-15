@@ -154,7 +154,9 @@ def test_the_values_are_the_slices(built):
         assert c["billing_tool"] in r["pages"]["billing"]
     p = sl.people[q("select world_id from people order by id limit 1")[0]["world_id"]]
     row = q("select * from people where world_id = %s", p["person_id"])[0]
-    assert (row["full_name"], row["email"], row["title"], row["country"]) == (p["full_name"], p["email"].lower(), p["title"], p["country"])
+    # The CRM leaves a country blank on a hash-chosen few (decision 78); the value is the slice's otherwise.
+    country = None if wl.frac("no_country:" + p["person_id"]) < wl.NO_COUNTRY_SHARE else p["country"]
+    assert (row["full_name"], row["email"], row["title"], row["country"]) == (p["full_name"], p["email"].lower(), p["title"], country)
     if p["portrait"]:
         assert row["photo_url"] == f"https://randomuser.me/api/portraits/{p['portrait']}.jpg"
 
