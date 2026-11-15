@@ -149,3 +149,4 @@ The 79e60de image failed the coverage gate on "needs a region rule" (decision 78
 ## Prompt caching (2026-11-13, Backlog bl_117, branch `cache/prompt-caching`)
 
 Cache markers, tests and cache-aware cost accounting are in; measured with real calls on 2026-11-14: warm input cost about 87 to 91% lower on the tasks measured (see the newest decision). Not pushed until the repo writer lands.
+- Local coverage test failure on HEAD (2026-11-15, decision 87): `tests/test_coverage.py` builds the desk's own (legacy) demo, and from d0f8426 (decision 79, complaint rate 0.35%) it showed none of "supervised", "a promotion", "came back after a not now". Not hash or locale variance (same at PYTHONHASHSEED 1, 2 and unset) and not alerts, region rules or suggestion hiding (447d991, 79e60de and 449eef6 show them). The rate is now 0.35% only in world mode, 0.15% otherwise. Round-2 numbers are in decision 87.

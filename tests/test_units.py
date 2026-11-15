@@ -329,3 +329,13 @@ def test_a_suggested_reply_that_invents_is_caught_by_code():
     assert check_suggestion("Does Tuesday at 10am or Thursday at 2pm work?", "Happy to meet") == []
     # Words the prospect used themselves are not inventions.
     assert check_suggestion("I will check the NetSuite integration and come back.", theirs) == []
+
+
+def test_the_complaint_rate_is_higher_only_in_world_mode(monkeypatch):
+    """Decision 87: 0.35% keeps the world build's complaint scenarios (decision 79); on the desk's own demo it paused
+    enough mailboxes to lose three autonomy and suggestion scenarios."""
+    from outbound.sim import recipients
+    monkeypatch.delenv("WORLD", raising=False)
+    assert recipients.complaint_rate() == 0.0015
+    monkeypatch.setenv("WORLD", "world")
+    assert recipients.complaint_rate() == 0.0035

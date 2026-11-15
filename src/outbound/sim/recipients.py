@@ -9,13 +9,20 @@ import hashlib
 import random
 from datetime import datetime, timedelta
 
-from .. import db
+from .. import db, integration
 from ..adapters.sim import sim_inbox_rate
 from ..db import J
 
 # The share of mail that reaches an inbox and draws a spam complaint. A build sends a few thousand emails, so 0.15% left "spam
-# complaint" and "mailbox paused" at zero in one environment and three in another (decision 79); this keeps them in every one.
+# complaint" and "mailbox paused" at zero in one environment and three in another (decision 79); the world build, which the
+# hosted image is, uses 0.35% to keep them in every one. The desk's own demo keeps 0.15%: at 0.35% its extra paused mailboxes
+# cost it "supervised", "a promotion" and "came back after a not now" (decision 87).
 COMPLAINT_RATE = 0.0035
+COMPLAINT_RATE_LEGACY = 0.0015
+
+
+def complaint_rate() -> float:
+    return COMPLAINT_RATE if integration.world_mode() == "world" else COMPLAINT_RATE_LEGACY
 
 POSITIVE = [
     "Hi {sender}, good timing actually. We're feeling this at month end. Can you send a couple of times next week?",
@@ -97,7 +104,7 @@ def on_send(cur, message: dict, person_id: int, mailbox: dict, at: datetime) -> 
     provider = "outlook" if int(hashlib.md5(p["primary_domain"].encode()).hexdigest(), 16) % 5 < 2 else "gmail"
     if mailbox and rng.random() >= sim_inbox_rate(cur, mailbox["id"], provider):
         return
-    if rng.random() < COMPLAINT_RATE:
+    if rng.random() < complaint_rate():
         _event(cur, at + timedelta(hours=rng.randint(1, 30)), "complaint", message, person_id)
         return
     if rng.random() < 0.045:
