@@ -524,3 +524,82 @@ Cooldowns are written as rows in `holds` with the close reason, so the account g
 **Measurement window.** Meeting rate for lift counts meetings within 60 days of the proposal, inside the 90-day holdout hold.
 
 **Account cap.** The enrollment trigger reads `account_max_active` (3), or `account_max_active_wide` (5) when the account is tier A and the play's `max_people` is above 3.
+
+## 23. Findings batch of 2026-11-14
+
+Four backlog items with their directions chosen (pages in `~/Developer/account-desk-review/findings/`). Where this section and an earlier one differ, this section wins. No code yet. Migration numbers: 0035 and 0036 are used below, 0037 is for the reply studio.
+
+### 23.1 Country email rules you can edit (bl_130, direction A: edit in the row)
+
+Risk: legal, high. Counsel to confirm the starting list (decisions 72, 73, 76) before any real sending.
+
+**What exists.** `region_rules` (country, rule, note, call_rule, dnc_register, individual_consent) is read by `gate.person_reasons` (gate.py:149), `outreach._record_basis`, `coverage.py` and the send trigger (`message_pecr_guard`, migrations 0016, 0032, 0034). Today it is filled by the generator: `seed/load.py` and `setup_desk.py` insert `C.REGION_RULES`. Settings shows it read-only (`views.settings` returns `regions`).
+
+**Data model, migration 0035.**
+- The starting rows move into the migration: `insert into region_rules ... on conflict (country) do nothing` for the 20 countries of `catalog.REGION_RULES` with their note, call rule, register and `individual_consent`. IT, CH, SE, DK, BE, AT, NO stay `consent_required`; MX `allowed` (opt-out); FI and PT `basis_required` with `individual_consent`. `seed/load.py` and `setup_desk.py` stop inserting region rules, so every build (demo, legacy, live) starts from the same rows. A test fails if the two lists differ.
+- New table `region_rule_changes (id, country, at, changed_by references users, from_rule, to_rule, from_individual_consent, to_individual_consent, reason not null check (length(trim(reason)) >= 10))`. No row means "Starting list" in the Last change column. A trigger on `region_rules` update of `rule` or `individual_consent` refuses the update unless a `region_rule_changes` row for that country was inserted in the same transaction, so no change is silent, tests that insert directly are unaffected (inserts are allowed).
+- A country with no row stays "no rule: needs a region rule first" (gate `no_region_rule`); adding a country is a change with from `none`.
+
+**Endpoint.** `PUT /api/region-rules/{country}` body `{rule, individual_consent, reason, confirm}`. `GET /api/region-rules/{country}/changes` for the history list. The Settings page lists countries with a Change button per row; the row expands in place (direction A) with the three or four choices, tagged stricter or looser against today, a reason field, and for a loosening a field to type the country name.
+- Order, strictest first: blocked, consent_required, basis_required, allowed. Loosening is a move to a later rule, or turning `individual_consent` off. Tightening needs only the reason.
+- A loosening needs the reason and `confirm` equal to the country's name as shown (case-insensitive, trimmed); the server checks it, the page only enables the button.
+- Who: `need(u, "manager", "gtm")`; an SDR sees the table without Change. `not_in_public_demo()` refuses it with the existing 403 message and the page hides the buttons there. Writes `audit.log("region_rule_changed")`. One transaction: history row, update, audit.
+
+**Reads.** Nothing caches a rule: the send guard (gate and trigger) and `coverage.py` already read the table at call time, so a change applies to the next gate check. Messages already scheduled to a person who now needs consent are stopped by the gate at send time (`gate:no_consent`, permanent). Tightening does not unschedule anything itself.
+
+**Failure modes.** Same-rule submit: 422 "No change". Missing reason or wrong typed name: 422, nothing written. Two managers at once: the update is `where rule = <from the form>`; a miss returns 409 with the current rule. Database refuses an unrecorded update (trigger). Unknown country code: 404.
+
+**Tests.** Defaults after migrate equal today's list; demo-build coverage table identical before and after (snapshot of `coverage.py` output); gate and trigger follow an edited rule (loosen IT then a person in Italy passes the gate, tighten and the send is refused); loosening without reason or name is refused; SDR 403; public demo 403; history rows hold who, from, to, reason; direct SQL update without history is refused.
+
+### 23.2 Alerts at the top of Inboxes and Health (bl_125, direction A: ruled groups)
+
+**Goal.** Each of the two tabs opens with the alerts that concern it, grouped Urgent, Warning, Info. Each group has a 3px left rule in the blue ramp (urgent #0F2C6E, warn #4F7DC4, info #A9C4E8, tokens `--sev-urgent`, `--sev-warn`, `--sev-info`); the severity is also the group's heading word in ink with its count, so cover the blue and nothing is lost. No dot, chip or tint on a row. An empty group is not drawn; no alerts shows one line "Nothing needs attention".
+
+**Data, migration 0036.** `alerts` has `severity` (info, warn, urgent) and `acked_at` but no way to say a condition has ended. Add `resolved_at timestamptz` and `scope text check (scope in ('health','inboxes','both'))`, filled from `kind` by one function in `alerts.py` (`KIND_SCOPE`): mailbox and domain kinds (`complaint`, `mailbox_paused`, `mailbox_warn`, `placement_hold`, `placement_pause`, `spam_rate`, `spam_rate_warn`, `dns_broken`, `no_mailbox`) are `inboxes`; reply SLA, monitor, job, CRM and budget kinds are `health`. Unknown kinds default to `health`.
+
+**What counts as open.** An alert is open when `acked_at is null and resolved_at is null` and it is not older than 14 days unless its condition still holds. State alerts are resolved by the code that ends the state, in the same transaction: mailbox resumed (`mailbox_paused`, `mailbox_warn`), placement back above the hold line, domain spam rate below 0.1% (`spam_rate`, `spam_rate_warn`), `dns_fixed` raised (`dns_broken`), a healthy mailbox found (`no_mailbox`), reply handled (`sla_missed`, `hot_reply`). Event alerts (`complaint`, `send_unknown`) stay open until a person acks. A new `POST /api/alerts/{id}/ack` for manager, gtm or the owner; refused in the public demo.
+
+**API.** `/api/deliverability` gains `alerts: [{id, at, kind, severity, title, body, object_kind, object_id, area}]` for scope inboxes or both, open only, ordered urgent, warn, info, then newest. Mailbox alerts carry `object_kind = 'mailbox'` and the address; domain alerts `object_kind = 'domain'` and the domain (`raise_alert` already takes both; the spam-rate and placement callers must pass them). The Health tab reads the same shape from `/api/ops`, filtered to scope health or both, open only (it now shows 40 recent rows, open or not). Counts per severity ride along so the heading needs no second call.
+
+**Failure modes.** An alert without a known scope falls to Health, never hidden. A resolved row is kept for the audit trail and drawn nowhere. A dead Slack changes nothing: the rows are the source (alerts are rows first).
+
+**Tests.** Each kind has a scope (test lists `raise_alert` kinds in source and fails on a missing one); a paused mailbox is open until it resumes, then gone; ack closes; ordering urgent first; phone width 375 keeps rule and word; design-lint passes; severity word present in the DOM for every group.
+
+### 23.3 Approval sheet: "Approve and send", direction B Margin (bl_122)
+
+**Shape.** The sheet widens to 960. The draft is one editable page; the margin beside it carries the facts behind each sentence, the live check list, the word count against the step's limit (15 to 90), and per-change restore. Primary button reads "Approve and send" with the slot under it; Reject becomes a quiet text button. cmd+enter approves when no check fails. No other layer opens on top of the sheet.
+
+**API.**
+- `GET /api/messages/{id}` (`views.message`) adds `next_slot` (UTC timestamp) and `slot_label` data (`recipient_tz`, `recipient_first_name`). Computed with `timeutil.next_slot(planned, timezone, country, window, jitter_key=f"m{id}")` exactly as `outreach.schedule_message` does, with the same `planned` (max of enrollment `next_at` and now), so the label and the real slot agree. The jitter key makes it stable. Shown as "Sends today 10:12 AM, Sofia's time".
+- `POST /api/messages/{id}/check` body `{subject, body}`: a dry run of `outreach._edit_checks`. It builds a copy of the message dict with the new text and returns `{problems: [str], words: n, limit: [15, 90]}`. It writes nothing and does not touch `edited`. Refactor `_edit_checks` to take a message dict (it already does) so no database write is needed. The page calls it 400 ms after the last keystroke and cancels stale calls. The real check still runs inside `approve`; the dry run is advice and the server remains the check.
+- Per-change restore needs the original: `messages` keeps only the current text. Add the original to `attempts` at first edit (`approve` and the new check route do not store it), or read the first `attempts` entry; if absent, store `original_body`/`original_subject` in `citations`-adjacent jsonb on first edit. Decide in build; open question below.
+
+**Who.** `writer` plus `_own_message`: an SDR on their own accounts, manager and gtm on any. Public demo: the check route is read-only and allowed; approve stays as today.
+
+**Failure modes.** Check route slow or down: the button stays enabled and `approve` returns the same problems as 422, shown in the margin. Edit adds a number not in the cited facts: shown live, blocks approve. Message no longer `awaiting_approval` (another person approved): 409 with the new status, sheet reloads read-only. The slot passes while the sheet is open: the label re-fetches on focus. A recipient with no business day in 30 days returns the 30 day fallback, label says the date.
+
+**Tests.** `next_slot` in the payload equals the `scheduled_for` the approve then writes (same inputs, jitter key); dry run returns the same strings as `approve` for the same edit and writes nothing; word limit; footer removal flagged; cmd+enter does not fire with a failing check; restore returns one change only; SDR 403 on another SDR's message; Reject still needs a reason.
+
+### 23.4 Reply studio: composer in the reply sheet, direction A (bl_121)
+
+**Shape.** `ReplySheet` keeps one layer. Their words stay on top; below them an editor with the suggested reply (`replies.suggest`, stored in `extracted.suggested`), a one line refine field ("shorter, ask for a time"), the copy checks, and Send. Context (what we sent, colleagues waiting, account facts) sits one fold down. A reply labelled `unsubscribe`, or one that asked to stop (`OPT_OUT` match, `needs_review` with the opt-out reason), a bounce, an out of office or an auto reply shows what the desk did where the editor would be, and has no Send.
+
+**Endpoints.**
+- `POST /api/replies/{id}/refine` body `{instruction, current}` returns `{body, problems}`: reruns `suggest_reply` with the instruction and the current text (one rewrite with failures named, as `replies.suggest`), then `copy_gate.check_suggestion`. Returns the text with problems rather than nothing when checks fail, so the person sees why. Spend is metered by `llm.run` as for any call; capped at 10 refines per reply.
+- `POST /api/replies/{id}/check` body `{body}`: `check_suggestion` only, no model call, for typing.
+- `POST /api/replies/{id}/send` body `{body, subject?}`: sends through the existing send guard and the person's own mailbox (the SDR's, `outreach.pick_mailbox`, the same one the thread used). Steps in one transaction: refuse if the reply label is in the no-send set; run `gate.person_reasons(..., "email")` and refuse on any permanent reason; `check_suggestion` must return nothing; require `body` to keep the footer; insert the outgoing message and let the existing triggers (daily cap, region, PECR guard, suppression) refuse as for any send; on success mark the reply handled with outcome `answered` and audit `reply_sent`. Threading uses the original message's `thread_key` and `In-Reply-To`.
+- Who: the SDR who owns the account, manager, gtm (`writer`, `_own_message` style check on the reply's account). Public demo: the send route is refused (403), refine and check work.
+
+**Data, migration 0037.** A reply is a person writing back, not a sequence step, and `messages` requires an enrollment and a unique `(enrollment_id, step_index)`. Add `reply_sends (id, reply_id, user_id, mailbox_id, subject, body, status, provider_id, thread_key, sent_at, created_at)` with the same status values and hash, or extend `messages` with a `kind` and a nullable `step_index`. See the open question; the triggers (cap, region, suppression) must apply to either.
+
+**Failure modes.** Their reply came from a person now suppressed or erased: send refused with the reason. Mailbox paused: pick another of the same SDR, else 409 "No healthy mailbox". Provider error: status `failed`, the text kept in the editor, nothing marked handled. Double click: send is idempotent on `(reply_id, body_hash)`. A reply that classifies late as unsubscribe after the page loaded: the server re-reads the label at send and refuses. Live mode without `LIVE_SEND`: refused as today.
+
+**Tests.** Unsubscribe, bounce, OOO and "stop emailing" in a long reply cannot be sent (API 409 and no Send in the page); send goes through the gate, cap and region guard; refine keeps invented numbers out (check applies); a reply to a suppressed person is refused; a sent reply marks the reply handled and logs audit; the message uses the SDR's mailbox and the thread headers; public demo 403; SDR cannot reply on another SDR's account.
+
+### 23.5 Open questions
+
+1. Country rules in the legacy desk build: `setup_desk.py` accepts `cfg.region_rules` to override the starting list. With the migration seeding the rows, should that config become a write through the new endpoint (with a history row, who = system), or be dropped?
+2. Original text for per-change restore (23.3): `messages` stores no original. Keep it in `attempts` or add `original_subject` and `original_body` columns? Needs a decision before build; it affects 0036 if bundled.
+3. Alert age cutoff (23.2): 14 days for an event alert nobody acks is a guess; the code has no precedent to read. Confirm.
+4. Reply sends (23.4): a new `reply_sends` table or `messages` with a kind and nullable step; the second reuses the cap, region and PECR triggers but loosens `unique (enrollment_id, step_index)` and every query that assumes a step.
+5. A reply from a person with no open enrollment (a stopped sequence): which mailbox sends. Proposed: the account owner's.
