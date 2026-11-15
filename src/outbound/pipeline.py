@@ -37,7 +37,8 @@ def book_meeting(cur, *, account_id: int, person_id: int | None, starts_at: date
                    values (%s,%s,%s,'meeting','in','meeting_booked',app_now(),%s,%s) on conflict do nothing""",
            account_id, person_id, ap["id"] if ap else None, source, f"meeting:{mid}")
     db.run(cur, "insert into crm_outbox (kind, payload, idempotency_key) values ('meeting', %s, %s) on conflict do nothing",
-           J({"meeting_id": mid, "account_id": account_id, "person_id": person_id, "starts_at": starts_at.isoformat()}),
+           J({"meeting_id": mid, "account_id": account_id, "person_id": person_id, "starts_at": starts_at.isoformat(),
+              "source": source}),
            f"meeting:{mid}")
     audit.log(cur, "desk", "meeting_booked", "meeting", mid, {"source": source})
     return mid

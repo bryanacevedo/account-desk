@@ -69,7 +69,7 @@ export const STATUS_MEANING: Record<string, string> = {
   "Needs a person": "The desk is not sure, so a person decides.",
   // Meetings
   "Booked": "On the calendar.",
-  "Held": "It happened.",
+  "Meeting held": "It happened.",
   "No show": "They did not turn up.",
   "Cancelled": "It was called off.",
   // Plays and mailboxes

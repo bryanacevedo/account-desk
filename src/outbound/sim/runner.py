@@ -4,7 +4,9 @@ reps do what reps do (accept most proposals, approve most drafts, answer hot rep
 The reps are deliberately imperfect and slower near the end of the run, so the demo opens with work waiting."""
 from __future__ import annotations
 
+import importlib.util
 import logging
+import os
 import random
 from datetime import datetime, timedelta, timezone
 
@@ -437,17 +439,21 @@ MORE_PLANTED = [
 # the signal with the most calls, the annual commits on a pricing change, and the API pricing launch on web visits (a
 # pricing change had eight first-call accounts in a build and seven heard it; it needs eight to come back).
 MORE_PLANTED_WORLD = [
-    ("pricing_visit", REASONS[5][0], 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
-    ("pricing_visit", REASONS[5][0], 0.95, datetime(2026, 10, 1, tzinfo=UTC), None),
-    ("pricing_visit", ERP, 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),           # heard for a while, then not
+    # With the AEs' deals in the replayed CRM (decision 93) the world's first calls fall differently: web visits had six
+    # accounts, a pricing change thirteen and the hiring signal sixteen, so the reasons that need eight accounts to come
+    # back (the API pricing launch) and the competitor sit on the pricing change.
+    ("pricing_change", REASONS[5][0], 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
+    ("pricing_change", REASONS[5][0], 0.95, datetime(2026, 10, 1, tzinfo=UTC), None),
+    ("pricing_visit", ERP, 1.0, None, None),   # six accounts in all: set aside, and too few to come back (it needs eight)
     ("hiring_function", PORTAL, 0.8, None, None),
     ("pricing_change", COMMITS, 0.8, None, None),
     ("pricing_visit", CREDITS, 0.7, None, None),
-    ("pricing_visit", TOOLS[1][0], 0.9, None, None),                                 # a competitor
-    ("hiring_function", EINVOICE, 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
+    ("pricing_change", TOOLS[1][0], 0.9, None, None),                                # a competitor
+    ("hiring_function", EINVOICE, 0.9, None, datetime(2026, 9, 15, tzinfo=UTC)),
 ]
 # The same e-invoicing reason, once the rules are announced, on first calls everywhere: the pattern it made goes away.
 SPREAD = (EINVOICE, 0.6, datetime(2026, 10, 1, tzinfo=UTC))
+SPREAD_WORLD = (EINVOICE, 0.95, datetime(2026, 9, 15, tzinfo=UTC))  # few late calls in the world: spread earlier so it lapses
 # Who said it and how, so the same reason from ten companies reads like ten people, not one line pasted ten times.
 SAID = ["{}", "Controller: {}", "CFO said it twice: {}", "{} Came up before we asked.", "Their VP Finance brought it up: {}",
         "{} It was the first thing they raised.", "Head of billing, unprompted: {}"]
@@ -490,7 +496,7 @@ def call_notes(rng: random.Random, signal_type: str | None = None, billing: str 
     for seg, ways, share, since, until in (MORE_PLANTED_WORLD if world_on() else MORE_PLANTED):
         if signal_type == seg and rng.random() < share and _within(at, since, until):
             more.append(rng.choice(ways))
-    ways, share, since = SPREAD
+    ways, share, since = SPREAD_WORLD if world_on() else SPREAD
     if signal_type != MORE_PLANTED[-1][0] and _within(at, since, None) and rng.random() < share:
         more.append(rng.choice(ways))
     # Next to the planted line, ahead of objections and tools, so a long note keeps them (extraction keeps eight lines).
@@ -597,6 +603,27 @@ def _organic(cur, rng: random.Random, at: datetime) -> None:
             _crm_deal(cur, rng, at, a["id"], a["need"], None)
 
 
+_ACTORS = None
+
+
+def _outside_actors(at: datetime) -> None:
+    """People outside this desk who act in the CRM while the simulation runs (the shared rehearsal's account executives,
+    stage/ae.py in lumen-world). `SIM_ACTORS` names a Python file with `act(at)`, called once at the end of each simulated
+    hour, after the hour's CRM writes have gone out and before the next hour reads. Unset, nothing happens (the desk alone,
+    and every demo build that is not the rehearsal)."""
+    global _ACTORS
+    path = os.environ.get("SIM_ACTORS", "").strip()
+    if not path:
+        return
+    if os.environ.get("PUBLIC_DEMO") or os.environ.get("MODE") == "live":
+        raise SystemExit("SIM_ACTORS is for the rehearsal's build only, never live or on the public demo.")
+    if _ACTORS is None:
+        spec = importlib.util.spec_from_file_location("sim_actors", path)
+        _ACTORS = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_ACTORS)
+    _ACTORS.act(at)
+
+
 def _hour(cur_rng: random.Random, at: datetime, eagerness: float, totals: dict) -> None:
     with db.tx() as cur:
         db.run(cur, "update sim_clock set at = %s", at)
@@ -610,6 +637,7 @@ def _hour(cur_rng: random.Random, at: datetime, eagerness: float, totals: dict) 
     if at.hour == 15 and at.weekday() == 1 and eagerness > 0:
         review_suggestions(at)
     totals["jobs"] += jobs.run_ready(limit=2000)
+    _outside_actors(at)
 
 
 def run(days: int, *, seed: int = 11, slow_last_days: int = 2, idle_hours: int = 40, extra_hours: int = 0) -> dict:

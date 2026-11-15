@@ -100,6 +100,10 @@ def main(argv: list[str]) -> int:
         runner.deterministic_database(False)
         if replay is not None:
             replay.finish()                  # JournalMismatch if any recorded step was never asked for
+            # The simulation still drew its own deals (the random stream must stay as it was), but CRM Desk's AEs hold the
+            # real ones: clear the invented rows so the hosted demo's "move time forward" cannot read them beside the replayed deals.
+            with db.tx() as cur:
+                db.run(cur, "delete from sim_crm_deals")
         print(json.dumps({"world": info, "world_mode": mode, "totals": totals, "seconds": round(time.time() - t0, 1)},
                          default=str))
         db.close()

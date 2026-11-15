@@ -117,6 +117,8 @@ class CrmDeskCrm:
         elif kind == "meeting":
             domain = db.val(cur, "select primary_domain from accounts where id = %s", payload["account_id"])
             body = {"type": "meeting", "meeting_status": "booked", "meeting_at": payload["starts_at"], "contact": email,
+                    # What an AE sees on the activity: a buyer who asked for a demo came to us; the rest an SDR booked.
+                    **({"subject": "Demo request from the website"} if payload.get("source") == "inbound" else {}),
                     **({"account": f"domain:{domain}"} if domain else {}), "external_id": f"meeting:{payload['meeting_id']}"}
         elif kind == "task":
             owner = db.val(cur, "select email from users where id = %s", payload.get("owner")) if payload.get("owner") else None

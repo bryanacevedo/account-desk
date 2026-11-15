@@ -179,3 +179,9 @@ Built, in this order (decisions 88 to 90; SPEC 23.3 and 23.4). The directions ar
 Risk: legal, high. A reply to someone in a blocked country is refused as any send is, until Bryan decides; consent-required countries are not applied to replies. Counsel to confirm both.
 
 Open for Bryan or the next writer: the draft prompt has no fallback when a case has no signal fact and does not say to restate the offer in different words (both need a re-recording, past the 2 USD approved); reply sends write no CRM activity and have no sweep for a crash mid-send; the alert-age question (23.5, 3) and the legacy `setup_desk` region-rules question (23.5, 1) are unanswered.
+
+## bl_136: AEs open opportunities (2026-11-15, session ae)
+
+- Built with lumen-world (SPEC 24, decision 93): `SIM_ACTORS` hook, `lost_on_timing`, world build replays the delivered journal. Rehearsal `--verify` identical on all three desks, `stage/audit.py` 9 of 9.
+- Not deployed: Render deploys on hold (SESSIONS rule 20).
+- Coverage gate on the replayed world build (2026-11-15): 99 scenarios, 92 shown, 0 missing; deals sourced 11, influenced 8, converted 18, closed-lost revisit 34. The world's plants were retuned for the new first-call counts (`MORE_PLANTED_WORLD`, `SPREAD_WORLD`; decision 93); the legacy plants are unchanged.

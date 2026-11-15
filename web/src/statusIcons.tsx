@@ -28,7 +28,7 @@ export const STATUS_ICONS: Record<string, Icon> = {
   "Simulated": Flask, "Not connected": PlugsConnected, "Webhook": ArrowsLeftRight, "Connected": PlugsConnected,
   "Blocked by a contact rule": Prohibit, "Play ended": StopCircle,
   // mail and health
-  "Sending mail": PaperPlaneTilt, "Live": PaperPlaneTilt, "Held": CalendarCheck, "Booked": CalendarPlus,
+  "Sending mail": PaperPlaneTilt, "Live": PaperPlaneTilt, "Meeting held": CalendarCheck, "Booked": CalendarPlus,
   "No show": UserMinus, "Delivered": CheckCircle, "Not delivered": WarningCircle, "Watching": Clock,
   "Past the first batch": CheckCircle,
 };

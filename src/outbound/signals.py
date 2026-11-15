@@ -259,14 +259,25 @@ def move_person(cur, person_id: int, new_account_id: int, *, corroborated_by: st
               {"from": p["account_id"], "to": new_account_id, "by": corroborated_by})
 
 
+TIMING_WORDS = ("timing", "not this quarter", "next fy", "next quarter", "next year", "revisit", "come back after", "after q1",
+                "after q2", "after q3", "after q4", "after their audit", "pushed to")
+
+
+def lost_on_timing(reason: str | None) -> bool:
+    """A loss reason that says the buyer wanted it later. A CRM with a reason list sends `timing`; one where the AE types the
+    reason (CRM Desk) sends their words ("not this quarter, revisit after their audit"), so the words count too."""
+    text = (reason or "").strip().lower()
+    return text == "timing" or any(w in text for w in TIMING_WORDS)
+
+
 def first_party_from_crm(cur) -> int:
     """Closed-lost deals whose timing objection has passed become a signal. Champions come from won deals."""
     n = 0
-    rows = db.all(cur, """
-        select o.id, o.account_id, o.closed_at from opportunities o
-        where o.won = false and o.closed_at < app_now() - interval '150 days' and o.loss_reason = 'timing'
+    rows = [r for r in db.all(cur, """
+        select o.id, o.account_id, o.closed_at, o.loss_reason from opportunities o
+        where o.won = false and o.closed_at < app_now() - interval '150 days'
           and not exists (select 1 from signals s where s.source = 'crm' and s.external_id = 'lost-' || o.id)
-        order by o.id""")
+        order by o.id""") if lost_on_timing(r["loss_reason"])]
     for r in rows:
         db.run(cur, """insert into signals (type_key, source, external_id, account_id, observed_at, strength, evidence, status)
                        values ('closed_lost_revisit', 'crm', %s, %s, app_now(), 0.7, %s, 'matched')""",

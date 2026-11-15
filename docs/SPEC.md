@@ -605,3 +605,20 @@ _Built 2026-11-15 (decisions 88 to 90): the answers taken were 2 (columns `origi
 3. Alert age cutoff (23.2): 14 days for an event alert nobody acks is a guess; the code has no precedent to read. Built as 14 days (decision 86); confirm.
 4. Reply sends (23.4): a new `reply_sends` table or `messages` with a kind and nullable step; the second reuses the cap, region and PECR triggers but loosens `unique (enrollment_id, step_index)` and every query that assumes a step.
 5. A reply from a person with no open enrollment (a stopped sequence): which mailbox sends. Proposed: the account owner's.
+
+## 24. AEs open opportunities in the shared rehearsal (Backlog bl_136, 2026-11-15)
+
+**The gap.** In the shared rehearsal Account Desk's SDRs book meetings and CRM Desk records them, but nobody opens an opportunity from one. Desks never create or move an opportunity (shared-world DESIGN.md section 5), people do. So a replay of Account Desk's half of the journal reads no deals from its own work and fails four coverage scenarios: sourced, influenced, converted and a closed-lost revisit. That is why the demo has shipped on the standalone world demo (`sim_crm_deals`), whose deals are Account Desk's own invention, not CRM Desk's.
+
+**What is built.**
+
+1. *The AEs, in lumen-world* (`stage/ae.py`, decisions in `src/lumen_world/ae.py`). The rehearsal's Account Desk run calls the AE step at the end of every simulated hour (`SIM_ACTORS`, a hook in `sim/runner.py` that does nothing when unset), because Account Desk reads CRM Desk's deals as it goes. The AE reads CRM Desk's database, as their own screen, for held meetings Account Desk booked, and writes through CRM Desk's API as the account's AE (the one direct write is CRM Desk's simulated clock, set in its database to the moment they acted; a next-step touch is stamped a few seconds after). Each request is journaled as `actor: "ae"`, with `as` naming the AE.
+2. *Rates, from the world.* A held meeting opens an opportunity with `behavior.opportunity_from_meeting` (0.20 plus 0.45 per need, capped at 0.9), two to eight days later in the AE's local working hours, one open deal per company (any type). Sales also opens deals on its own, 0.0004 per need per account per day. A deal is won by Market Desk's model (size band, pricing model, industry, source), takes the world's cycle (about 85 days won, 70 lost, twice as slow at 2,000 to 4,999 employees), moves a stage at a time and closes with a loss reason from the world's own loss wording (Healthcare losses use the compliance wording 60% of the time).
+3. *CRM Desk replays them.* One contract change in `sim/lumen.py`: an `ae` step is sent as that person (`x-acting-as`), with the clock at its `at` and put back after. Nothing else in CRM Desk changes.
+4. *Account Desk switches to the replayed journal.* `outbound demo` in the world build replays `world/journal.jsonl` when it is present (the Account Desk half, committed by the rehearsal's `--verify`; the Dockerfile copies `world/`), so `sim_crm_deals` is no longer what the hosted demo reads. A lost deal's reason is now read as words as well as the code `timing` (`signals.lost_on_timing`), because CRM Desk's AEs write the reason, and the "closed lost, revisit" signal needs it.
+
+**What is not built.** Writing `source_desk` and `source_ref` back to the opportunity from Account Desk (shared-world DESIGN sections 5 and 7) is not done: Account Desk attributes credit in its own tables, and the audit does not need the write.
+
+**Checks.** `stage/rehearse.py --verify`: all three desks identical on replay; `stage/audit.py` 9 of 9; `python -m outbound coverage` on the replayed build with 0 missing; the image build runs the same gate.
+
+**Risks.** Volume: a 90-day window holds few closes from deals opened inside it (cycles are long), so closed deals mostly come from history; the four scenarios need only opens, a closed-lost on timing from history, and a converted play. A different seed can move counts a little; the gate has margin on each (counts in PROJECT-STATUS).

@@ -998,7 +998,7 @@ function AccountOutreach({ d }: { d: any }) {
             {d.meetings.map((m: any) => (
               <button key={m.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => openSheet("meeting", m.id)}>
                 <div className="cell-main"><span className="t">{m.full_name || "Meeting"}</span><span className="s">{dayTime(m.starts_at)}</span></div>
-                <Status kind={m.status === "held" ? "ok" : m.status === "booked" ? "go" : "off"}>{({ held: "Held", booked: "Booked", no_show: "No show", cancelled: "Cancelled" } as Record<string, string>)[m.status] || cap(m.status)}</Status>
+                <Status kind={m.status === "held" ? "ok" : m.status === "booked" ? "go" : "off"}>{({ held: "Meeting held", booked: "Booked", no_show: "No show", cancelled: "Cancelled" } as Record<string, string>)[m.status] || cap(m.status)}</Status>
               </button>
             ))}
           </div>
