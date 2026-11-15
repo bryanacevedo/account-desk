@@ -160,3 +160,8 @@ Left to do, in this order (SPEC section 23 is reviewed and holds the plan; migra
 - bl_123 outbound copy, direction A (plain note); also rewrite the stand-in drafts in `sim_llm.py` and lower the first-touch floor from 40 words; use the humanizer skill; re-record the draft eval.
 - bl_121 reply studio, direction A (composer in the reply sheet): a new `reply_sends` table with its own guard trigger (kill switch, suppression, erasure, person status, blocked region, hash); its own reason set rather than `gate.person_reasons` (cooldown and no_consent would refuse every answer; Risk: legal, counsel to confirm); mailbox and domain cap counts must include it; outbox pattern, not one transaction.
 - Live screenshots at 1440 and 375 in `findings/live/` not yet taken for part 1; local ones are in `findings/` (alerts-*, country-rules-*, results-*).
+
+## Shared-world audit confirmed (2026-11-15, commit 6fce88a and later)
+
+World 1.2.0 at lumen-world 74ed630, CRM Desk 7241eed and Market Desk aec5263 as detached worktrees, Account Desk at d6cacd4; own database prefix `adfix2_`, port 8878. `stage/rehearse.py --verify`: the journal has 13,234 steps (13,070 from Account Desk), all three desks replayed identically (5, 1 and 4 checks). `stage/audit.py`: 9 of 9 ok (1,477 emails over 65 days match CRM Desk activities day by day; 233 meetings on both sides, none dead; every email in its recipient's send window). Nothing needed fixing. `world/journal.jsonl` is regenerated, not committed.
+
