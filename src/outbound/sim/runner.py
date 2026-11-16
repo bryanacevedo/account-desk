@@ -444,7 +444,10 @@ MORE_PLANTED_WORLD = [
     # back (the API pricing launch) and the competitor sit on the pricing change.
     ("pricing_change", REASONS[5][0], 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
     ("pricing_change", REASONS[5][0], 0.95, datetime(2026, 10, 1, tzinfo=UTC), None),
-    ("pricing_visit", ERP, 1.0, None, None),   # six accounts in all: set aside, and too few to come back (it needs eight)
+    # Heard on the pricing change, where the first calls are (web visits had four accounts in the 2026-11-16 build, the
+    # rule needs five), and only until 1 October: it opens, is set aside three weeks later, and is never heard again, so it
+    # stays set aside ("set aside and still set aside"). The shape the desk's own demo has on web visits.
+    ("pricing_change", ERP, 0.9, None, datetime(2026, 10, 1, tzinfo=UTC)),
     ("hiring_function", PORTAL, 0.8, None, None),
     ("pricing_change", COMMITS, 0.8, None, None),
     ("pricing_visit", CREDITS, 0.7, None, None),

@@ -193,3 +193,9 @@ Open for Bryan or the next writer: the draft prompt has no fallback when a case 
 - Built with lumen-world (SPEC 24, decision 93): `SIM_ACTORS` hook, `lost_on_timing`, world build replays the delivered journal. Rehearsal `--verify` identical on all three desks, `stage/audit.py` 9 of 9.
 - Not deployed: Render deploys on hold (SESSIONS rule 20).
 - Coverage gate on the replayed world build (2026-11-15): 99 scenarios, 92 shown, 0 missing; deals sourced 11, influenced 8, converted 18, closed-lost revisit 34. The world's plants were retuned for the new first-call counts (`MORE_PLANTED_WORLD`, `SPREAD_WORLD`; decision 93); the legacy plants are unchanged.
+
+## Journal shrink and the ERP scenario (2026-11-16, session ec-shrink)
+
+- The four-desk journal's Account Desk half is 21,905 steps against bl_136's 27,702. Not a regression: with Events Desk left out, this code reproduces bl_136's journal byte for byte. Adding Events Desk's key to the rehearsal moves CRM Desk's id sequence by 1 and Account Desk's 90 days take another path from 2026-08-20. Intended; details in lumen-world's PROJECT-STATUS.
+- "Set aside and still set aside" was missing on the replayed world (the ERP reason had 4 accounts on web visits; the rule needs 5). `runner.MORE_PLANTED_WORLD` now plants it on the pricing change until 2026-10-01. Replay of the delivered journal: coverage 99 scenarios, 95 shown, 0 missing, no journal mismatch; the journal is unaffected by the plant (call notes are this desk's own). `tests/test_world_load.py` 29 passed.
+- `world/journal.jsonl` is the four-desk journal of 2026-11-16 (21,905 steps), identical across two full runs. Not deployed (rule 20).
