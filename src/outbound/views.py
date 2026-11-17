@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from . import adapters, alerts, db, monitors, outreach, region_rules, spend, stats, suggestions
+from . import plays as plays_mod
 from .jobs import request_progress
 
 OPEN = ("proposed", "accepted", "researching", "approving", "active", "engaged", "meeting")
@@ -20,7 +21,7 @@ def today(cur, user: dict) -> dict:
     args = (uid,) if user["role"] == "sdr" else ()
     proposals = db.all(cur, f"""
         select ap.id, ap.proposed_at, ap.why_now, a.id as account_id, a.name, a.primary_domain, a.fit_tier,
-               sc.priority, p.name as play, p.urgent, u.name as owner
+               sc.priority, p.name as play, p.urgent, u.name as owner, u.role as owner_role
         from account_plays ap join accounts a on a.id = ap.account_id join plays p on p.id = ap.play_id
         left join account_scores sc on sc.account_id = a.id left join users u on u.id = ap.owner_id
         where ap.state = 'proposed' and {mine} order by p.urgent desc, sc.priority desc nulls last limit 40""", *args)
@@ -51,8 +52,54 @@ def today(cur, user: dict) -> dict:
         from meetings m join accounts a on a.id = m.account_id left join people pe on pe.id = m.person_id
         where m.owner_id = %s and m.starts_at between app_now() - interval '1 day' and app_now() + interval '7 days'
         order by m.starts_at""", uid)
-    return {"proposals": proposals, "approvals": approvals, "replies": hot, "tasks": tasks, "meetings": meetings,
-            "now": db.val(cur, "select app_now()")}
+    # Decision 100: a proposal nobody decided in time stays on Today with "Propose again" until its account has a newer
+    # play, a gate blocks it, or two weeks have passed since it lapsed.
+    expired = db.all(cur, f"""
+        select ap.id, ap.proposed_at, ap.closed_at, ap.why_now, a.id as account_id, a.name, a.primary_domain,
+               sc.priority, p.name as play, p.urgent, u.name as owner, u.role as owner_role,
+               case when p.urgent then {_ttl("urgent_proposal_ttl_days", 1)} else {_ttl("proposal_ttl_days", 5)} end as limit_days
+        from account_plays ap join accounts a on a.id = ap.account_id join plays p on p.id = ap.play_id
+        left join account_scores sc on sc.account_id = a.id left join users u on u.id = ap.owner_id
+        where ap.state = 'expired' and ap.close_reason = 'expired' and ap.arm = 'treated' and {mine}
+          and ap.closed_at > app_now() - interval '14 days'
+          and not exists (select 1 from account_plays n where n.account_id = ap.account_id and n.id <> ap.id
+                          and n.proposed_at >= ap.proposed_at)
+        order by p.urgent desc, ap.closed_at desc limit 20""", *args)
+    for r in expired:
+        r["why"] = plays_mod.propose_again_blockers(cur, r["account_id"])
+        r["can_propose_again"] = not r["why"]
+    return {"proposals": proposals, "expired": expired, "approvals": approvals, "replies": hot, "tasks": tasks,
+            "meetings": meetings, "now": db.val(cur, "select app_now()")}
+
+
+def _ttl(key: str, default: int) -> str:
+    """A proposal time limit, in business days, as a SQL expression."""
+    return f"coalesce((select (value #>> '{{}}')::int from settings where key = '{key}'), {default})"
+
+
+ROLE_WORD = {"sdr": "SDR", "manager": "Manager", "gtm": "GTM"}
+
+
+def owner_note(*, owner_role: str | None, account_owner: bool, crm_owner_email: str | None, lifecycle: str | None,
+               integrated: set[str]) -> dict:
+    """Decision 1: an owner is never shown bare. `role` says what the person is here; `source` says where the name
+    came from, in plain words, and names another desk only when INTEGRATED_WITH says it is connected.
+    Two kinds of owner exist: the owner of the account (set by the record it came from) and the SDR a play was given to
+    (chosen by this desk: the account's owner when that is an SDR, else the SDR with the fewest open plays)."""
+    role = ROLE_WORD.get(owner_role or "", None)
+    if account_owner:
+        customer = lifecycle in ("customer", "open_opp")
+        if "crm_desk" in integrated and customer:
+            src = "Account owner, from customer records (CRM Desk)"
+        elif "market_desk" in integrated and not customer:
+            src = "Account owner, from the account plan (Market Desk)"
+        elif crm_owner_email:
+            src = "Account owner, from the CRM record"
+        else:
+            src = "Account owner, from the account list"
+    else:
+        src = "Given this play by the desk: fewest open plays"
+    return {"role": role, "source": src}
 
 
 # ---------------------------------------------------------------- accounts
@@ -70,11 +117,13 @@ def accounts(cur, *, q: str | None, view: str, owner: int | None, limit: int = 1
     if owner:
         where.append("a.owner_id = %s")
         args.append(owner)
-    return db.all(cur, f"""
+    rows = db.all(cur, f"""
         select a.id, a.name, a.primary_domain, a.industry, a.employees, a.hq_country, a.fit_tier, a.lifecycle,
-               count(*) over () as total_n, sc.priority, sc.fit, sc.intent, sc.engagement, coalesce(u.name, apu.name) as owner, ap.state as play_state, p.name as play,
+               count(*) over () as total_n, sc.priority, sc.fit, sc.intent, sc.engagement, coalesce(u.name, apu.name) as owner, (u.id is not null) as owner_is_account_owner,
+               coalesce(u.role, apu.role) as owner_role, a.crm_owner_email, hd.reason as hold_reason, lp.urgent as last_urgent,
                rs.label as reason, rs.type_key as reason_type, rs.observed_at as reason_at, coalesce(sh.delta, 0) as week_change,
-               lp.state as last_state, hd.until as hold_until
+               lp.state as last_state, hd.until as hold_until,
+               {_ttl("proposal_ttl_days", 5)} as ttl_days, {_ttl("urgent_proposal_ttl_days", 1)} as urgent_ttl_days
         from accounts a left join account_scores sc on sc.account_id = a.id
         left join users u on u.id = a.owner_id
         left join account_plays ap on ap.account_id = a.id and ap.state in {OPEN}
@@ -82,23 +131,41 @@ def accounts(cur, *, q: str | None, view: str, owner: int | None, limit: int = 1
         left join users apu on apu.id = ap.owner_id
         left join lateral (select t.label, s.type_key, s.observed_at from signals s join signal_types t on t.key = s.type_key
                            where s.id = sc.reason_signal_id) rs on true
-        left join lateral (select state from account_plays x where x.account_id = a.id
-                           order by x.proposed_at desc limit 1) lp on true
-        left join lateral (select max(until) as until from holds h where h.account_id = a.id
-                           and h.person_id is null and h.until > app_now()) hd on true
+        left join lateral (select x.state, pl.urgent from account_plays x join plays pl on pl.id = x.play_id
+                           where x.account_id = a.id order by x.proposed_at desc limit 1) lp on true
+        left join lateral (select h.until, h.reason from holds h where h.account_id = a.id
+                           and h.person_id is null and h.until > app_now() order by h.until desc limit 1) hd on true
         left join lateral (select sum(priority - coalesce(previous, 0)) as delta from score_history h
                            where h.account_id = a.id and h.at > app_now() - interval '7 days') sh on true
         where {' and '.join(where)}
         order by {"coalesce(sh.delta, 0) desc," if view == "rising" else ""} sc.priority desc nulls last, a.name limit %s offset %s""",
         *args, limit, offset)
+    from . import integration
+    integrated = integration.integrated_with()
+    for r in rows:
+        r.update(owner_note(owner_role=r["owner_role"], account_owner=r["owner_is_account_owner"],
+                            crm_owner_email=r["crm_owner_email"], lifecycle=r["lifecycle"], integrated=integrated)
+                 if r["owner"] else {"role": None, "source": "No owner yet: the desk gives the account to an SDR when it proposes a play"})
+        r["owner_role"], r["owner_source"] = r.pop("role"), r.pop("source")
+        r["hold_expired"] = r["hold_reason"] == "expired"
+        r["expired_days"] = r["urgent_ttl_days"] if r["last_urgent"] else r["ttl_days"]
+        for k in ("crm_owner_email", "owner_is_account_owner", "ttl_days", "urgent_ttl_days", "last_urgent"):
+            r.pop(k, None)
+    return rows
+
+
 
 
 def account(cur, account_id: int, *, money: bool) -> dict | None:
-    a = db.one(cur, """select a.*, u.name as owner, p.name as parent_name from accounts a
+    a = db.one(cur, """select a.*, u.name as owner, u.role as owner_role_raw, p.name as parent_name from accounts a
                        left join users u on u.id = a.owner_id left join accounts p on p.id = a.parent_id where a.id = %s""",
                account_id)
     if a is None:
         return None
+    from . import integration
+    integrated = integration.integrated_with()
+    a["owner_note"] = owner_note(owner_role=a.pop("owner_role_raw"), account_owner=bool(a["owner_id"]) and a["owner"] is not None,
+                                 crm_owner_email=a.get("crm_owner_email"), lifecycle=a.get("lifecycle"), integrated=integrated)
     score = db.one(cur, "select * from account_scores where account_id = %s", account_id)
     labels = {r["key"]: r for r in db.all(cur, "select key, label, because, weight, half_life_days from signal_types")}
     sigs = db.all(cur, """select s.id, s.type_key, s.observed_at, s.strength, s.evidence, s.source, p.full_name
@@ -122,7 +189,7 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
                 continue
             contributions.append({**c, "label": labels.get(c["type"], {}).get("label", c["type"])})
     plays_ = db.all(cur, """select ap.id, ap.state, ap.arm, ap.proposed_at, ap.closed_at, ap.close_reason, ap.why_now,
-                                   ap.brief, ap.owner_id, p.id as play_id, p.name as play, p.autonomy, u.name as owner
+                                   ap.brief, ap.owner_id, p.id as play_id, p.name as play, p.autonomy, u.name as owner, u.role as owner_role
                             from account_plays ap join plays p on p.id = ap.play_id left join users u on u.id = ap.owner_id
                             where ap.account_id = %s order by ap.proposed_at desc""", account_id)
     current = next((x for x in plays_ if x["state"] in OPEN), None)
@@ -142,6 +209,12 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
     reps = db.all(cur, """select r.id, r.received_at, r.label, r.cleaned, r.hot, pe.full_name, pe.photo_url from replies r
                           left join people pe on pe.id = r.person_id where r.account_id = %s order by r.received_at desc""",
                   account_id)
+    # Our answers to those replies, kept with the account so the thread reads both ways (S5 review).
+    answers = db.all(cur, """select rs.id, rs.reply_id, rs.status, rs.subject, rs.sent_at, rs.created_at, pe.full_name, u.name as sent_by
+                             from reply_sends rs join replies r on r.id = rs.reply_id left join people pe on pe.id = rs.person_id
+                             left join users u on u.id = rs.user_id
+                             where r.account_id = %s and rs.status <> 'cancelled' order by coalesce(rs.sent_at, rs.created_at) desc""",
+                     account_id)
     meetings = db.all(cur, """select m.id, m.starts_at, m.status, m.person_id, pe.full_name, pe.photo_url from meetings m
                               left join people pe on pe.id = m.person_id where m.account_id = %s order by m.starts_at desc""",
                       account_id)
@@ -159,7 +232,7 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
             left join messages m on m.enrollment_id = e.id
             where e.account_play_id = %s order by e.id, m.step_index""", current["id"])
     return {"account": a, "score": score, "contributions": contributions, "signals": sigs, "plays": plays_,
-            "current": current, "people": people, "gaps": gaps, "messages": messages, "replies": reps,
+            "current": current, "people": people, "gaps": gaps, "messages": messages, "replies": reps, "answers": answers,
             "meetings": meetings, "opportunities": opps, "holds": holds, "calendar": calendar,
             # What became of the work Accept queued (research, people, first drafts): queued, running, done or failed.
             "work": request_progress(cur, f"account_play:{plays_[0]['id']}", detail=money) if plays_ else None}
@@ -722,3 +795,48 @@ def settings(cur) -> dict:
             **{("regions" if k == "regions" else "region_changes"): v for k, v in region_rules.listing(cur).items()},
             "suppressions": db.all(cur, "select id, kind, value, reason, source, created_at, expires_at from suppressions where expires_at is null or expires_at > app_now() "
                                         "order by created_at desc limit 100")}
+
+
+# ---------------------------------------------------------------- an SDR's read-only views (decision 6)
+
+def my_mailbox(cur, user_id: int) -> dict:
+    """The mailboxes this person sends from, how each is doing, and the domain it sits on. Nothing here can be changed
+    from this view: a manager changes mailboxes."""
+    d = deliverability(cur)
+    boxes = [m for m in d["mailboxes"] if m["user_id"] == user_id]
+    domains = {m["domain"] for m in boxes}
+    keep = ("id", "address", "domain", "provider", "status", "pause_reason", "sent", "bounced", "complaints", "today", "cap",
+            "blocked", "placement", "placement_at", "warmup")
+    return {"mailboxes": [{k: m.get(k) for k in keep} for m in boxes],
+            "domains": [{k: x.get(k) for k in ("domain", "spf", "dkim", "dmarc", "dmarc_aligned", "dmarc_policy", "blocklisted",
+                                                  "spam_rate", "age_days", "checked_at")} for x in d["domains"] if x["domain"] in domains],
+            "thresholds": d["placement"]}
+
+
+def do_not_contact(cur) -> list[dict]:
+    """Everyone and everything the desk will not contact, newest first. Erased people show only as a scrambled copy."""
+    rows = db.all(cur, """select id, kind, value, reason, source, created_at from suppressions
+                          where expires_at is null or expires_at > app_now() order by created_at desc limit 300""")
+    for r in rows:
+        if r["kind"].endswith(("_hash", "_hmac")):
+            r["value"] = None  # an erased person stays only as a scrambled copy; the copy is not shown
+    return rows
+
+
+def badge_counts(cur, user: dict) -> dict:
+    """The sidebar numbers, defined by the lists they open. `today` is replies to answer plus plays to decide plus calls
+    and LinkedIn tasks due, the first, second and fourth boxes of Today. `replies` is the replies that need a person
+    among the ones in this person's default view of Replies (theirs for an SDR, everyone's otherwise)."""
+    uid, sdr = user["id"], user["role"] == "sdr"
+    today_n = db.val(cur, """
+        select (select count(distinct r.id) from replies r join accounts a on a.id = r.account_id
+                  join tasks t on t.reply_id = r.id and t.status = 'open'
+                  and t.kind in ('reply', 'review_reply') where (t.owner_id = %s or %s))
+             + (select count(*) from account_plays where state = 'proposed' and (owner_id = %s or %s))
+             + (select count(*) from tasks where status = 'open' and owner_id = %s and kind not in ('reply', 'review_reply')
+                  and due_at <= app_now() + interval '1 day')""", uid, not sdr, uid, not sdr, uid)
+    mine = """coalesce((select ap.owner_id from account_plays ap where ap.account_id = r.account_id
+                        order by ap.proposed_at desc limit 1), (select owner_id from accounts where id = r.account_id)) = %s"""
+    replies_n = db.val(cur, "select count(*) from replies r where r.needs_review and r.handled_at is null"
+                            + (f" and {mine}" if sdr else ""), *([uid] if sdr else []))
+    return {"today": today_n, "replies": replies_n}

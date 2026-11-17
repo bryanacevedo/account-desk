@@ -1,17 +1,18 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   CaretRight, ChartLineUp, Coins, CheckSquare, ChatsCircle, DotsThree, GearSix, Lightning, ListChecks, Pulse, Sun, Target,
-  EnvelopeSimple, PaperPlaneTilt,
+  EnvelopeSimple, PaperPlaneTilt, ProhibitInset, Tray,
 } from "@phosphor-icons/react";
 import { api, setActingAs } from "./api";
-import { Toaster, changed, navigate, setNow, toast, useBusy, useData, usePath } from "./lib";
+import { Loading, Toaster, changed, navigate, setNow, toast, useBusy, useData, usePath } from "./lib";
 import { SheetHost } from "./sheets";
 import { usePrewarm } from "./elsewhere";
 import { Accounts, Today } from "./pages/Work";
 import { Flight } from "./pages/Flight";
 import { Vendors } from "./pages/Vendors";
 import { Approvals, Plays, Replies, Signals } from "./pages/Flow";
-import { Deliverability, Ops, Results, Settings } from "./pages/Desk";
+import { Deliverability, DoNotContact, MyMailbox, Ops, Results, Settings } from "./pages/Desk";
+import { DemoBar, isSample, useRefusalTitles } from "./demo";
 
 type Me = { user: { id: number; name: string; role: string }; users: any[]; counts: Record<string, number>; money: boolean;
   now: string; simulated: boolean; public_demo: boolean; snapshot?: { taken_on: string }; company: string; integration?: { integrated_with: string[]; links: Record<string, string> } };
@@ -25,6 +26,8 @@ const ROUTES: { path: string; label: string; icon: ReactNode; page: () => JSX.El
   { path: "/signals", label: "Signals", icon: <Lightning size={18} />, page: Signals, group: "How it works" },
   { path: "/plays", label: "Plays", icon: <ListChecks size={18} />, page: Plays, count: "suggested" },
   { path: "/results", label: "Results", icon: <ChartLineUp size={18} />, page: Results },
+  { path: "/my-mailbox", label: "My mailbox", icon: <Tray size={18} />, page: MyMailbox, roles: ["sdr"], group: "Your sending" },
+  { path: "/do-not-contact", label: "Do not contact", icon: <ProhibitInset size={18} />, page: DoNotContact, roles: ["sdr"] },
   { path: "/inboxes", label: "Inboxes", icon: <EnvelopeSimple size={18} />, page: Deliverability, roles: ["gtm", "manager"], group: "Running it" },
   { path: "/vendors", label: "Vendors and costs", icon: <Coins size={18} />, page: Vendors, roles: ["gtm", "manager"] },
   { path: "/health", label: "Health", icon: <Pulse size={18} />, page: Ops, roles: ["gtm", "manager"] },
@@ -49,6 +52,7 @@ export function App() {
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
   }, []);
+  useRefusalTitles(!!me?.snapshot);
   const routes = ROUTES.filter((r) => !r.roles || (me && r.roles.includes(me.user.role)));
   // The phone's bottom bar: the first four pages that belong there; everything else is under More.
   const bar = routes.filter((r) => !r.offBar).slice(0, 4);
@@ -58,6 +62,7 @@ export function App() {
   const more = { path: "/more", label: "More", icon: null, page: () => <More routes={rest} me={me} /> } as any;
   const route = path === "/more" ? more : routes.find((r) => r.path === path) || routes[0];
   const Page = route.page;
+  const sample = isSample(me);
   useEffect(() => { document.title = `${route.label}, Account Desk`; }, [route.label]);
   const nav = (
     <nav className="nav" aria-label="Main">
@@ -75,6 +80,7 @@ export function App() {
   );
   return (
     <div className="app">
+      <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById("main")?.focus(); }}>Skip to content</a>
       <aside className="side">
         <div className="brand-block"><div className="brand"><Mark />Account Desk</div><div className="tagline">Signal &amp; Account based outbound</div></div>
         {nav}
@@ -83,7 +89,7 @@ export function App() {
           {me?.simulated ? <Clock me={me} /> : null}
           {me && me.users.length ? (
             <div className="acting">
-              <label htmlFor="acting">Acting as</label>
+              <label htmlFor="acting" title="Pick who you are in this desk. An SDR sees their own accounts; a manager and GTM see everyone's and the settings.">Acting as</label>
               <select id="acting" className="select" value={me.user.id} onChange={(e) => { setActingAs(Number(e.target.value)); changed(); setTick((x) => x + 1); }}>
                 {me.users.map((u) => <option key={u.id} value={u.id}>{u.name}, {ROLE[u.role]}</option>)}
               </select>
@@ -91,7 +97,8 @@ export function App() {
           ) : null}
         </div>
       </aside>
-      <main className="main">
+      <main className="main" id="main" tabIndex={-1}>
+        {me && sample ? <DemoBar me={me} /> : null}
         <div className="phone-bar">
           <span className="brand" style={{ margin: 0 }}><Mark />{route.label}</span>
           {me && me.users.length ? (
@@ -101,8 +108,7 @@ export function App() {
             </select>
           ) : null}
         </div>
-        {me?.snapshot ? <SnapshotNote at={me.snapshot.taken_on} /> : null}
-        {me ? <div className="page-enter" key={`${route.path}:${me.user.id}`}><Page /></div> : null}
+        {me ? <div className="page-enter" key={`${route.path}:${me.user.id}`}><Page /></div> : <div className="page"><Loading rows={8} /></div>}
       </main>
       <nav className="phone-nav" aria-label="Main">
         {bar.map((r) => (
@@ -118,11 +124,6 @@ export function App() {
       <Toaster />
     </div>
   );
-}
-
-/** Only on the static snapshot (scripts/build_static_snapshot.py): what the visitor is looking at, said once per page. */
-function SnapshotNote({ at }: { at: string }) {
-  return <p className="snapshot-note" role="note"><b>Read-only snapshot</b> of the Account Desk demo, taken {at}. Lumen Ledger and everyone in it are invented sample data. Nothing you change is saved.</p>;
 }
 
 // The pages that do not fit the phone's bottom bar, and the demo clock.
@@ -150,7 +151,7 @@ function Clock({ me }: { me: Me }) {
   return (
     <div className="clock">
       <span className="when">{when}</span>
-      <span className="note">A simulated company with invented accounts. Every vendor is simulated.</span>
+      <span className="note">A simulated company with invented accounts. Every vendor is simulated. Moving a day ahead runs the sample reps and the desk for 24 hours.</span>
       <button className="btn line sm" disabled={busy} onClick={() => run(async () => {
         const r = await api<any>("/api/sim/advance", { method: "POST", body: { hours: 24 } });
         toast(`A day passed: ${r.signals} new signals.`);

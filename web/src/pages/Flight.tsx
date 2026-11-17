@@ -1,3 +1,4 @@
+import { Hint } from "../demo";
 import { CalendarCheck, ChatCircleText, EnvelopeSimple, LinkedinLogo, PencilSimpleLine, Phone } from "@phosphor-icons/react";
 import { useState } from "react";
 import { Avatar, Logo } from "../marks";
@@ -50,6 +51,7 @@ export function Flight() {
   return (
     <div className="page">
       <div className="head"><div><h1>In flight</h1><p className="sub">{data.plays.length} {data.plays.length === 1 ? "account" : "accounts"} in a play{scope === "mine" ? ", yours" : ""}</p></div></div>
+      <Hint>In flight means a play someone accepted and that is now running. Each row is one account, with every person in it and where that person is in the sequence of emails, calls and LinkedIn messages.</Hint>
       <div className="toolbar">
         <Seg label="Stage" value={stage} onChange={(v) => navigate(withParam("stage", v === "all" ? null : v), true)}
           options={[["all", "All"], ...STAGES.filter(([, , st]) => n(st) > 0).map(([k, l, st]) => [k, `${l} ${n(st)}`] as [string, string])]} />
@@ -92,7 +94,7 @@ export function Flight() {
             {shown.map((p: any) => <FlightRow key={p.id} p={p} team={team} cols={cols} mine={scope === "mine"} />)}
           </div>
         </Section>
-      ) : <Empty title={narrowed ? "Nothing in flight matches" : "Nothing in a play yet"} />}
+      ) : <Empty title={narrowed ? "Nothing in flight matches" : "Nothing in a play yet"}>Example: Northwind, Email 2 sent Tuesday, Email 3 due Friday, a call on Monday.</Empty>}
     </div>
   );
 }

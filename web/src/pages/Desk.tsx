@@ -7,6 +7,7 @@ import {
 import { Comparison, LABEL, openSheet } from "../sheets";
 import { SignalLabel } from "../signalIcons";
 import { KeptInMarketDesk } from "../elsewhere";
+import { Hint } from "../demo";
 
 // ---------------------------------------------------------------- Deliverability
 
@@ -104,6 +105,66 @@ export function Deliverability() {
     </div>
   );
 }
+/** Decision 6. An SDR sees how their own mailboxes are doing and why one is not sending. Read only: a manager changes mailboxes. */
+export function MyMailbox() {
+  const { data, error, reload } = useData<any>("/api/my-mailbox");
+  if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
+  if (!data) return <div className="page"><div className="head"><h1>My mailbox</h1></div><Loading rows={4} /></div>;
+  return (
+    <div className="page">
+      <div className="head"><div><h1>My mailbox</h1><p className="sub">Read only: a manager changes mailboxes</p></div></div>
+      <Hint>The mailbox your emails go out from, and the domain it sits on. If it is paused or still warming up, your approved emails wait and none is lost. Spam rate comes from the mailbox provider and should stay under 0.3%.</Hint>
+      {data.mailboxes.length ? data.mailboxes.map((m: any) => {
+        const d = data.domains.find((x: any) => x.domain === m.domain);
+        const auth = d && d.spf && d.dkim && d.dmarc && d.dmarc_aligned;
+        return (
+          <Section key={m.id} title={m.address}>
+            <div className="figs">
+              <Fig value={m.today} unit={`of ${m.cap}`} label="Sent today" />
+              <Fig value={m.sent} label="Sent, last 14 days" />
+              <Fig value={m.sent ? pct(m.bounced / m.sent, 1) : "None"} label="Bounced" />
+              <Fig value={m.complaints} label="Spam complaints" />
+            </div>
+            <div className="ledger">
+              <div className="row" style={{ gridTemplateColumns: "140px minmax(0,1fr)" }}><span className="mute">Status</span><span><Status kind={m.blocked ? (m.status === "paused" ? "stop" : "wait") : "ok"}>{m.blocked || "Sending"}</Status></span></div>
+              <div className="row" style={{ gridTemplateColumns: "140px minmax(0,1fr)" }}><span className="mute">Domain</span><span>{m.domain}{d ? <> <Status kind={auth ? "ok" : "stop"}>{auth ? "SPF, DKIM, DMARC aligned" : "Authentication incomplete"}</Status></> : null}</span></div>
+              {d ? <div className="row" style={{ gridTemplateColumns: "140px minmax(0,1fr)" }}><span className="mute">{postmaster(d)}</span><span>{d.blocklisted ? "On a blocklist" : "Not on a blocklist"}, {d.age_days} days old</span></div> : null}
+              <div className="row" style={{ gridTemplateColumns: "140px minmax(0,1fr)" }}><span className="mute">Warm-up</span><span>{warmup(m.warmup)}</span></div>
+              <div className="row" style={{ gridTemplateColumns: "140px minmax(0,1fr) minmax(0,1fr)" }}><span className="mute">Where mail lands</span>{["gmail", "outlook"].map((pv) => <span key={pv}><span className="mute small">{cap(pv)} </span><Inbox r={m.placement?.[pv]} t={data.thresholds} /></span>)}</div>
+            </div>
+          </Section>
+        );
+      }) : <Empty title="No mailbox is set up for you">Example: ana.sdr@mail.example, sending 24 of 40 a day, warmed up, inbox rate 92% at Gmail.</Empty>}
+    </div>
+  );
+}
+
+/** Decision 6. The do-not-contact list for everyone, read only. Adding and lifting stay with a manager or GTM in Settings. */
+export function DoNotContact() {
+  const { data, error, reload } = useData<any>("/api/do-not-contact");
+  if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
+  if (!data) return <div className="page"><div className="head"><h1>Do not contact</h1></div><Loading rows={8} /></div>;
+  return (
+    <div className="page">
+      <div className="head"><div><h1>Do not contact</h1><p className="sub">{data.entries.length} {data.entries.length === 1 ? "entry" : "entries"}, read only</p></div></div>
+      <Hint>Check here before you promise anything to someone. The desk never emails, calls or messages anyone on this list, and an email to them is refused before it is sent. To add or lift an entry, ask a manager.</Hint>
+      {data.entries.length ? (
+        <div className="ledger">
+          <div className="row head" style={{ gridTemplateColumns: "100px minmax(0,1fr) minmax(0,1fr) 70px" }}><span>Kind</span><span>Who</span><span>Why</span><span className="num">Added</span></div>
+          {data.entries.map((x: any) => (
+            <div key={x.id} className="row" style={{ gridTemplateColumns: "100px minmax(0,1fr) minmax(0,1fr) 70px", minHeight: 36 }}>
+              <span className="mute">{cap(/_(hash|hmac)$/.test(x.kind) ? "erased" : x.kind)}</span>
+              <span className="clip">{x.value ?? "Kept only as a scrambled copy"}</span>
+              <span className="mute clip">{x.reason}</span>
+              <span className="num mute small">{day(x.created_at)}</span>
+            </div>
+          ))}
+        </div>
+      ) : <Empty title="Nobody yet">Example: an email address that replied &ldquo;remove me&rdquo; appears here with the reason and the date.</Empty>}
+    </div>
+  );
+}
+
 /** One provider's seed result: the inbox share, flagged only when it holds or pauses the mailbox. */
 function Inbox({ r, t }: { r: any; t: { placement_hold_below: number; placement_pause_below: number } }) {
   if (!r) return <span className="mute">Not tested</span>;
@@ -191,6 +252,7 @@ export function Results() {
   return (
     <div className="page">
       <div className="head"><div><h1>Results</h1></div></div>
+      <Hint>Opportunities sourced: deals opened at an account within 90 days after a meeting that one of our plays booked. Opportunities influenced are deals opened where a play was running but no play meeting came first. They are different from the meeting counts below, which count meetings, not deals.</Hint>
       <div className="figs">
         <Fig value={data.opportunities.sourced} label="Opportunities sourced" />
         {me?.money ? <Fig value={money(data.opportunities.sourced_cents)} label="Pipeline sourced" /> : null}
@@ -198,14 +260,15 @@ export function Results() {
 
       </div>
       <div>
-        <Section title="From signal to meeting">
+        <Section title="From signal to meeting" right={<span className="mute small">Counted per play</span>}>
+          <p className="lift-why">Each bar counts plays, not accounts. A &ldquo;meeting booked from a play&rdquo; is one the play&rsquo;s own outreach booked, so a meeting someone asked for themselves is not in it. The comparison and the signal table below count any meeting at an account within 60 days, so their numbers are higher by the meetings people asked for. Both are right; they answer different questions.</p>
           <div className="funnel">
             <Bar label="Proposed to an SDR" value={f.proposed} of={of} />
             <Bar label="Accepted" value={f.accepted} of={of} hint={pct(f.accepted / of)} />
             <Bar label="Contacted" value={f.contacted} of={of} hint={pct(f.contacted / of)} />
             <Bar label="Replied" value={f.replied} of={of} hint={pct(f.replied / of)} />
             <Bar label="Positive reply" value={f.positive} of={of} hint={pct(f.positive / of)} tone="accent" />
-            <Bar label="Meeting from outbound" value={f.meetings} of={of} hint={pct(f.meetings / of)} tone="accent" />
+            <Bar label="Meeting booked from a play" value={f.meetings} of={of} hint={pct(f.meetings / of)} tone="accent" />
           </div>
         </Section>
       </div>
@@ -235,6 +298,7 @@ export function Results() {
         ) : <Empty title="Nobody reached yet" />}
       </Section>
       <Section title="Which signals turn into meetings">
+        <p className="lift-why">Counts accounts: of the accounts a play started on this signal, how many had any meeting within 60 days of the first proposal, inbound included.</p>
         <div className="ledger">
           <div className="row head" style={{ gridTemplateColumns: "minmax(0,1.4fr) 110px minmax(160px,1.6fr)" }}><span>Signal</span><span className="num">Plays started</span><span className="num">Meetings within 60 days</span></div>
           {data.signals.filter((s: any) => s.treated > 0).sort((a: any, b: any) => (b.meeting_rate || 0) - (a.meeting_rate || 0)).map((s: any) => (

@@ -191,6 +191,44 @@ def decide(cur, ap_id: int, *, accept: bool, user_id: int, reason: str | None = 
         set_state(cur, ap_id, "skipped", reason=reason, actor="person", actor_id=user_id, cooldown_key="skipped")
 
 
+def propose_again_blockers(cur, account_id: int) -> list[str]:
+    """Why a lapsed proposal cannot be offered again, in plain words. Empty when it can. The hold the lapse itself set
+    does not count: that hold is what "Propose again" lifts. Any other hold, an open play, a do-not-contact entry or
+    the kill switch does."""
+    out = [r.message for r in gate.account_reasons(cur, account_id) if r.code != "account_hold"]
+    other = db.one(cur, """select reason, until from holds where account_id = %s and person_id is null and until > app_now()
+                           and reason <> 'expired' order by until desc limit 1""", account_id)
+    if other:
+        out.append(f"On hold until {other['until']:%d %b}: {other['reason']}")
+    return out
+
+
+def propose_again(cur, ap_id: int, *, user_id: int) -> int:
+    """Decision 100. A proposal that lapsed (nobody decided in time) is offered again, by a person, on the same signal.
+    The lapse's own hold is lifted and the time limit starts over; nothing else about the account's gates is bypassed.
+    Returns the new proposal's id."""
+    ap = db.one(cur, """select ap.*, p.status as play_status from account_plays ap join plays p on p.id = ap.play_id
+                        where ap.id = %s for update of ap""", ap_id)
+    if ap is None or ap["state"] != "expired" or ap["close_reason"] != "expired":
+        raise ValueError("Only a proposal that lapsed can be offered again")
+    if ap["play_status"] != "live":
+        raise ValueError("This play is not live, so it cannot be offered again")
+    if db.val(cur, "select exists (select 1 from account_plays where account_id = %s and id <> %s and proposed_at >= %s)",
+              ap["account_id"], ap_id, ap["proposed_at"]):
+        raise ValueError("This account already has a newer play")
+    blockers = propose_again_blockers(cur, ap["account_id"])
+    if blockers:
+        raise ValueError(blockers[0])
+    db.run(cur, "delete from holds where account_id = %s and person_id is null and reason = 'expired' and set_by = 'desk'",
+           ap["account_id"])
+    owner = _pick_owner(cur, db.val(cur, "select owner_id from accounts where id = %s", ap["account_id"]))
+    new = db.val(cur, """insert into account_plays (account_id, play_id, trigger_signal_id, arm, state, why_now, owner_id)
+                         values (%s,%s,%s,'treated','proposed',%s,%s) returning id""",
+                 ap["account_id"], ap["play_id"], ap["trigger_signal_id"], J(ap["why_now"]), owner)
+    audit.log(cur, "person", "proposed_again", "account_play", new, {"from": ap_id, "owner": owner}, actor_id=user_id)
+    return new
+
+
 @jobs.handler("expire_proposals")
 def expire_proposals(cur, payload: dict) -> None:
     ttl = int(db.val(cur, "select value from settings where key = 'proposal_ttl_days'") or 5)

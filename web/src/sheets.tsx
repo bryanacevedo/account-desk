@@ -6,6 +6,7 @@ import { Avatar, Logo } from "./marks";
 import { SignalIcon, SignalLabel } from "./signalIcons";
 import { PlayEditor, PlayPreview } from "./PlayEditor";
 import { ElsewhereAccount, ElsewherePerson, keptBy, useIntegration } from "./elsewhere";
+import { Sample } from "./demo";
 import {
   Bar, Empty, Seg, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTime, late, money, n0, navigate, pct,
   safeUrl, SourceLink, toast, useBusy, useData, useNowIso, withParam, type Glyph,
@@ -575,7 +576,7 @@ const ATTR: Record<string, string> = { sourced: "Sourced by outbound", influence
 export function MeetingSheet({ id }: { id: number }) {
   const { data: m, error, reload } = useData<any>(`/api/meetings/${id}`);
   const [notes, setNotes] = useState("");
-  const [learn, setLearn] = useState(true);
+  const [learn, setLearn] = useState(false); // off until the person ticks it: notes are saved either way
   const [busy, run] = useBusy();
   if (error) return <Frame crumb="Meeting"><Failed error={error} retry={reload} /></Frame>;
   if (!m) return <Frame crumb="Meeting"><Loading rows={6} /></Frame>;
@@ -621,7 +622,7 @@ export function MeetingSheet({ id }: { id: number }) {
           <>
             <textarea className="input" rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What they said: why they would buy, what worries them, tools they use" aria-label="Call notes" />
             <div className="actions" style={{ justifyContent: "space-between", marginTop: 8 }}>
-              <label className="choice"><input type="checkbox" checked={learn} onChange={(e) => setLearn(e.target.checked)} />Use these notes for play suggestions</label>
+              <label className="choice"><input type="checkbox" checked={learn} onChange={(e) => setLearn(e.target.checked)} />Also use these notes to suggest new plays</label>
               {!open ? <button className="btn line sm" disabled={busy || !notes.trim()} onClick={() => save(m.status)}>Add notes</button> : null}
             </div>
           </>
@@ -654,6 +655,7 @@ export function MeetingSheet({ id }: { id: number }) {
   );
 }
 
+const ROLE_WORD: Record<string, string> = { sdr: "SDR", manager: "Manager", gtm: "GTM" };
 const MEETING: Record<string, string> = { booked: "Meeting booked", held: "Meeting held", no_show: "Meeting, they did not show", cancelled: "Meeting cancelled" };
 
 /** The same step names as the play editor. */
@@ -768,7 +770,7 @@ export function AccountSheet({ id }: { id: number }) {
   // With Market Desk present its tier is the tier, read-only, and this desk's own fit steps aside for the accounts that have one.
   const recorded = keptBy(integ, "market_desk") && !!a.crm_tier;
   const tabs: [string, string, number?][] = [["overview", "Overview"], ["people", "People", data.people.length],
-    ["signals", "Signals", data.signals.length], ["outreach", "Outreach", data.messages.length + data.replies.length]];
+    ["signals", "Signals", data.signals.length], ["outreach", "Outreach", data.messages.length + data.replies.length + (data.answers?.length || 0)]];
   return (
     <Frame kind="account" crumb="Account">
       <div className="who">
@@ -779,10 +781,12 @@ export function AccountSheet({ id }: { id: number }) {
         </div>
       </div>
       <div className="figs">
-        <Fig value={s?.priority ?? 0} label="Priority" />
-        {recorded ? <Fig value={a.crm_tier} label="Tier" /> : <Fig value={s?.fit ?? a.fit_score ?? 0} label={`Fit, tier ${a.fit_tier}`} />}
-        <Fig value={s?.intent ?? 0} label="Signals" />
-        <Fig value={a.owner || cur?.owner || "Unassigned"} label={keptBy(integ, "market_desk") ? "SDR owner" : "Owner"} sm />
+        <Fig value={s?.priority ?? 0} label="Priority" hint="How strongly the account looks right now, out of 100: how well it fits plus what the desk has seen lately." />
+        {recorded ? <Fig value={a.crm_tier} label="Tier" hint="How well the company matches the ideal customer profile. A is the closest match." /> : <Fig value={s?.fit ?? a.fit_score ?? 0} label={`Fit, tier ${a.fit_tier}`} hint="Fit is how well the company matches our ideal customer profile, out of 100. Tier A is the closest match." />}
+        <Fig value={s?.intent ?? 0} label="Signals" hint="Points from recent signals: things the desk saw at this account, such as a hiring post. Older ones count for less." />
+        <Fig value={<span title={a.owner ? a.owner_note?.source : cur?.owner ? "Given this play by the desk: fewest open plays" : "No owner yet: the desk gives the account to an SDR when it proposes a play"}>{a.owner || cur?.owner || "Unassigned"}</span>}
+          label={(() => { const who = a.owner ? a.owner_note : cur?.owner ? { role: ROLE_WORD[cur.owner_role] || null } : null;
+            return `${keptBy(integ, "market_desk") ? "SDR owner" : "Owner"}${who?.role ? `, ${who.role}` : ""}`; })()} sm />
       </div>
       <div className="tabs" role="tablist">
         {tabs.map(([k, l, n]) => <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}{n !== undefined ? <span className="n">{n}</span> : null}</button>)}
@@ -842,9 +846,31 @@ function CompanyData({ a }: { a: any }) {
       <div className="ledger">
         {a.founded_year ? <Reach label="Founded" value={String(a.founded_year)} /> : null}
         {funding ? <Reach label="Funding" value={funding} /> : null}
-        {a.tech?.length ? <Reach label="Tools" value={a.tech.join(", ")} /> : null}
+        {a.tech?.length ? <Reach label="Tools" value={<>{a.tech.join(", ")}<Sample>sample names</Sample></>} /> : null}
         {a.keywords?.length ? <Reach label="Known for" value={a.keywords.join(", ")} /> : null}
         {a.parent_name ? <Reach label="Part of" value={a.parent_name} /> : null}
+      </div>
+    </Section>
+  );
+}
+
+/** Decisions 1 and 9. Every owner says what role it is and where the name came from; the tier says which profile version
+ *  set it, and when another source disagrees, both are shown. Display only. */
+function OwnerAndTier({ d }: { d: any }) {
+  const a = d.account, cur = d.current, integ = useIntegration();
+  const kept = keptBy(integ, "market_desk");
+  const rows: [string, ReactNode][] = [];
+  if (a.owner) rows.push(["Account owner", <>{a.owner}{a.owner_note?.role ? `, ${a.owner_note.role}` : ""}<span className="mute small"> {a.owner_note?.source?.replace(/^Account owner, /, "")}</span></>]);
+  else rows.push(["Account owner", <span className="mute">None yet. The desk gives the account to an SDR when it proposes a play.</span>]);
+  if (cur?.owner) rows.push(["SDR on the play", <>{cur.owner}{cur.owner_role ? `, ${ROLE_WORD[cur.owner_role]}` : ""}<span className="mute small"> {cur.owner === a.owner ? "same person as the account owner" : "chosen by the desk: fewest open plays"}</span></>]);
+  const own = a.fit_tier ? `Tier ${a.fit_tier}${a.fit_icp_version ? `, from this desk's profile version ${a.fit_icp_version}` : ""}` : null;
+  const plan = a.crm_tier ? `Tier ${a.crm_tier}${a.crm_icp_version ? `, from the account plan's profile version ${a.crm_icp_version}` : ""}${a.crm_read_at ? `, read ${ago(a.crm_read_at)}` : ""}` : null;
+  if (kept && plan) rows.push(["Tier", <>{plan}{own && a.fit_tier !== a.crm_tier ? <span className="mute small"> This desk's own score says {own.toLowerCase()}; the account plan decides.</span> : null}</>]);
+  else if (own) rows.push(["Tier", <>{own}{plan && a.crm_tier !== a.fit_tier ? <span className="mute small"> The account plan says {plan.toLowerCase()}.</span> : null}</>]);
+  return (
+    <Section title="Who owns it, and what the tier is based on">
+      <div className="ledger">
+        {rows.map(([k, v]) => <div key={k} className="row" style={{ gridTemplateColumns: "120px minmax(0,1fr)", minHeight: 36 }}><span className="mute">{k}</span><span style={{ whiteSpace: "normal" }}>{v}</span></div>)}
       </div>
     </Section>
   );
@@ -857,6 +883,7 @@ function AccountOverview({ d, decision, recorded }: { d: any; decision?: ReactNo
   const fit = (d.account.fit_breakdown?.factors || []) as any[];
   return (
     <>
+      <OwnerAndTier d={d} />
       <CompanyData a={d.account} />
       {cur ? (
         <div className={`play-card${cur.state === "proposed" ? " is-proposed" : ""}`}>
@@ -1020,8 +1047,21 @@ function AccountOutreach({ d }: { d: any }) {
               </button>
             ))}
           </div>
-        ) : <Empty title="No replies yet" />}
+        ) : <Empty title="No replies yet">Example: &ldquo;Not now, ask me in Q3&rdquo; appears here, read as a polite no.</Empty>}
       </Section>
+      {d.answers?.length ? (
+        <Section title="Our answers">
+          <div className="ledger">
+            {d.answers.map((x: any) => (
+              <button key={x.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto auto" }} onClick={() => openSheet("reply", x.reply_id)}>
+                <div className="cell-main"><span className="t">{x.subject || "(no subject)"}</span><span className="s">To {x.full_name || "the sender"}, by {x.sent_by}</span></div>
+                <Status kind={x.status === "sent" ? "ok" : x.status === "failed" || x.status === "send_unknown" ? "stop" : "wait"}>{x.status === "sent" ? "Sent" : x.status === "queued" ? "Queued" : x.status === "sending" ? "Sending" : x.status === "send_unknown" ? "Check the sent folder" : "Failed"}</Status>
+                <span className="mute small num" style={{ minWidth: 56 }}>{day(x.sent_at || x.created_at)}</span>
+              </button>
+            ))}
+          </div>
+        </Section>
+      ) : null}
       {d.meetings.length ? (
         <Section title="Meetings">
           <div className="ledger">
@@ -1483,7 +1523,7 @@ export function PlaySheet({ id }: { id: number }) {
               const ch = [has("email") ? "email" : null, has("linkedin") ? "LinkedIn message" : null, has("call") ? "call" : null].filter(Boolean) as string[];
               return `Every ${ch.length > 1 ? `${ch.slice(0, -1).join(", ")} and ${ch[ch.length - 1]}` : ch[0] || "message"} starts from one idea.`;
             })()} {p.angle}</p>
-            <p>If the accounts we work book meetings no more often than the {Math.round(100 / Math.max(1, p.holdout_pct)) === 5 ? "1 in 5" : `${p.holdout_pct}%`} I
+            <p>If the accounts we work book meetings no more often than the {p.holdout_pct}% (about 1 in {Math.round(100 / Math.max(1, p.holdout_pct))}) of the accounts I
               hold back and never contact, the bet is wrong.</p>
           </div>
         </div>
@@ -1700,15 +1740,16 @@ export function LiftBlock({ lift, holdoutPct = 20 }: { lift: any; holdoutPct?: n
   const more = lift.still_needed?.holdout || 0;
   if (!t.accounts && !h.accounts) return (
     <div className="lift">
-      <p className="lift-why">1 in {share} accounts this play would work is held back and never contacted. If the worked
+      <p className="lift-why">This play is set to hold back {holdoutPct}% of the accounts it would work (about 1 in {share}) and never contact them. If the worked
         accounts book more meetings, the play is the reason.</p>
       <Status kind="none">No accounts proposed for this play yet</Status>
     </div>
   );
   return (
     <div className="lift">
-      <p className="lift-why">1 in {share} accounts this play would work is held back and never contacted. If the worked
-        accounts book more meetings, the play is the reason.</p>
+      <p className="lift-why">This play is set to hold back {holdoutPct}% of the accounts it would work (about 1 in {share}) and never contact them. So far {n0(h.accounts)} of
+        {" "}{n0(t.accounts + h.accounts)} ({pct(h.accounts / Math.max(1, t.accounts + h.accounts), 0)}) were held back: the draw is random, and
+        a small list drifts from the setting. If the worked accounts book more meetings, the play is the reason.</p>
       <div className="lift-pair">
         <div><b>{pct(t.rate, 0)}</b><span>of worked accounts booked a meeting <span className="mute">({t.meetings} of {t.accounts})</span></span></div>
         <div><b>{pct(h.rate, 0)}</b><span>of held-back accounts booked one anyway <span className="mute">({h.meetings} of {h.accounts})</span></span></div>

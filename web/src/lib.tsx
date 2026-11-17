@@ -212,39 +212,19 @@ export function Status({ kind, children, title }: { kind: Glyph; children: React
   );
 }
 
-/** A number that counts to its value: "$1,234.50", "56", "12%". Anything else is shown as it is. */
+/** A number as it is, thousands grouped. It does not count up: a first read must show the real value, never 0 on the way
+ *  to it (simulation fix 22). Anything that is not a plain number is shown as it is. */
 export function Count({ value }: { value: ReactNode }) {
-  const text = typeof value === "number" ? value.toLocaleString("en-US") : typeof value === "string" ? value : null;
-  const m = text?.match(/^([^0-9-]*)(-?[0-9][0-9,]*(?:\.[0-9]+)?)(.*)$/);
-  const target = m ? Number(m[2].replace(/,/g, "")) : NaN;
-  const decimals = m && m[2].includes(".") ? m[2].split(".")[1].length : 0;
-  const [shown, setShown] = useState(() => (reduced() ? target : 0));
-  const from = useRef(0);
-  useEffect(() => {
-    if (!m || Number.isNaN(target) || reduced() || /\b(ago|in|day|days|hour|hours|minute|minutes|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b|:\d\d/.test(m[3])) { setShown(target); return; }
-    const start = performance.now(), a = from.current, dur = 520;
-    let raf = 0;
-    const step = (t: number) => {
-      const k = Math.min(1, (t - start) / dur), e = 1 - Math.pow(1 - k, 3);
-      setShown(a + (target - a) * e);
-      if (k < 1) raf = requestAnimationFrame(step); else from.current = target;
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [target]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!m || Number.isNaN(target) || /\b(ago|in|day|days|hour|hours|minute|minutes|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b|:\d\d/.test(m[3])) return <>{value}</>;
-  const body = shown.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-  return <span className="count-up" aria-label={text!}>{m[1]}{body}{m[3]}</span>;
+  return <>{typeof value === "number" ? value.toLocaleString("en-US") : value}</>;
 }
-const reduced = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-export function Fig({ value, label, unit, onClick, sm }: { value: ReactNode; label: string; unit?: string; onClick?: () => void; sm?: boolean }) {
+export function Fig({ value, label, unit, onClick, sm, hint }: { value: ReactNode; label: string; unit?: string; onClick?: () => void; sm?: boolean; hint?: string }) {
   const inner = <><b><Count value={value} />{unit ? <small>{unit}</small> : null}</b><span>{label}</span></>;
   if (onClick) {
     return <button type="button" className={`fig go${sm ? " sm" : ""}`} onClick={onClick}
-      style={{ background: "none", border: 0, borderLeft: "1px solid var(--line)", textAlign: "left", font: "inherit", color: "inherit" }}>{inner}</button>;
+      title={hint} style={{ background: "none", border: 0, borderLeft: "1px solid var(--line)", textAlign: "left", font: "inherit", color: "inherit" }}>{inner}</button>;
   }
-  return <div className={`fig${sm ? " sm" : ""}`}>{inner}</div>;
+  return <div className={`fig${sm ? " sm" : ""}`} title={hint}>{inner}</div>;
 }
 
 export function Bar({ label, value, of, shown, tone, hint }: { label: ReactNode; value: number; of: number; shown?: ReactNode; tone?: "soft" | "accent"; hint?: ReactNode }) {

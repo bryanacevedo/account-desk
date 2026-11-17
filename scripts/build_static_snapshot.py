@@ -193,8 +193,9 @@ def crawl(client, db: dict, *, log=print) -> Crawl:
 
     # Pages that do not change with the person, or only by role (money; the manager's pages answer an SDR with 403).
     for p in ("/api/signals", "/api/plays", "/api/results", "/api/deliverability", "/api/vendors", "/api/ops",
-              "/api/settings", "/api/admin", "/api/play-suggestions"):
+              "/api/settings", "/api/admin", "/api/play-suggestions", "/api/do-not-contact"):
         k.get(p)
+    k.get("/api/my-mailbox", "each")  # an SDR's own mailboxes: one answer per person
 
     # Accounts: every page of each view, and each person's own.
     for view in ACCOUNT_VIEWS:

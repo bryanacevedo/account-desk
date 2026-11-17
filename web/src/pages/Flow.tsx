@@ -7,6 +7,7 @@ import {
   SourceLink, withParam, useBusy,
 } from "../lib";
 import { LABEL, STAGE, openSheet } from "../sheets";
+import { Hint, Sample, isSample } from "../demo";
 
 // ---------------------------------------------------------------- Approvals
 
@@ -33,7 +34,8 @@ export function Approvals() {
   return (
     <div className="page">
       <div className="head"><div><h1>Approvals</h1></div></div>
-      <Section title="Ready to approve">{ready.length ? list(ready) : <Empty title="Nothing waiting" />}</Section>
+      <Hint>Every first email waits here until a person approves it. Open one to read the facts it cites, edit it and approve it. Nothing is sent without that click.</Hint>
+      <Section title="Ready to approve">{ready.length ? list(ready) : <Empty title="Nothing waiting">Example: &ldquo;Quick question about your 2027 pricing&rdquo; to a CFO, with the three facts it uses.</Empty>}</Section>
       {failed.length ? <Section title="Needs a rewrite">{list(failed)}</Section> : null}
     </div>
   );
@@ -50,9 +52,10 @@ export function Replies() {
   return (
     <div className="page">
       <div className="head"><div><h1>Replies</h1></div></div>
+      <Hint>What people wrote back. &ldquo;Read as&rdquo; is how the desk classified the reply (a yes, a polite no, out of office); a person checks anything it is unsure of.</Hint>
       <Seg label="Which replies" value={view} onChange={(v) => navigate(withParam("view", v), true)}
         options={[["mine", "Mine"], ["all", "Everyone"], ["hot", "Positive"], ["needs_person", "Needs a person"]]} />
-      {error ? <Failed error={error} retry={reload} /> : !data ? <Loading rows={10} /> : !data.replies.length ? <Empty title="No replies here" /> : (
+      {error ? <Failed error={error} retry={reload} /> : !data ? <Loading rows={10} /> : !data.replies.length ? <Empty title="No replies here">Example: &ldquo;Not now, ask me in Q3&rdquo; appears here, read as a polite no.</Empty> : (
         <div className="ledger">
           <div className="row head" style={{ gridTemplateColumns: R_COLS }}><span /><span>From</span><span>What they said</span><span>Read as</span><span className="num">Received</span></div>
           {data.replies.map((r: any) => {
@@ -80,6 +83,7 @@ export function Signals() {
   const [, params] = usePath();
   const tab = params.get("tab") || "feed";
   const { data, error, reload } = useData<any>("/api/signals");
+  const sample = isSample(useData<any>("/api/me").data);
   if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
   if (!data) return <div className="page"><div className="head"><h1>Signals</h1></div><Loading /></div>;
   const week = data.sources.reduce((s: number, x: any) => s + Number(x.week), 0);
@@ -88,6 +92,7 @@ export function Signals() {
   return (
     <div className="page">
       <div className="head"><div><h1>Signals</h1></div></div>
+      <Hint>A signal is something the desk saw at an account that may mean they will buy: a hiring post, a funding round, a visit to the pricing page. A source is where the desk reads signals from.{sample ? " In this sample every source and tool name is invented, so none of them is a real service." : ""}</Hint>
       <div className="figs">
         <Fig value={n0(week)} label="Signals in the last 7 days" />
         <Fig value={data.sources.filter((s: any) => s.enabled).length} label="Sources" />
@@ -103,7 +108,7 @@ export function Signals() {
           <div className="row head" style={{ gridTemplateColumns: S_COLS }}><span>Source</span><span>Checked</span><span className="num">Last run</span><span className="num">Fetched</span><span className="num">Matched</span><span className="num">7 days</span></div>
           {data.sources.map((s: any) => (
             <div key={s.key} className="row" style={{ gridTemplateColumns: S_COLS }}>
-              <div className="cell-main"><span className="t">{s.label}</span><span className="s">{s.paid ? `Paid: ${s.provider.charAt(0).toLowerCase()}${s.provider.slice(1)}` : s.provider}</span></div>
+              <div className="cell-main"><span className="t">{s.label}</span><span className="s">{s.paid ? `Paid: ${s.provider.charAt(0).toLowerCase()}${s.provider.slice(1)}` : s.provider}{sample ? <Sample /> : null}</span></div>
               <span className="mute nowrap">{s.adapter === "webhook" ? "As it arrives" : s.cadence_minutes >= 1440 ? "Daily" : s.cadence_minutes >= 60 ? `Every ${s.cadence_minutes / 60} h` : `Every ${s.cadence_minutes} min`}</span>
               <span className="num">{s.adapter === "webhook" ? "" : s.error ? <Status kind="stop">Failed</Status> : ago(s.last_run)}</span>
               <span className="num" data-label="Fetched">{s.adapter === "webhook" ? "" : s.fetched ?? ""}</span><span className="num" data-label="Matched">{s.adapter === "webhook" ? "" : s.matched ?? ""}</span><span className="num strong" data-label="7 days">{s.week}</span>
@@ -117,7 +122,7 @@ export function Signals() {
 const S_COLS = "minmax(0,2fr) 70px 110px 80px 80px 70px";
 
 function Feed({ rows }: { rows: any[] }) {
-  if (!rows.length) return <Empty title="Nothing here" />;
+  if (!rows.length) return <Empty title="Nothing here">Example: &ldquo;Hiring a head of finance systems at Northwind&rdquo; appears here with the source it came from.</Empty>;
   return (
     <div className="ledger">
       {rows.map((s: any) => (
@@ -257,6 +262,7 @@ export function Plays() {
     <div className="page">
       <div className="head"><div><h1>Plays</h1><p className="sub">{live} live</p></div>
         {me?.user.role === "gtm" ? <button className="btn" onClick={() => openSheet("playedit", "new")}>New play</button> : null}</div>
+      <Hint>A play is a rule: when this signal appears at a good-fit account, propose this sequence to its SDR. Tier is how well an account fits our ideal customer profile (A best). A play writes at one of four stages: from the SDR writing everything to the desk sending on its own after a manager signs off.</Hint>
       {decides ? (
         <Seg label="View" value={view} onChange={(v) => navigate(withParam("view", v === "plays" ? null : v), true)}
           options={[["plays", "Plays"], ["suggested", <>Suggested{open.length ? <span className="n" aria-label={`${open.length} waiting`}>{open.length}</span> : null}</>],

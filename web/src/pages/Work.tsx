@@ -8,6 +8,10 @@ import {
   weekday, withParam, usePath,
 } from "../lib";
 import { LABEL, MSG, PLAY_STATE, openSheet } from "../sheets";
+import { Hint, Welcome, isSample } from "../demo";
+
+const ROLE_WORD: Record<string, string> = { sdr: "SDR", manager: "Manager", gtm: "GTM" };
+const OLD_REPLY_DAYS = 14;
 
 // ---------------------------------------------------------------- Today
 
@@ -25,12 +29,34 @@ export function Today() {
     () => api(`/api/account-plays/${id}/decide`, { method: "POST", body: { accept, reason: accept ? null : reason } }),
     accept ? "Accepted. The desk is researching the account and drafting first emails in the background." : "Skipped.",
   )).then(() => { setSkipping(null); setReason(""); setLeaving(null); }); };
+  const old = (r: any) => new Date(data.now).getTime() - new Date(r.received_at).getTime() > OLD_REPLY_DAYS * 86_400_000;
+  const replyRow = (r: any) => {
+    const l = LABEL[r.label] || LABEL.other;
+    const late = r.sla_due_at && new Date(r.sla_due_at).getTime() < new Date(data.now).getTime();
+    return (
+      <button key={r.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1.2fr) minmax(0,2fr) 150px 92px" }} onClick={() => openSheet("reply", r.id)}>
+        <Avatar name={r.full_name || r.company} photo={r.photo_url} />
+        <div className="cell-main"><span className="t">{r.full_name || "Unknown sender"}</span><span className="s">{r.company}</span><span className="s only-sm">{r.cleaned}</span></div>
+        <span className="clip mute hide-sm">{r.cleaned}</span>
+        <span className="hide-sm"><Status kind={l[0]}>{l[1]}</Status></span>
+        <span className="num small" style={{ color: late ? "var(--ink)" : "var(--mute)", fontWeight: late ? 600 : 400 }}>
+          {old(r) ? `Open since ${day(r.received_at)}` : r.sla_due_at ? (late ? `Due ${ago(r.sla_due_at)}` : `Due ${ahead(r.sla_due_at)}`) : ago(r.received_at)}
+        </span>
+      </button>
+    );
+  };
+  const again = (id: number) => run(() => api(`/api/account-plays/${id}/propose-again`, { method: "POST" }), "Proposed again. It is in the list above.");
+  const freshReplies = data.replies.filter((r: any) => !old(r));
+  const oldReplies = data.replies.filter(old);
+  const first = data.approvals[0] ? { label: "Open the first email waiting for approval", go: () => openSheet("message", data.approvals[0].id) }
+    : data.replies[0] ? { label: "Open the first reply waiting", go: () => openSheet("reply", data.replies[0].id) } : null;
   const overdue = data.replies.filter((r: any) => r.sla_due_at && new Date(r.sla_due_at).getTime() < new Date(data.now).getTime()).length;
   return (
     <div className="page rise">
       <div className="head">
         <div><h1>Today</h1><div className="sub">{weekday(data.now)}</div></div>
       </div>
+      {isSample(me) ? <Welcome firstStep={first} /> : null}
       <div className="figs">
         <Fig value={data.replies.length} label={overdue ? `Replies, ${overdue} overdue` : "Replies to answer"} />
         <Fig value={data.proposals.length} label="Plays to decide" />
@@ -41,34 +67,27 @@ export function Today() {
 
       <Section title="Replies" icon={ChatCircleText}>
         {data.replies.length ? (
-          <div className="ledger">
-            {data.replies.map((r: any) => {
-              const l = LABEL[r.label] || LABEL.other;
-              const late = r.sla_due_at && new Date(r.sla_due_at).getTime() < new Date(data.now).getTime();
-              return (
-                <button key={r.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1.2fr) minmax(0,2fr) 150px 92px" }} onClick={() => openSheet("reply", r.id)}>
-                  <Avatar name={r.full_name || r.company} photo={r.photo_url} />
-                  <div className="cell-main"><span className="t">{r.full_name || "Unknown sender"}</span><span className="s">{r.company}</span><span className="s only-sm">{r.cleaned}</span></div>
-                  <span className="clip mute hide-sm">{r.cleaned}</span>
-                  <span className="hide-sm"><Status kind={l[0]}>{l[1]}</Status></span>
-                  <span className="num small" style={{ color: late ? "var(--ink)" : "var(--mute)", fontWeight: late ? 600 : 400 }}>
-                    {r.sla_due_at ? (late ? `Due ${ago(r.sla_due_at)}` : `Due ${ahead(r.sla_due_at)}`) : ago(r.received_at)}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        ) : <Empty title="No replies waiting" />}
+          <>
+          {freshReplies.length ? <div className="ledger">{freshReplies.map((r: any) => replyRow(r))}</div> : null}
+          {oldReplies.length ? (
+            <>
+              <p className="old-note">Open for more than {OLD_REPLY_DAYS} days. Nobody has answered or closed these. Open one to answer it or mark it handled.</p>
+              <div className="ledger">{oldReplies.map((r: any) => replyRow(r))}</div>
+            </>
+          ) : null}
+          </>
+        ) : <Empty title="No replies waiting">Example: a reply that says &ldquo;Yes, send times for Thursday&rdquo; appears here with the hours left to answer it.</Empty>}
       </Section>
 
       <Section icon={Lightbulb} title={me?.user.role === "sdr" ? "Plays proposed to you" : "Plays proposed to the team"}>
+        <Hint>A play is a ready-made outreach plan for one account, started by one signal (something the desk saw, such as a hiring post or a pricing visit). Accept starts it: the desk researches the account and drafts emails for you to approve. Skip needs a reason. Priority is how strongly the account looks right now, out of 100.</Hint>
         {data.proposals.length ? (
           <div className="ledger">
             {data.proposals.map((p: any, i: number) => (
               <div key={p.id} className={`row prop-row${leaving === p.id ? " is-leaving" : ""}`} style={{ gridTemplateColumns: "28px minmax(0,1.1fr) minmax(0,2fr) 52px auto", animationDelay: `${i * 60}ms` }}>
                 <Logo domain={p.primary_domain} name={p.name} />
                 <button className="cell-main" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }} onClick={() => openSheet("account", p.account_id)}>
-                  <span className="t prop-play">{p.play}</span><span className="s">at <span className="prop-acct">{p.name}</span>{p.urgent ? ", urgent" : ""}{me?.user.role !== "sdr" && p.owner ? `, ${p.owner}` : ""}</span><span className="s only-sm">{p.why_now.summary}</span>
+                  <span className="t prop-play">{p.play}</span><span className="s">at <span className="prop-acct">{p.name}</span>{p.urgent ? ", urgent" : ""}{me?.user.role !== "sdr" && p.owner ? `, ${p.owner}${p.owner_role ? ` (${ROLE_WORD[p.owner_role]})` : ""}` : ""}</span><span className="s only-sm">{p.why_now.summary}</span>
                 </button>
                 <div className="cell-main hide-sm"><span className="t" style={{ fontWeight: 450 }}>{p.why_now.summary}</span><span className="s"><SignalLabel type={p.why_now.type} label={ago(p.why_now.observed_at)} /></span></div>
                 <span className="num hide-sm"><span className="mute small">Priority </span>{p.priority}</span>
@@ -88,7 +107,26 @@ export function Today() {
               </div>
             ))}
           </div>
-        ) : <Empty title="Nothing to decide" />}
+        ) : <Empty title="Nothing to decide">Example: &ldquo;Pricing page visit at Northwind, priority 71&rdquo; appears here with Accept and Skip.</Empty>}
+        {data.expired?.length ? (
+          <>
+            <p className="old-note">Lapsed: nobody decided in time. Each one can be proposed again; its account is not offered again by the desk until a person does.</p>
+            <div className="ledger">
+              {data.expired.map((p: any) => (
+                <div key={p.id} className="row again-row" style={{ gridTemplateColumns: "28px minmax(0,1.4fr) minmax(0,1.6fr) auto" }}>
+                  <Logo domain={p.primary_domain} name={p.name} />
+                  <button className="cell-main" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }} onClick={() => openSheet("account", p.account_id)}>
+                    <span className="t">{p.play}</span><span className="s">at {p.name}, expired {ago(p.closed_at)}</span>
+                  </button>
+                  <span className="s mute hide-sm">Nobody decided in {p.limit_days} business {p.limit_days === 1 ? "day" : "days"}.</span>
+                  {p.can_propose_again
+                    ? <button className="btn line sm" disabled={busy} onClick={() => again(p.id)}>Propose again</button>
+                    : <span className="s mute" title={p.why.join(" ")}>Cannot be proposed again: {p.why[0]}</span>}
+                </div>
+              ))}
+            </div>
+          </>
+        ) : null}
       </Section>
 
       <div className="two">
@@ -103,14 +141,14 @@ export function Today() {
               ))}
               {data.approvals.length > 8 ? <button className="row" style={{ gridTemplateColumns: "1fr", color: "var(--accent)" }} onClick={() => navigate("/approvals")}>All {data.approvals.length}</button> : null}
             </div>
-          ) : <Empty title="All approved" />}
+          ) : <Empty title="All approved">Example: a first email to a CFO waits here with its cited facts, ready to approve or edit.</Empty>}
         </Section>
         <Section title="Calls and LinkedIn" icon={Phone}>
           {data.tasks.length ? (
             <div className="ledger">
               {data.tasks.slice(0, 8).map((t: any) => <TaskRow key={t.id} t={t} />)}
             </div>
-          ) : <Empty title="No tasks due" />}
+          ) : <Empty title="No tasks due">Example: &ldquo;Call Dana Ruiz, 10:30 her time&rdquo; or a LinkedIn note to send.</Empty>}
         </Section>
       </div>
 
@@ -160,6 +198,7 @@ export function Accounts() {
       <div className="head">
         <div><h1>Accounts</h1></div>{data ? <Fig value={n0(data.total)} label="Accounts" sm /> : null}
       </div>
+      <Hint>Priority is how strongly an account looks right now, out of 100: fit with our ideal customer profile (tier A is the best match) plus recent signals. &ldquo;This week&rdquo; is how many points it gained in 7 days. A signal is something the desk saw at the account. An account is held back when it was chosen at random to stay uncontacted, as the comparison group.</Hint>
       <div className="toolbar">
         <Seg label="Which accounts" value={view} onChange={(v) => {
             // A new view starts again at page 1.
@@ -174,25 +213,25 @@ export function Accounts() {
             onChange={(e) => { const v = e.target.value; setQ(v); window.clearTimeout((window as any).__acctq); (window as any).__acctq = window.setTimeout(() => (() => { const u = new URL(window.location.href); u.searchParams.delete("page"); if (v.trim()) u.searchParams.set("q", v.trim()); else u.searchParams.delete("q"); navigate(u.pathname + (u.search || ""), true); })(), 220); }} />
         </form>
       </div>
-      {error ? <Failed error={error} retry={reload} /> : !data ? <Loading rows={12} /> : data.accounts.length === 0 ? <Empty title="No accounts match" /> : (
+      {error ? <Failed error={error} retry={reload} /> : !data ? <Loading rows={12} /> : data.accounts.length === 0 ? <Empty title="No accounts match">Try fewer letters of a company name or a domain such as northwind.example. Example: a search for &ldquo;north&rdquo; lists every account with that in its name.</Empty> : (
         <div className="ledger wrap-names">
           <div className="row head" style={{ gridTemplateColumns: COLS }}>
-            <span /><span>Company</span><span>Latest signal</span><span className="num">Priority</span><span className="num">This week</span><span>Stage</span><span>Owner</span>
+            <span /><span>Company</span><span title="The most recent thing the desk saw at this account">Latest signal</span><span className="num" title="How strongly the account looks right now, out of 100">Priority</span><span className="num" title="Points gained in the last 7 days">This week</span><span title="Where the account is in a play">Stage</span><span title="The owner, their role and where the name came from">Owner</span>
           </div>
           {data.accounts.map((a: any) => {
             const st = a.play_state ? PLAY_STATE[a.play_state] : null;
             return (
               <button key={a.id} className="row" style={{ gridTemplateColumns: COLS }} onClick={() => openSheet("account", a.id)}>
                 <Logo domain={a.primary_domain} name={a.name} />
-                <div className="cell-main"><span className="t">{a.name}</span><span className="s">{a.industry}, {n0(a.employees)} people, tier {a.fit_tier}</span><span className="s only-sm">{a.reason || "No recent signal"}</span></div>
+                <div className="cell-main"><span className="t">{a.name}</span><span className="s">{a.industry}, {n0(a.employees)} people, <span title="Tier A is the closest match to our ideal customer profile, then B, C">tier {a.fit_tier}</span></span><span className="s only-sm">{a.reason || "No recent signal"}</span></div>
                 <div className="cell-main hide-sm">{a.reason ? <><span className="t" style={{ fontWeight: 450 }}><SignalLabel type={a.reason_type} label={a.reason} /></span><span className="s" style={{ paddingLeft: 30 }}>{day(a.reason_at)}</span></> : <span className="mute">No recent signal</span>}</div>
                 <span className="num strong">{a.priority ?? 0}</span>
                 <span className="num hide-sm" style={{ color: a.week_change > 0 ? "var(--ink)" : "var(--faint)" }}>{a.week_change > 0 ? `+${a.week_change}` : a.week_change < 0 ? a.week_change : ""}</span>
                 <span className="hide-sm">{st ? <Status kind={st[0]}>{st[1]}</Status>
                   : a.last_state === "held_out" && a.hold_until ? <span className="mute">Held back</span>
-                  : a.hold_until ? <span className="mute" title="Not proposed again until then: someone asked us to come back later, or a play just ended here.">Not proposed until {day(a.hold_until)}</span>
+                  : a.hold_until ? <span className="mute" title={a.hold_expired ? `Expired: nobody decided in ${a.expired_days} business ${a.expired_days === 1 ? "day" : "days"}. The desk will not propose it again until ${day(a.hold_until)}; a person can propose it again from Today.` : "Not proposed again until then: someone asked us to come back later, or a play just ended here."}>Not proposed until {day(a.hold_until)}</span>
                   : <span className="faint">Not in a play</span>}</span>
-                <span className="clip mute hide-sm">{a.owner || "Unassigned"}</span>
+                <span className="cell-main hide-sm" title={a.owner_source}><span className="clip mute">{a.owner || "Unassigned"}</span>{a.owner_role ? <span className="s">{a.owner_role}</span> : null}</span>
               </button>
             );
           })}
@@ -211,4 +250,4 @@ export function Accounts() {
     </div>
   );
 }
-const COLS = "28px minmax(0,1.4fr) minmax(0,1.6fr) 64px 52px 150px 120px";
+const COLS = "28px minmax(0,1.4fr) minmax(0,1.6fr) 64px 52px 150px 130px";

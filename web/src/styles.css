@@ -8,16 +8,16 @@
   --well-2: #ECEEF2;
   --ink: #12161D;
   --ink-2: #3B4351;
-  --mute: #677080;
-  --faint: #9AA1AD;
+  --mute: #586070;
+  --faint: #62697A;
   --line: #E5E8EC;
   --line-2: #D2D6DD;
   --accent: #2B47C9;
   --accent-2: #1F379F;
   --accent-wash: #EDF0FB;
   --series-2: #1F9A86; /* the comparison group in charts; validated against cobalt for colour-blind separation */
-  --ok: #1E7A4C;
-  --wait: #A86A12;
+  --ok: #1A6F44;
+  --wait: #8F5800;
   --sev-urgent: #0F2C6E; /* the alert ramp: three blues, darker is more urgent; the word beside each says it too */
   --sev-warn: #4F7DC4;
   --sev-info: #A9C4E8;
@@ -271,7 +271,7 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 
 .skeleton { height: 44px; border-radius: 6px; background: linear-gradient(90deg, var(--well) 0%, var(--well-2) 50%, var(--well) 100%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-.rise > * { animation: rise 260ms var(--ease) both; }
+.rise > * { animation: rise 120ms var(--ease) both; }
 .rise > *:nth-child(2) { animation-delay: 30ms; } .rise > *:nth-child(3) { animation-delay: 60ms; }
 .rise > *:nth-child(4) { animation-delay: 90ms; } .rise > *:nth-child(5) { animation-delay: 120ms; }
 @keyframes rise { from { transform: translateY(4px); } to { transform: none; } }
@@ -292,8 +292,8 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .fig b, .count-up { font-variant-numeric: tabular-nums; }
 
 /* A page arrives: a short rise, so a change of place reads as one. */
-.page-enter { animation: enter 240ms var(--ease) both; }
-@keyframes enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.page-enter { animation: enter 120ms var(--ease) both; }
+@keyframes enter { from { opacity: 0.4; } to { opacity: 1; } }
 
 /* A new count pops, so the eye finds what changed. */
 .nav .n, .seg .n, .more-end .n, .pn-n { animation: pop 320ms cubic-bezier(0.3, 1.6, 0.5, 1) both; }
@@ -704,7 +704,7 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
 .prop-acct { color: var(--ink-2); font-weight: 500; }
 
 /* Today's proposals move: rows ease in one after another, lift a little on hover, and slide away once decided. */
-.prop-row { animation: enter .4s var(--ease) both; transition: background .15s var(--ease), opacity .26s var(--ease), transform .26s var(--ease); }
+.prop-row { animation: enter 120ms var(--ease) both; transition: background .15s var(--ease), opacity .26s var(--ease), transform .26s var(--ease); }
 .prop-row:hover { background: var(--well); }
 .prop-row .cell-main .prop-play { transition: color .15s var(--ease); }
 .prop-row:hover .prop-play { color: var(--accent); }
@@ -863,3 +863,32 @@ a.cite:hover { color: var(--ink); }
 .composer textarea.input { line-height: 1.6; min-height: 150px; }
 .composer-refine { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .composer-send { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+
+/* ------------------------------------------------------------------ the sample world (simulation fixes) */
+.skip-link { position: absolute; left: 8px; top: -48px; z-index: 60; background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 8px; }
+.skip-link:focus { top: 8px; }
+.main:focus { outline: none; }
+.demo-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -28px -40px 18px; padding: 8px 40px; background: var(--accent-wash);
+  border-bottom: 1px solid var(--line-2); color: var(--ink); font-size: 13px; line-height: 18px; }
+.demo-bar .demo-text { flex: 1 1 320px; min-width: 0; }
+.demo-bar .demo-day { color: var(--ink-2); }
+.demo-start, .demo-x { background: none; border: 0; padding: 4px 6px; font: inherit; font-size: 13px; color: var(--accent-2); text-decoration: underline; cursor: pointer; min-height: 28px; }
+.hint { color: var(--mute); font-size: 13px; line-height: 19px; max-width: 70ch; margin: -6px 0 14px; }
+.sample-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid var(--line-2); border-radius: 4px; font-size: 11px; line-height: 16px; color: var(--ink-2); vertical-align: 1px; }
+.welcome { border: 1px solid var(--line-2); border-left: 3px solid var(--accent); border-radius: var(--r); padding: 14px 16px; margin: 0 0 20px; display: grid; gap: 10px; }
+.welcome-value { font-size: 15px; line-height: 22px; max-width: 68ch; }
+.welcome-first { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.welcome-closed { margin: -8px 0 12px; font-size: 13px; }
+.tour summary { cursor: pointer; color: var(--accent-2); font-weight: 560; padding: 4px 0; min-height: 28px; }
+.tour-paths { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; padding-top: 8px; }
+.tour-paths h3 { font-size: 13px; margin-bottom: 6px; }
+.tour-paths ol { list-style: decimal; padding-left: 18px; display: grid; gap: 4px; font-size: 13.5px; }
+.tour-next { margin-top: 8px; font-size: 13.5px; }
+.old-note { color: var(--mute); font-size: 13px; padding: 10px 0 4px; }
+.again-row { display: grid; align-items: center; gap: 12px; }
+@media (max-width: 900px) {
+  .demo-bar { margin: 0 -16px 12px; padding: 8px 16px; }
+  .tour-paths { grid-template-columns: minmax(0, 1fr); }
+  .welcome .btn { min-height: 44px; }
+}

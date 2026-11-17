@@ -387,15 +387,11 @@ def me(u: dict = Depends(current_user)) -> dict:
         users = db.all(cur, "select id, name, role, timezone from users where active order by role desc, name") \
             if CONFIG.auth_mode == "demo" else []
         counts = {
-            "today": db.val(cur, """select (select count(*) from account_plays where state = 'proposed' and (owner_id = %s or %s))
-                                         + (select count(*) from tasks where status = 'open' and owner_id = %s and kind in ('reply','review_reply','call','linkedin_connect','linkedin_message')
-                                            and due_at <= app_now())""",
-                            u["id"], u["role"] != "sdr", u["id"]),
+            **views.badge_counts(cur, u),
             "approvals": db.val(cur, """select count(*) from messages m join enrollments e on e.id = m.enrollment_id
                                         join account_plays ap on ap.id = e.account_play_id
                                         where m.status in ('awaiting_approval','failed_gate') and m.channel = 'email' and (ap.owner_id = %s or %s)""",
                                 u["id"], u["role"] != "sdr"),
-            "replies": db.val(cur, "select count(*) from replies where needs_review and handled_at is null"),
             # Open play suggestions wait on a manager or GTM; an SDR never decides them.
             "suggested": suggestions.open_count(cur) if u["role"] != "sdr" else 0,
         }
@@ -683,6 +679,36 @@ def decide(ap_id: int, body: Decide, u: dict = Depends(writer)) -> dict:
         else:
             _wake_worker()
     return {"ok": True, "queued": bool(body.accept)}
+
+
+@app.post("/api/account-plays/{ap_id}/propose-again")
+def propose_again(ap_id: int, u: dict = Depends(writer)) -> dict:
+    """Decision 100: offer a lapsed proposal again. A person does it, never the desk; the owner or a manager."""
+    with db.tx() as cur:
+        ap = db.one(cur, "select owner_id, state from account_plays where id = %s", ap_id)
+        if ap is None:
+            raise HTTPException(404, "No such proposal.")
+        if u["role"] == "sdr" and ap["owner_id"] != u["id"]:
+            raise HTTPException(403, "This account belongs to someone else.")
+        try:
+            new = plays.propose_again(cur, ap_id, user_id=u["id"])
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+    return {"ok": True, "id": new}
+
+
+@app.get("/api/my-mailbox")
+def my_mailbox(u: dict = Depends(current_user)) -> dict:
+    """Decision 6: the person's own mailboxes and their domains, read only."""
+    with db.tx() as cur:
+        return views.my_mailbox(cur, u["id"])
+
+
+@app.get("/api/do-not-contact")
+def do_not_contact(u: dict = Depends(current_user)) -> dict:
+    """Decision 6: the do-not-contact list for everyone, read only. Adding and lifting stay where they were."""
+    with db.tx() as cur:
+        return {"entries": views.do_not_contact(cur)}
 
 
 class Check(BaseModel):

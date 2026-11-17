@@ -1,3 +1,4 @@
+import { Hint } from "../demo";
 import { Fragment } from "react";
 import { Empty, Failed, Fig, Loading, Section, Status, ago, n0, useData } from "../lib";
 import { openSheet } from "../sheets";
@@ -32,6 +33,7 @@ export function Vendors() {
       <div className="head"><div><h1>Vendors and costs</h1>
         <p className="sub">{demo ? "Demo: every vendor is simulated and every price is an assumption." : `Day ${data.day} of ${data.days} this month.`}
           {!demo && data.assumed ? " Some flat fees are still assumptions, not figures from a bill." : ""}</p></div></div>
+      {demo ? <Hint>Ledgerline, Chargewell, Meterly and the other vendor names here are invented for this sample. None is a real service and no money moves.</Hint> : null}
       <div className="figs">
         <Fig value={usd(data.total_cents)} label={`This month so far, day ${data.day} of ${data.days}`} />
         <Fig value={usd(data.projected_cents)} label="At this pace, by month end" />
