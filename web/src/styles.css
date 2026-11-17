@@ -289,7 +289,7 @@ textarea.input { height: auto; padding: 10px 12px; line-height: 21px; resize: ve
   transition: transform 260ms var(--ease), width 260ms var(--ease); }
 
 /* Figures settle into their value; tabular digits keep the width still while they count. */
-.fig b, .count-up { font-variant-numeric: tabular-nums; }
+.fig b { font-variant-numeric: tabular-nums; }
 
 /* A page arrives: a short rise, so a change of place reads as one. */
 .page-enter { animation: enter 120ms var(--ease) both; }

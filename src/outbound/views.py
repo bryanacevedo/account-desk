@@ -35,9 +35,9 @@ def today(cur, user: dict) -> dict:
         select r.id, r.received_at, r.label, r.cleaned, r.sla_due_at, pe.full_name, pe.photo_url, pe.title, a.name as company,
                a.id as account_id
         from replies r join accounts a on a.id = r.account_id left join people pe on pe.id = r.person_id
-        join tasks t on t.reply_id = r.id and t.status = 'open' and t.kind in ('reply', 'review_reply')
-        left join account_plays ap on ap.id = t.account_play_id
-        where (t.owner_id = %s or %s) order by r.sla_due_at nulls last, r.received_at limit 40""",
+        where exists (select 1 from tasks t where t.reply_id = r.id and t.status = 'open'
+                        and t.kind in ('reply', 'review_reply') and (t.owner_id = %s or %s))
+        order by r.sla_due_at nulls last, r.received_at limit 40""",
         uid, user["role"] != "sdr")
     tasks = db.all(cur, """
         select t.id, t.kind, t.title, t.due_at, t.note, pe.id as person_id, pe.full_name, pe.photo_url, pe.title as person_title,
@@ -53,10 +53,10 @@ def today(cur, user: dict) -> dict:
         where m.owner_id = %s and m.starts_at between app_now() - interval '1 day' and app_now() + interval '7 days'
         order by m.starts_at""", uid)
     # Decision 100: a proposal nobody decided in time stays on Today with "Propose again" until its account has a newer
-    # play, a gate blocks it, or two weeks have passed since it lapsed.
+    # play, a gate blocks it, or 14 days have passed since it lapsed.
     expired = db.all(cur, f"""
         select ap.id, ap.proposed_at, ap.closed_at, ap.why_now, a.id as account_id, a.name, a.primary_domain,
-               sc.priority, p.name as play, p.urgent, u.name as owner, u.role as owner_role,
+               ap.play_id, ap.trigger_signal_id, ap.owner_id, sc.priority, p.name as play, p.urgent, u.name as owner, u.role as owner_role,
                case when p.urgent then {_ttl("urgent_proposal_ttl_days", 1)} else {_ttl("proposal_ttl_days", 5)} end as limit_days
         from account_plays ap join accounts a on a.id = ap.account_id join plays p on p.id = ap.play_id
         left join account_scores sc on sc.account_id = a.id left join users u on u.id = ap.owner_id
@@ -66,7 +66,7 @@ def today(cur, user: dict) -> dict:
                           and n.proposed_at >= ap.proposed_at)
         order by p.urgent desc, ap.closed_at desc limit 20""", *args)
     for r in expired:
-        r["why"] = plays_mod.propose_again_blockers(cur, r["account_id"])
+        r["why"] = plays_mod.propose_again_blockers(cur, r["account_id"], r)
         r["can_propose_again"] = not r["why"]
     return {"proposals": proposals, "expired": expired, "approvals": approvals, "replies": hot, "tasks": tasks,
             "meetings": meetings, "now": db.val(cur, "select app_now()")}
@@ -611,11 +611,13 @@ def message(cur, message_id: int) -> dict | None:
     return m
 
 
-def replies_page(cur, *, view: str, user_id: int | None = None) -> list[dict]:
-    where = {"needs_person": "r.needs_review and r.handled_at is null", "hot": "r.hot", "all": "true",
-             "mine": f"""coalesce((select ap.owner_id from account_plays ap where ap.account_id = r.account_id
+def replies_page(cur, *, view: str, user_id: int | None = None, own_only: bool = False) -> list[dict]:
+    """`own_only` (an SDR) limits "needs a person" to their own accounts, so the sidebar number equals this list."""
+    mine = f"""coalesce((select ap.owner_id from account_plays ap where ap.account_id = r.account_id
                          order by ap.proposed_at desc limit 1), (select owner_id from accounts where id = r.account_id))
-                         = {int(user_id or 0)}"""}.get(view, "true")
+                         = {int(user_id or 0)}"""
+    where = {"needs_person": "r.needs_review and r.handled_at is null" + (f" and {mine}" if own_only else ""),
+             "hot": "r.hot", "all": "true", "mine": mine}.get(view, "true")
     return db.all(cur, f"""select r.id, r.received_at, r.label, r.confidence, r.classified_by, r.cleaned, r.hot,
                                   r.needs_review, r.review_reason, r.handled_at, r.outcome, r.sla_due_at, r.same_person,
                                   r.language, pe.full_name, pe.photo_url, pe.title, a.name as company, a.id as account_id
@@ -826,15 +828,16 @@ def do_not_contact(cur) -> list[dict]:
 def badge_counts(cur, user: dict) -> dict:
     """The sidebar numbers, defined by the lists they open. `today` is replies to answer plus plays to decide plus calls
     and LinkedIn tasks due, the first, second and fourth boxes of Today. `replies` is the replies that need a person
-    among the ones in this person's default view of Replies (theirs for an SDR, everyone's otherwise)."""
+    among this person's own for an SDR and everyone's otherwise: the list the sidebar opens, Replies "Needs a person"."""
     uid, sdr = user["id"], user["role"] == "sdr"
+    # Each box on Today shows at most its limit (40 replies, 40 plays, 50 tasks), so the number counts no more than that.
     today_n = db.val(cur, """
-        select (select count(distinct r.id) from replies r join accounts a on a.id = r.account_id
+        select least((select count(distinct r.id) from replies r join accounts a on a.id = r.account_id
                   join tasks t on t.reply_id = r.id and t.status = 'open'
-                  and t.kind in ('reply', 'review_reply') where (t.owner_id = %s or %s))
-             + (select count(*) from account_plays where state = 'proposed' and (owner_id = %s or %s))
-             + (select count(*) from tasks where status = 'open' and owner_id = %s and kind not in ('reply', 'review_reply')
-                  and due_at <= app_now() + interval '1 day')""", uid, not sdr, uid, not sdr, uid)
+                  and t.kind in ('reply', 'review_reply') where (t.owner_id = %s or %s)), 40)
+             + least((select count(*) from account_plays where state = 'proposed' and (owner_id = %s or %s)), 40)
+             + least((select count(*) from tasks where status = 'open' and owner_id = %s and kind not in ('reply', 'review_reply')
+                  and due_at <= app_now() + interval '1 day'), 50)""", uid, not sdr, uid, not sdr, uid)
     mine = """coalesce((select ap.owner_id from account_plays ap where ap.account_id = r.account_id
                         order by ap.proposed_at desc limit 1), (select owner_id from accounts where id = r.account_id)) = %s"""
     replies_n = db.val(cur, "select count(*) from replies r where r.needs_review and r.handled_at is null"

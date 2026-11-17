@@ -163,7 +163,7 @@ A play is: a hypothesis, a trigger, who to reach, the sequence, the angle, its a
 
 **Matching** runs after each rescore. For an account with no open account play: pick the highest-priority live play whose trigger matches. Before proposing, the **account gate** runs (section 10). Then the holdout draw: a deterministic hash of (play, account) puts `holdout_pct` of accounts in the holdout arm, recorded, never contacted, and measured.
 
-**Proposal** goes to the account owner (or round-robin among SDRs when there is none) with the why-now: the triggering signal's evidence and the top three score contributions. The owner accepts or skips with a reason. A proposal expires after `proposal_ttl_days` (default 5).
+**Proposal** goes to the account owner (or round-robin among SDRs when there is none) with the why-now: the triggering signal's evidence and the top three score contributions. The owner accepts or skips with a reason. A proposal expires after `proposal_ttl_days` (default 5). Superseded in part (2026-11-17, decision 100): it stays on Today for 14 days with "Propose again".
 
 ## 8. Research, committee and drafting
 

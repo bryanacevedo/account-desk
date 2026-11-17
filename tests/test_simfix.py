@@ -280,3 +280,110 @@ def test_the_accounts_file_import_takes_owner_email_and_ignores_columns_it_has_n
         row = db.one(cur, "select name, fit_tier from accounts where primary_domain = 'simfixcheck.example'")
         assert row["name"] == "Simfix Check Co"
         db.run(cur, "delete from accounts where primary_domain = 'simfixcheck.example'")
+
+
+# ---- review fixes (2026-11-17): Propose again runs the matching gates; banner is true on Render; smaller items
+
+def _restore(cur, account_id, tier):
+    db.run(cur, "update accounts set fit_tier = %s where id = %s", tier, account_id)
+
+
+def test_propose_again_is_refused_when_the_account_is_now_tier_c(client, lapsed):
+    with db.tx() as cur:
+        before = db.val(cur, "select fit_tier from accounts where id = %s", lapsed["account_id"])
+        db.run(cur, "update accounts set fit_tier = 'C' where id = %s", lapsed["account_id"])
+    try:
+        with db.tx() as cur:
+            ap = db.one(cur, "select * from account_plays where id = %s", lapsed["id"])
+            why = plays.propose_again_blockers(cur, lapsed["account_id"], ap)
+        assert why and "tier C" in " ".join(why)
+        today = client.get("/api/today", headers=as_("manager")).json()
+        row = next((r for r in today["expired"] if r["id"] == lapsed["id"]), None)
+        assert row is None or not row["can_propose_again"]
+        assert client.post(f"/api/account-plays/{lapsed['id']}/propose-again", headers=as_("manager")).status_code in (409, 422)
+    finally:
+        with db.tx() as cur:
+            _restore(cur, lapsed["account_id"], before)
+
+
+def test_propose_again_is_refused_when_the_play_is_at_its_spend_cap(client, lapsed, monkeypatch):
+    from outbound import spend
+    monkeypatch.setattr(spend, "play_at_cap", lambda cur, play: True)
+    with db.tx() as cur:
+        ap = db.one(cur, "select * from account_plays where id = %s", lapsed["id"])
+        why = plays.propose_again_blockers(cur, lapsed["account_id"], ap)
+    assert why and any("spend cap" in w for w in why)
+    r = client.post(f"/api/account-plays/{lapsed['id']}/propose-again", headers=as_("manager"))
+    assert r.status_code in (409, 422) and "spend cap" in r.text
+
+
+def test_propose_again_is_refused_when_the_signal_is_out_of_the_plays_window(client, lapsed):
+    with db.tx() as cur:
+        sig = db.val(cur, "select trigger_signal_id from account_plays where id = %s", lapsed["id"])
+        was = db.val(cur, "select observed_at from signals where id = %s", sig)
+        db.run(cur, "update signals set observed_at = app_now() - interval '400 days' where id = %s", sig)
+    try:
+        with db.tx() as cur:
+            ap = db.one(cur, "select * from account_plays where id = %s", lapsed["id"])
+            why = plays.propose_again_blockers(cur, lapsed["account_id"], ap)
+        assert why and any("window" in w for w in why)
+        r = client.post(f"/api/account-plays/{lapsed['id']}/propose-again", headers=as_("manager"))
+        assert r.status_code in (409, 422)
+    finally:
+        with db.tx() as cur:
+            db.run(cur, "update signals set observed_at = %s where id = %s", was, sig)
+
+
+def test_propose_again_and_matching_share_one_set_of_play_gates():
+    src = (ROOT / "src" / "outbound" / "plays.py").read_text()
+    assert src.count("_play_allows(") >= 3  # defined once, used by match and by the blockers
+
+
+def test_propose_again_keeps_the_sdr_who_had_it(client, lapsed):
+    with db.tx() as cur:
+        sdr = db.val(cur, "select active and role = 'sdr' from users where id = %s", lapsed["owner_id"])
+    if not sdr:
+        pytest.skip("the lapsed proposal's owner is not an SDR")
+    r = client.post(f"/api/account-plays/{lapsed['id']}/propose-again", headers=as_("manager"))
+    assert r.status_code == 200, r.text
+    with db.tx() as cur:
+        assert db.val(cur, "select owner_id from account_plays where id = %s", r.json()["id"]) == lapsed["owner_id"]
+
+
+def test_a_person_set_hold_called_expired_still_blocks_propose_again(client, lapsed):
+    with db.tx() as cur:
+        db.run(cur, "insert into holds (account_id, reason, until, set_by) values (%s, 'expired', app_now() + interval '3 days', 'person:1')",
+               lapsed["account_id"])
+    try:
+        with db.tx() as cur:
+            why = plays.propose_again_blockers(cur, lapsed["account_id"])
+        assert why and "On hold" in " ".join(why)
+    finally:
+        with db.tx() as cur:
+            db.run(cur, "delete from holds where account_id = %s and set_by = 'person:1' and reason = 'expired'", lapsed["account_id"])
+
+
+def test_the_sidebar_opens_the_list_the_replies_badge_counts(client, world):
+    for role in ("sdr", "manager"):
+        h = as_(role)
+        me = client.get("/api/me", headers=h).json()
+        listed = client.get("/api/replies?view=needs_person", headers=h).json()["replies"]
+        assert me["counts"]["replies"] == len(listed), role
+    assert 'to: "/replies?view=needs_person"' in web("App.tsx")
+
+
+def test_the_banner_has_three_true_branches():
+    demo = web("demo.tsx")
+    assert "read-only snapshot taken" in demo and "changes are not saved" in demo  # the static snapshot refuses everything
+    shared = demo.split("          : me.public_demo")[1].split("Every vendor and signal here is simulated")[0]
+    for word in ("accept, skip, approve, propose again or move a day ahead", "seen by every visitor",
+                 "Sending, imports, people and settings are refused"):
+        assert word in shared
+    assert "Changes that would affect all of them are refused" not in demo
+    assert "Every vendor and signal here is simulated." in demo  # a local sample desk
+
+
+def test_the_do_not_contact_page_says_an_sdr_can_add():
+    desk = web("pages/Desk.tsx")
+    assert "To add or lift an entry, ask a manager" not in desk
+    assert "ask a manager" in desk and "An SDR can add a person" in desk

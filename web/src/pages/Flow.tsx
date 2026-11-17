@@ -35,7 +35,7 @@ export function Approvals() {
     <div className="page">
       <div className="head"><div><h1>Approvals</h1></div></div>
       <Hint>Every first email waits here until a person approves it. Open one to read the facts it cites, edit it and approve it. Nothing is sent without that click.</Hint>
-      <Section title="Ready to approve">{ready.length ? list(ready) : <Empty title="Nothing waiting">Example: &ldquo;Quick question about your 2027 pricing&rdquo; to a CFO, with the three facts it uses.</Empty>}</Section>
+      <Section title="Ready to approve">{ready.length ? list(ready) : <Empty title="Nothing waiting">Example: &ldquo;Quick question about your 2027 pricing&rdquo; to a CFO, with the 3 facts it uses.</Empty>}</Section>
       {failed.length ? <Section title="Needs a rewrite">{list(failed)}</Section> : null}
     </div>
   );
@@ -262,7 +262,7 @@ export function Plays() {
     <div className="page">
       <div className="head"><div><h1>Plays</h1><p className="sub">{live} live</p></div>
         {me?.user.role === "gtm" ? <button className="btn" onClick={() => openSheet("playedit", "new")}>New play</button> : null}</div>
-      <Hint>A play is a rule: when this signal appears at a good-fit account, propose this sequence to its SDR. Tier is how well an account fits our ideal customer profile (A best). A play writes at one of four stages: from the SDR writing everything to the desk sending on its own after a manager signs off.</Hint>
+      <Hint>A play is a rule: when this signal appears at a good-fit account, propose this sequence to its SDR. Tier is how well an account fits our ideal customer profile (A best). A play writes at one of 4 stages: from the SDR writing everything to the desk sending on its own after a manager signs off.</Hint>
       {decides ? (
         <Seg label="View" value={view} onChange={(v) => navigate(withParam("view", v === "plays" ? null : v), true)}
           options={[["plays", "Plays"], ["suggested", <>Suggested{open.length ? <span className="n" aria-label={`${open.length} waiting`}>{open.length}</span> : null}</>],

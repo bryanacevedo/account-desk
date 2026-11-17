@@ -17,12 +17,12 @@ import { DemoBar, isSample, useRefusalTitles } from "./demo";
 type Me = { user: { id: number; name: string; role: string }; users: any[]; counts: Record<string, number>; money: boolean;
   now: string; simulated: boolean; public_demo: boolean; snapshot?: { taken_on: string }; company: string; integration?: { integrated_with: string[]; links: Record<string, string> } };
 
-const ROUTES: { path: string; label: string; icon: ReactNode; page: () => JSX.Element; roles?: string[]; count?: string; group?: string; offBar?: boolean }[] = [
+const ROUTES: { path: string; label: string; icon: ReactNode; page: () => JSX.Element; roles?: string[]; count?: string; group?: string; offBar?: boolean; to?: string }[] = [
   { path: "/", label: "Today", icon: <Sun size={18} />, page: Today, count: "today" },
   { path: "/in-flight", label: "In flight", icon: <PaperPlaneTilt size={18} />, page: Flight },
   { path: "/accounts", label: "Accounts", icon: <Target size={18} />, page: Accounts, offBar: true },
   { path: "/approvals", label: "Approvals", icon: <CheckSquare size={18} />, page: Approvals, count: "approvals" },
-  { path: "/replies", label: "Replies", icon: <ChatsCircle size={18} />, page: Replies, count: "replies" },
+  { path: "/replies", label: "Replies", icon: <ChatsCircle size={18} />, page: Replies, count: "replies", to: "/replies?view=needs_person" },
   { path: "/signals", label: "Signals", icon: <Lightning size={18} />, page: Signals, group: "How it works" },
   { path: "/plays", label: "Plays", icon: <ListChecks size={18} />, page: Plays, count: "suggested" },
   { path: "/results", label: "Results", icon: <ChartLineUp size={18} />, page: Results },
@@ -70,7 +70,7 @@ export function App() {
         <div key={r.path} style={{ display: "contents" }}>
           {r.group ? <div className="group">{r.group}</div> : null}
           <a href={r.path} aria-current={r.path === route.path ? "page" : undefined}
-            onClick={(e) => { e.preventDefault(); navigate(r.path); }}>
+            onClick={(e) => { e.preventDefault(); navigate(r.to && me?.counts[r.count!] ? r.to : r.path); }}>
             {r.icon}<span>{r.label}</span>
             {r.count && me?.counts[r.count] ? <span className="n" key={me.counts[r.count]} aria-label={`${me.counts[r.count]} waiting`}>{me.counts[r.count]}</span> : null}
           </a>
@@ -112,7 +112,7 @@ export function App() {
       </main>
       <nav className="phone-nav" aria-label="Main">
         {bar.map((r) => (
-          <a key={r.path} href={r.path} aria-current={r.path === route.path ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(r.path); }}>
+          <a key={r.path} href={r.path} aria-current={r.path === route.path ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(r.to && r.count && me?.counts[r.count] ? r.to : r.path); }}>
             <span className="pn-icon">{r.icon}{r.count && me?.counts[r.count] ? <i className="pn-n" key={me.counts[r.count]}>{me.counts[r.count]}</i> : null}</span><span>{r.label}</span>
           </a>
         ))}

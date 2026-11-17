@@ -139,7 +139,7 @@ export function MyMailbox() {
   );
 }
 
-/** Decision 6. The do-not-contact list for everyone, read only. Adding and lifting stay with a manager or GTM in Settings. */
+/** Decision 6. The do-not-contact list for everyone, read only. An SDR can add a person, an email or a phone number in Settings; lifting an entry, or blocking a whole company, is for a manager or GTM. */
 export function DoNotContact() {
   const { data, error, reload } = useData<any>("/api/do-not-contact");
   if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
@@ -147,7 +147,7 @@ export function DoNotContact() {
   return (
     <div className="page">
       <div className="head"><div><h1>Do not contact</h1><p className="sub">{data.entries.length} {data.entries.length === 1 ? "entry" : "entries"}, read only</p></div></div>
-      <Hint>Check here before you promise anything to someone. The desk never emails, calls or messages anyone on this list, and an email to them is refused before it is sent. To add or lift an entry, ask a manager.</Hint>
+      <Hint>Check here before you promise anything to someone. The desk never emails, calls or messages anyone on this list, and an email to them is refused before it is sent. To lift an entry, or to block a whole company, ask a manager.</Hint>
       {data.entries.length ? (
         <div className="ledger">
           <div className="row head" style={{ gridTemplateColumns: "100px minmax(0,1fr) minmax(0,1fr) 70px" }}><span>Kind</span><span>Who</span><span>Why</span><span className="num">Added</span></div>

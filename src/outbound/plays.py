@@ -59,7 +59,9 @@ def holdout_draw(play_key: str, account_id: int, pct: int) -> bool:
     return (h % 100) < pct
 
 
-def _trigger_signal(cur, play: dict, account_id: int) -> dict | None:
+def _trigger_signal(cur, play: dict, account_id: int, *, reuse_signal_id: int | None = None) -> dict | None:
+    """The best unused signal that triggers this play. With `reuse_signal_id` (Propose again) that one signal counts even
+    though an earlier proposal used it; it still has to be inside the play's window and strong enough."""
     trig = play["trigger"]
     return db.one(cur, """
         select s.id, s.type_key, s.observed_at, s.strength, s.evidence, s.person_id, t.label, t.because, t.weight
@@ -67,9 +69,28 @@ def _trigger_signal(cur, play: dict, account_id: int) -> dict | None:
         where s.account_id = %s and s.status = 'matched' and s.type_key = any(%s)
           and s.strength >= %s and s.observed_at > app_now() - (%s || ' days')::interval
           and s.observed_at <= app_now()
-          and not exists (select 1 from account_plays used where used.trigger_signal_id = s.id)
+          and (s.id = %s or not exists (select 1 from account_plays used where used.trigger_signal_id = s.id))
+          and (%s::bigint is null or s.id = %s)
         order by t.weight * s.strength desc, s.observed_at desc limit 1""",
-        account_id, trig["any_of"], trig.get("min_strength", 0), trig.get("within_days", 30))
+        account_id, trig["any_of"], trig.get("min_strength", 0), trig.get("within_days", 30),
+        reuse_signal_id, reuse_signal_id, reuse_signal_id)
+
+
+def _play_allows(cur, play: dict, acc: dict, score: dict) -> str | None:
+    """The play-level gates of matching, in one place so Propose again runs the same ones: the account's tier is one the
+    play allows (and A or B), the minimum priority, the excluded lifecycles and the play's monthly spend cap.
+    Returns the reason in plain words, or None when the play may be proposed."""
+    from . import spend
+    trig = play["trigger"]
+    if acc["fit_tier"] not in ("A", "B") or acc["fit_tier"] not in trig.get("fit_tiers", ["A", "B"]):
+        return f"The account is now tier {acc['fit_tier']}, which this play does not take"
+    if score["priority"] < trig.get("min_priority", 0):
+        return "The account's priority is now below this play's minimum"
+    if acc["lifecycle"] in trig.get("exclude_lifecycles", []):
+        return f"This play does not run on an account in {acc['lifecycle']}"
+    if spend.play_at_cap(cur, play):
+        return "This play's monthly spend cap is used up"
+    return None
 
 
 def match(cur, account_id: int) -> int | None:
@@ -81,15 +102,9 @@ def match(cur, account_id: int) -> int | None:
     if not score or acc["fit_tier"] not in ("A", "B"):
         return None
     best = None
-    from . import spend
     for play in db.all(cur, "select * from plays where status = 'live' order by urgent desc, id"):
-        trig = play["trigger"]
-        if spend.play_at_cap(cur, play):
-            continue  # its manager's monthly cap is used up: no new accounts until next month
-        if acc["fit_tier"] not in trig.get("fit_tiers", ["A", "B"]) or score["priority"] < trig.get("min_priority", 0):
-            continue
-        if acc["lifecycle"] in trig.get("exclude_lifecycles", []):
-            continue
+        if _play_allows(cur, play, acc, score):
+            continue  # tier, priority, lifecycle, or its manager's monthly cap used up
         sig = _trigger_signal(cur, play, account_id)
         if sig is None:
             continue
@@ -191,15 +206,29 @@ def decide(cur, ap_id: int, *, accept: bool, user_id: int, reason: str | None = 
         set_state(cur, ap_id, "skipped", reason=reason, actor="person", actor_id=user_id, cooldown_key="skipped")
 
 
-def propose_again_blockers(cur, account_id: int) -> list[str]:
+def propose_again_blockers(cur, account_id: int, ap: dict | None = None) -> list[str]:
     """Why a lapsed proposal cannot be offered again, in plain words. Empty when it can. The hold the lapse itself set
-    does not count: that hold is what "Propose again" lifts. Any other hold, an open play, a do-not-contact entry or
-    the kill switch does."""
+    does not count: that hold is what "Propose again" lifts. It runs the same gates as proposing does: the account gate
+    (kill switch, lifecycle, tier X, do-not-contact, other holds, an open play) and the play's own (tier it takes,
+    minimum priority, excluded lifecycles, monthly spend cap, and its signal still inside the play's window). `ap` is
+    the lapsed proposal; without it only the account-level gates run."""
     out = [r.message for r in gate.account_reasons(cur, account_id) if r.code != "account_hold"]
     other = db.one(cur, """select reason, until from holds where account_id = %s and person_id is null and until > app_now()
-                           and reason <> 'expired' order by until desc limit 1""", account_id)
+                           and not (reason = 'expired' and set_by = 'desk') order by until desc limit 1""", account_id)
     if other:
         out.append(f"On hold until {other['until']:%d %b}: {other['reason']}")
+    if ap is not None:
+        play = db.one(cur, "select * from plays where id = %s", ap["play_id"])
+        acc = db.one(cur, "select fit_tier, owner_id, lifecycle from accounts where id = %s", account_id)
+        score = db.one(cur, "select priority from account_scores where account_id = %s", account_id)
+        if play and acc and score is None:
+            out.append("The account has no score now")
+        elif play and acc:
+            why = _play_allows(cur, play, acc, score)
+            if why:
+                out.append(why)
+            elif _trigger_signal(cur, play, account_id, reuse_signal_id=ap["trigger_signal_id"]) is None:
+                out.append("The signal behind this proposal is now older than this play's window")
     return out
 
 
@@ -216,12 +245,15 @@ def propose_again(cur, ap_id: int, *, user_id: int) -> int:
     if db.val(cur, "select exists (select 1 from account_plays where account_id = %s and id <> %s and proposed_at >= %s)",
               ap["account_id"], ap_id, ap["proposed_at"]):
         raise ValueError("This account already has a newer play")
-    blockers = propose_again_blockers(cur, ap["account_id"])
+    blockers = propose_again_blockers(cur, ap["account_id"], ap)
     if blockers:
         raise ValueError(blockers[0])
     db.run(cur, "delete from holds where account_id = %s and person_id is null and reason = 'expired' and set_by = 'desk'",
            ap["account_id"])
-    owner = _pick_owner(cur, db.val(cur, "select owner_id from accounts where id = %s", ap["account_id"]))
+    # Keep the SDR who had it when they are still an active SDR, so "it is in the list above" stays true for them.
+    keep = ap["owner_id"] if ap["owner_id"] and db.val(cur, "select active and role = 'sdr' from users where id = %s",
+                                                       ap["owner_id"]) else None
+    owner = keep or _pick_owner(cur, db.val(cur, "select owner_id from accounts where id = %s", ap["account_id"]))
     new = db.val(cur, """insert into account_plays (account_id, play_id, trigger_signal_id, arm, state, why_now, owner_id)
                          values (%s,%s,%s,'treated','proposed',%s,%s) returning id""",
                  ap["account_id"], ap["play_id"], ap["trigger_signal_id"], J(ap["why_now"]), owner)

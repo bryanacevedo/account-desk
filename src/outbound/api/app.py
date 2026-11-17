@@ -490,7 +490,7 @@ def message(message_id: int, u: dict = Depends(current_user)) -> dict:
 @app.get("/api/replies")
 def replies_page(view: Literal["mine", "all", "hot", "needs_person"] = "mine", u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
-        return {"replies": views.replies_page(cur, view=view, user_id=u["id"])}
+        return {"replies": views.replies_page(cur, view=view, user_id=u["id"], own_only=u["role"] == "sdr")}
 
 
 @app.get("/api/replies/{reply_id}")

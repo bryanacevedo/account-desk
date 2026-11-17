@@ -37,7 +37,7 @@ export function DemoBar({ me }: { me: DemoMe }) {
         {snap
           ? <>This is a read-only snapshot taken {me.snapshot!.taken_on}: changes are not saved. A change you try answers &ldquo;{REFUSAL}&rdquo;</>
           : me.public_demo
-            ? <>Everyone who visits shares this demo. Changes that would affect all of them are refused with &ldquo;{REFUSAL}&rdquo;</>
+            ? <>Everyone who visits shares this demo. What you accept, skip, approve, propose again or move a day ahead is seen by every visitor and stays until the demo restarts. Sending, imports, people and settings are refused with &ldquo;{REFUSAL}&rdquo;</>
             : <>Every vendor and signal here is simulated.</>}{" "}
         <span className="demo-day">Sample day: {sampleDay(me.now)} (the demo keeps its own clock).</span>
       </span>
@@ -78,7 +78,7 @@ export function Sample({ children = "sample" }: { children?: ReactNode }) {
   return <span className="sample-tag" title="Invented for this sample company">{children}</span>;
 }
 
-/** The first screen of the sample: what this is for, one first step, and two short paths. */
+/** The first screen of the sample: what this is for, one first step, and 2 short paths. */
 export function Welcome({ firstStep }: { firstStep: { label: string; go: () => void } | null }) {
   const [shut, setShut] = useState(() => { try { return localStorage.getItem("ad-welcome-shut") === "1"; } catch { return false; } });
   if (shut) return (
