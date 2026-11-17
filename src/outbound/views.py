@@ -162,7 +162,7 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
             "current": current, "people": people, "gaps": gaps, "messages": messages, "replies": reps,
             "meetings": meetings, "opportunities": opps, "holds": holds, "calendar": calendar,
             # What became of the work Accept queued (research, people, first drafts): queued, running, done or failed.
-            "work": request_progress(cur, f"account_play:{plays_[0]['id']}") if plays_ else None}
+            "work": request_progress(cur, f"account_play:{plays_[0]['id']}", detail=money) if plays_ else None}
 
 
 # ---------------------------------------------------------------- in flight

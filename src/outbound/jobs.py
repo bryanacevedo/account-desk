@@ -20,7 +20,21 @@ from .db import J
 log = logging.getLogger("outbound.jobs")
 Handler = Callable[[Any, dict], None]
 HANDLERS: dict[str, Handler] = {}
-WORKER_ID = f"{socket.gethostname()}:{os.getpid()}"
+
+
+def _worker_host() -> str:
+    """This machine as a worker sees it: the host name and, on Linux, the process-id namespace. Two containers can share
+    a host name (host networking) while each has its own process ids, so a process id means something only next to its
+    namespace. Without /proc (macOS) there is one namespace and the host name is enough."""
+    try:
+        ns = os.readlink("/proc/self/ns/pid")  # 'pid:[4026531836]'
+    except OSError:
+        return socket.gethostname()
+    return f"{socket.gethostname()}/{ns.removeprefix('pid:').strip('[]')}"
+
+
+WORKER_HOST = _worker_host()
+WORKER_ID = f"{WORKER_HOST}:{os.getpid()}"
 # The request a running job belongs to, so the jobs it queues belong to it too (decision 98).
 _request: contextvars.ContextVar[tuple[str, int | None] | None] = contextvars.ContextVar("request_of_job", default=None)
 
@@ -201,12 +215,14 @@ def reap(cur, stale_minutes: int = 10) -> int:
 
 
 def reap_orphans(cur) -> int:
-    """After a restart: a job still 'running' whose worker was a process on this machine that no longer exists goes
-    back in line at once, without waiting for `reap`'s 10 minutes. A lock held by another machine is left to `reap`."""
-    host = socket.gethostname()
+    """After a restart: a job still 'running' whose worker was a process on this machine (same host name and process-id
+    namespace) that no longer exists goes back in line at once, without waiting for `reap`'s 10 minutes. A lock held by
+    another machine or another container is left to `reap`, since its process cannot be checked from here."""
+    prefix = WORKER_HOST + ":"
     n = 0
-    for j in db.all(cur, "select id, locked_by from jobs where status = 'running' and locked_by like %s", host + ":%"):
-        pid = j["locked_by"].rsplit(":", 1)[-1]
+    for j in db.all(cur, "select id, locked_by from jobs where status = 'running' and left(locked_by, %s) = %s",
+                    len(prefix), prefix):
+        pid = j["locked_by"][len(prefix):]
         if not pid.isdigit() or int(pid) == os.getpid():
             continue
         try:
@@ -222,9 +238,12 @@ def reap_orphans(cur) -> int:
     return n
 
 
-def request_progress(cur, request_ref: str) -> dict | None:
+def request_progress(cur, request_ref: str, *, detail: bool = True) -> dict | None:
     """What became of a person's request, in words a person can read: counts by state, whether work is still going,
-    and the reason of the last failure. None when nothing was queued for it."""
+    and the reason of the last failure. None when nothing was queued for it.
+
+    `detail=False` (an SDR): the raw error text, which can carry a vendor's answer, is left out, as on Health (manager and
+    GTM only); a wait for budget or a vendor set-up is written for people and stays."""
     rows = db.all(cur, """select status, kind, last_error, attempts, max_attempts from jobs where request_ref = %s
                           order by id""", request_ref)
     if not rows:
@@ -235,7 +254,11 @@ def request_progress(cur, request_ref: str) -> dict | None:
         state = "failed" if r["status"] in ("dead", "failed") else r["status"]
         counts[state] = counts.get(state, 0) + 1
         if r["last_error"] and (state == "failed" or r["status"] == "queued") and reason is None:
-            reason = f"{job_name(r['kind'])}: {r['last_error'].strip()}"[:300]
+            err = r["last_error"].strip()
+            if not detail and not err.startswith("Waiting:"):
+                err = ("did not finish; a manager or GTM can see why on Health" if state == "failed"
+                       else "did not finish and will try again")
+            reason = f"{job_name(r['kind'])}: {err}"[:300]
     active = counts["queued"] + counts["running"] > 0
     state = "running" if counts["running"] else "queued" if counts["queued"] else "failed" if counts["failed"] else "done"
     return {"state": state, "active": active, **counts, "reason": reason}

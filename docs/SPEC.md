@@ -101,7 +101,7 @@ All tables are in `migrations/`. Every state column has a CHECK constraint namin
 - **touches** (id, account_id, person_id, account_play_id null, channel email|linkedin|call|meeting|other, direction out|in, kind, at, source, dedup_key unique). The one record of contact across channels.
 - **call_notes** (id, meeting_id, text, worth_learning bool, marked_by) and **learnings** (id, call_note_id, kind objection|competitor|reason_to_buy|reason_not|quote, text, quote, play_id, signal_type).
 - **tasks** (id, account_play_id, person_id, kind call|linkedin_connect|linkedin_message|research|reply, due_at, owner_id, status open|done|skipped, note).
-- **jobs** (id, kind, payload, run_at, status queued|running|done|failed|dead, attempts, max_attempts, locked_at, locked_by, last_error, dedupe_key unique). Claimed with `FOR UPDATE SKIP LOCKED`.
+- **jobs** (id, kind, payload, run_at, status queued|running|done|failed|dead, attempts, max_attempts, locked_at, locked_by, last_error, dedupe_key unique, lane system|request, request_ref, requested_by; decision 98). Claimed with `FOR UPDATE SKIP LOCKED`.
 - **crm_outbox** (id, kind, payload, idempotency_key unique, status pending|done|failed|dead, attempts, last_error).
 - **ledger** (id, at, vendor, unit credits|tokens|usd_cents, qty, cost_cents, purpose, account_id, job_id) and **budgets** (vendor, period month, cap_cents).
 - **llm_calls** (id, at, task, model, input_hash, input_tokens, output_tokens, cost_cents, output jsonb, source live|recorded|sim).

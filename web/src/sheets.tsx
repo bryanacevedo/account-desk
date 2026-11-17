@@ -387,8 +387,6 @@ export function TaskSheet({ id }: { id: number }) {
   );
 }
 
-/** What happened on LinkedIn, recorded by the SDR: an accepted request, or their message pasted in (it becomes a
- *  reply, so their emails stop first). */
 /** What became of the work Accept queued: queued, running, done, or failed with the reason. */
 function WorkStatus({ work }: { work: any }) {
   if (!work) return null;
@@ -403,6 +401,8 @@ function WorkStatus({ work }: { work: any }) {
   );
 }
 
+/** What happened on LinkedIn, recorded by the SDR: an accepted request, or their message pasted in (it becomes a
+ *  reply, so their emails stop first). */
 function LinkedInLog({ personId, canAccept, onDone }: { personId: number; canAccept: boolean; onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");

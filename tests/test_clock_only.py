@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from outbound import db  # noqa: E402
 
-TABLES = ("messages", "tasks", "signals", "replies", "enrollments", "account_plays", "meetings", "jobs", "touches", "audit_log")
+TABLES = ("messages", "tasks", "signals", "replies", "enrollments", "account_plays", "meetings", "jobs", "touches", "audit_log",
+          "sim_events", "alerts", "people", "opportunities")
 
 
 @pytest.fixture(scope="module")
@@ -29,6 +30,11 @@ def as_(role: str) -> dict:
 def snapshot() -> dict:
     with db.tx() as cur:
         out = {t: db.val(cur, f"select count(*) from {t}") for t in TABLES if t != "audit_log"}
+        # Not just how many: no job changed state or was tried, no account play moved, no event was handled.
+        out["jobs_by_state"] = db.all(cur, "select status, count(*), sum(attempts) from jobs group by status order by status")
+        out["plays_by_state"] = db.all(cur, "select state, count(*) from account_plays group by state order by state")
+        out["events_done"] = db.val(cur, "select count(*) from sim_events where done")
+        out["messages_by_status"] = db.all(cur, "select status, count(*) from messages group by status order by status")
         out["now"] = db.val(cur, "select app_now()")
         return out
 
@@ -47,6 +53,7 @@ def test_a_manager_moves_the_clock_and_nothing_else_happens(client, keep_clock):
     before = snapshot()
     with db.tx() as cur:
         audits = db.val(cur, "select count(*) from audit_log where action = 'clock_advanced'")
+        all_audits = db.val(cur, "select count(*) from audit_log")
     r = client.post("/api/sim/clock", json={"days": 3}, headers=as_("manager"))
     assert r.status_code == 200, r.text
     after = snapshot()
@@ -56,6 +63,7 @@ def test_a_manager_moves_the_clock_and_nothing_else_happens(client, keep_clock):
     with db.tx() as cur:
         row = db.one(cur, "select actor_id, detail from audit_log where action = 'clock_advanced' order by id desc limit 1")
         assert db.val(cur, "select count(*) from audit_log where action = 'clock_advanced'") == audits + 1
+        assert db.val(cur, "select count(*) from audit_log") == all_audits + 1  # the move's own entry and nothing else
     assert row["detail"]["days"] == 3 and row["actor_id"] is not None
     assert client.get("/api/me", headers=as_("manager")).json()["now"].startswith(after["now"].isoformat()[:16])
 
@@ -117,3 +125,17 @@ def test_what_is_due_reads_the_new_time(client, keep_clock):
     finally:
         with db.tx() as cur:
             db.run(cur, "delete from tasks where id = %s", tid)
+
+
+def test_an_integrated_desk_moves_only_its_own_clock(client, keep_clock, monkeypatch):
+    """Beside the other desks the world's clock file is read only when the demo is built; the move changes this desk's
+    clock row and answers the new time, so the other desks' clocks can be set to match. The world file is untouched."""
+    from pathlib import Path
+    world_clock = Path(__file__).resolve().parents[1] / "world" / "public" / "clock.json"
+    before_file = world_clock.read_bytes()
+    monkeypatch.setenv("INTEGRATED_WITH", "crm_desk")
+    before = snapshot()["now"]
+    r = client.post("/api/sim/clock", json={"days": 2}, headers=as_("manager"))
+    assert r.status_code == 200, r.text
+    assert r.json()["now"].startswith((before + timedelta(days=2)).isoformat()[:16])
+    assert world_clock.read_bytes() == before_file

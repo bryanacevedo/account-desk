@@ -93,7 +93,10 @@ async def lifespan(_app):
     if applied:
         log.info("applied migrations at start: %s", ", ".join(applied))
     start_worker()
-    yield
+    try:
+        yield
+    finally:
+        stop_worker()
 
 
 app = FastAPI(title="Account Desk", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
@@ -1805,15 +1808,22 @@ def worker_pass() -> int:
     return ran
 
 
+_stop = threading.Event()
+_worker: threading.Thread | None = None
+
+
 def start_worker() -> None:
+    """Start the background worker thread (not with NO_WORKER=1). Once per process: a second start while it runs, as
+    when the app is opened twice in one process, does nothing."""
+    global _worker
     db.pool()
-    if not CONFIG.worker_inline:
+    if not CONFIG.worker_inline or (_worker is not None and _worker.is_alive()):
         return
     with db.tx() as cur:
         jobs.reap_orphans(cur)  # work the last process left half done resumes now
 
     def loop() -> None:
-        while True:
+        while not _stop.is_set():
             try:
                 worker_pass()
             except Exception:
@@ -1821,4 +1831,19 @@ def start_worker() -> None:
             _wake.wait(5)
             _wake.clear()
 
-    threading.Thread(target=loop, daemon=True, name="worker").start()
+    _stop.clear()
+    _worker = threading.Thread(target=loop, daemon=True, name="worker")
+    _worker.start()
+
+
+def stop_worker(timeout: float = 30.0) -> None:
+    """Stop the worker when the app shuts down: it finishes the job in hand (each job is its own transaction) and stops.
+    A job cut off by a hard stop is put back in line by the next start (`reap_orphans`) or by `reap`."""
+    global _worker
+    if _worker is None:
+        return
+    _stop.set()
+    _wake.set()
+    _worker.join(timeout)
+    if not _worker.is_alive():
+        _worker = None

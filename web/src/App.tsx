@@ -155,7 +155,7 @@ function Clock({ me }: { me: Me }) {
         const r = await api<any>("/api/sim/advance", { method: "POST", body: { hours: 24 } });
         toast(`A day passed: ${r.signals} new signals.`);
       })}>{busy ? "Working" : "Move a day ahead"}</button>
-          {me.user.role !== "sdr" ? <ClockOnly /> : null}
+      {(me.user.role === "manager" || me.user.role === "gtm") && !me.public_demo ? <ClockOnly /> : null}
     </div>
   );
 }

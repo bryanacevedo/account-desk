@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import socket
 import threading
 import time
 
@@ -202,7 +201,7 @@ def test_a_restart_resumes_what_the_last_process_left(world):
             dead = jobs.enqueue(cur, "bg_test_resume", {"i": 1}, request_ref="test:restart")
             alive = jobs.enqueue(cur, "bg_test_resume", {"i": 2}, request_ref="test:restart")
             other = jobs.enqueue(cur, "bg_test_resume", {"i": 3}, request_ref="test:restart")
-            host = socket.gethostname()
+            host = jobs.WORKER_HOST
             # one held by a process that is gone, one by a live process, one by another machine
             db.run(cur, "update jobs set status = 'running', attempts = 1, locked_at = now(), locked_by = %s where id = %s",
                    f"{host}:999999", dead)
@@ -231,9 +230,78 @@ def test_a_job_the_worker_stopped_on_dies_after_its_last_try(world):
         with db.tx() as cur:
             jid = jobs.enqueue(cur, "bg_test_never", {}, request_ref="test:last-try", max_attempts=1)
             db.run(cur, "update jobs set status = 'running', attempts = 1, locked_at = now(), locked_by = %s where id = %s",
-                   f"{socket.gethostname()}:999998", jid)
+                   f"{jobs.WORKER_HOST}:999998", jid)
             assert jobs.reap_orphans(cur) == 1
             assert db.val(cur, "select status from jobs where id = %s", jid) == "dead"
             db.run(cur, "delete from jobs where id = %s", jid)  # no dead job may stay in the shared world
     finally:
         del jobs.HANDLERS["bg_test_never"]
+
+
+def test_a_lock_from_another_container_with_the_same_host_name_is_left_alone(world, monkeypatch):
+    """Two containers can share a host name (host networking) with their own process ids. A process id is checked only
+    in its own namespace; a lock from another namespace waits for `reap`, so a job a live process runs is never run twice."""
+    jobs.HANDLERS["bg_test_ns"] = lambda cur, payload: None
+    monkeypatch.setattr(jobs, "WORKER_HOST", "box/4026531836")
+    try:
+        with db.tx() as cur:
+            mine = jobs.enqueue(cur, "bg_test_ns", {}, request_ref="test:namespace")
+            theirs = jobs.enqueue(cur, "bg_test_ns", {}, request_ref="test:namespace")
+            prefix_only = jobs.enqueue(cur, "bg_test_ns", {}, request_ref="test:namespace")
+            for jid, holder in ((mine, "box/4026531836:999997"), (theirs, "box/4026532999:999997"),
+                                (prefix_only, "box:999997")):
+                db.run(cur, "update jobs set status = 'running', attempts = 1, locked_at = now(), locked_by = %s where id = %s",
+                       holder, jid)
+            assert jobs.reap_orphans(cur) == 1
+            states = {r["id"]: r["status"] for r in db.all(cur, "select id, status from jobs where request_ref = 'test:namespace'")}
+            assert states == {mine: "queued", theirs: "running", prefix_only: "running"}
+            db.run(cur, "delete from jobs where request_ref = 'test:namespace'")
+    finally:
+        del jobs.HANDLERS["bg_test_ns"]
+
+
+def test_an_sdr_sees_that_work_failed_but_not_the_raw_error(client):
+    """The raw error can carry a vendor's answer: like Health, only a manager or GTM reads it on the account."""
+    def boom(cur, payload):
+        raise RuntimeError("vendor answered 401 for https://vendor.example/find?key=secret")
+
+    ap = proposal()
+    with db.tx() as cur:
+        acct = db.val(cur, "select account_id from account_plays where id = %s", ap)
+    real = jobs.HANDLERS["research"]
+    jobs.HANDLERS["research"] = boom
+    try:
+        assert accept(client, ap).status_code == 200
+        with db.tx() as cur:
+            db.run(cur, "update jobs set max_attempts = 1 where request_ref = %s", f"account_play:{ap}")
+        jobs.run_ready(lane="request")
+        as_sdr = client.get(f"/api/accounts/{acct}", headers=headers("sdr")).json()["work"]
+        as_manager = client.get(f"/api/accounts/{acct}", headers=headers("manager")).json()["work"]
+        assert as_sdr["state"] == as_manager["state"] == "failed"
+        assert "secret" not in as_sdr["reason"] and "Health" in as_sdr["reason"]
+        assert "secret" in as_manager["reason"]
+    finally:
+        jobs.HANDLERS["research"] = real
+        with db.tx() as cur:  # no dead job or its alert may stay in the shared world
+            ids = [r["id"] for r in db.all(cur, "select id from jobs where request_ref = %s", f"account_play:{ap}")]
+            db.run(cur, "delete from alerts where dedup_key = any(%s)", [f"job_dead:{i}" for i in ids])
+            db.run(cur, "delete from jobs where id = any(%s)", ids)
+
+
+def test_the_worker_starts_once_and_stops(monkeypatch):
+    import dataclasses
+
+    from outbound.api import app as api
+    monkeypatch.setattr(api, "CONFIG", dataclasses.replace(api.CONFIG, worker_inline=True))
+    passes: list[int] = []
+    monkeypatch.setattr(api, "worker_pass", lambda: passes.append(1) or 0)
+    api.start_worker()
+    first = api._worker
+    api.start_worker()  # a second start in the same process does nothing
+    assert api._worker is first and first.is_alive()
+    api._wake_worker()
+    api.stop_worker(timeout=10)
+    assert not first.is_alive() and api._worker is None and passes
+    monkeypatch.setattr(api, "CONFIG", dataclasses.replace(api.CONFIG, worker_inline=False))
+    api.start_worker()  # NO_WORKER=1: no thread
+    assert api._worker is None
