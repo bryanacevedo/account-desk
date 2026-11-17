@@ -13,7 +13,7 @@
 
 [Live demo](https://account-desk-x4ko.onrender.com) · [Film (2:01)](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4) · [Docs](docs/SPEC.md) · [Decisions](docs/DECISIONS.md)
 
-<sub>The public demo is shared by every visitor. Admin actions (kill switch, users, erasure, publishing the ideal customer profile, CSV imports) are blocked there, and "Move a day ahead" moves at most 24 hours at a time.</sub>
+<sub>The public demo is shared by every visitor and is deployed by hand, so it can be behind the code here. Admin actions (kill switch, users, erasure, publishing the ideal customer profile, CSV imports, country email rules, acknowledging alerts) and sending a reply are blocked there, and "Move a day ahead" moves at most 24 hours at a time.</sub>
 
 <img src="docs/img/today.png" alt="An SDR's Today page in the demo: plays proposed to them, emails to approve, calls and LinkedIn steps" width="900">
 
@@ -90,7 +90,7 @@ Leaving research needs no complaint and known complaint data for every sending d
 
 ## What it does
 
-- **Signals.** Seventeen signal types, each with a written reason it matters, a weight and a half-life. Sources are adapters (job postings, funding, job changes, website visits, intent, reviews, technology changes, social engagement, product sign-ups, the CRM, a signed webhook). Every source run is recorded, so a silent source shows up.
+- **Signals.** Seventeen signal types, each with a written reason it matters, a weight and a half-life. Sources are adapters (job postings, funding, job changes, website visits, intent, reviews, technology changes, social engagement, company news, product sign-ups, events, the CRM, replies, a signed webhook). Every source run is recorded, so a silent source shows up.
 - **Scoring.** Fit from a versioned ideal customer profile, intent from decayed signals with a bonus when different kinds of signal agree, engagement from replies and meetings. Every stored score keeps its inputs and must reproduce from them.
 - **Plays.** Six shipped plays, each a hypothesis with a trigger, the people to reach, a sequence and an angle. A deterministic share of matched accounts is held back: measured, never contacted.
 - **Enrichment and the buying committee.** Up to three people per account by role (finance leader, controller, revenue operations, data). Work emails come from finders asked in order (Findymail, then Prospeo, then LeadMagic in the demo), each paid only for an address it returns; every address is verified, and catch-all addresses go to a second resolver and are never sent to unconfirmed. Company data is read monthly, and a change between two reads is a signal. Every enriched field records which vendor said it, when and how sure it was; a paid answer is kept, so a retried job never pays twice. Gaps are named ("Email in Germany needs consent first").
@@ -106,7 +106,7 @@ Leaving research needs no complaint and known complaint data for every sending d
 
 ## The demo in figures
 
-Read on 2026-11-12 from a fresh `python -m outbound demo 90` build of the current code (database `outbound_release`):
+Read on 2026-11-12 from a fresh `python -m outbound demo 90` build (the desk's own generator, what `make demo` runs; database `outbound_release`). The hosted image builds the shared world instead (`WORLD=world`, see [Deploy](#deploy)), so the live demo's figures differ:
 
 | Figure | Value | Population or source |
 |---|---|---|
@@ -135,7 +135,7 @@ How the simulation behaves:
 - The world holds together the way a real list does: a company's name and product fit its industry, it has one finance leader, and a new finance leader the news announces holds that title and starts that day, while the one they replaced leaves.
 - Simulated SDRs edited 275 of the 1,814 emails they approved in this build (15%); they approved 330 LinkedIn notes as written. On Monday mornings the simulated manager approves the next stage for any play at the draft stage or above whose checks all pass; leaving the research stage stays the manager's own call. Demotions are the desk's own.
 - Call notes carry planted patterns, each a reason (or a competitor) heard on most first calls of accounts that came in on one signal, some only for a few weeks, and one that later spreads to every call so its pattern lapses (`PLANTED` and `MORE_PLANTED` in `src/outbound/sim/runner.py`). The rule still decides on its own whether each is a pattern. On Tuesdays the simulated GTM engineer turns the hiring one into a draft play, and the manager sets two aside for now and says no to one (`suggestion_routine`); every other suggestion, and one that comes back after a "not now", waits for a person.
-- Region rules: the demo's seller does not sell in Singapore, and Australia has no rule, so nobody there is cold-emailed. In the shared-world build (`WORLD=world`) Mexico is opt-out and every country the world has is ruled. Every sending domain reports no Postmaster data until it is 45 days old (decision 60).
+- Region rules: the demo's seller does not sell in Singapore, and Australia has no rule, so nobody there is cold-emailed. Mexico is opt-out in every build, and in the shared-world build (`WORLD=world`) every country the world has is ruled. Every sending domain reports no Postmaster data until it is 45 days old (decision 60).
 
 ## The AI, measured
 
@@ -193,16 +193,18 @@ The tests run on real Postgres, including a 21-day simulation of the whole desk 
 
 ### A real desk, not the demo
 
+Point `DATABASE_URL` at an empty database first (the demo's own database is not empty), then:
+
 ```bash
-python -m outbound init examples/desk.example.json
+uv run python -m outbound init examples/desk.example.json
 ```
 
 ```bash
-python -m outbound import accounts examples/accounts.example.csv
+uv run python -m outbound import accounts examples/accounts.example.csv
 ```
 
 ```bash
-python -m outbound import people examples/people.example.csv
+uv run python -m outbound import people examples/people.example.csv
 ```
 
 `init` creates the team, sending domains and mailboxes from one file, on an empty database only. Plays start as drafts with your own legitimate-interest reference and review date, for a manager to read and launch. Domains send nothing until the daily DNS check has read their SPF, DKIM and DMARC. Imports report every row they refuse and why.
@@ -269,7 +271,7 @@ Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/cata
 
 ## Deploy
 
-`render.yaml` describes the hosted demo: one Docker service on Render's free plan with Postgres inside the container and the 90-day simulation built into the image (`scripts/docker-build-demo.sh`), so a start or a wake from sleep only boots Postgres. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). On Render's own builder the image took about 17 minutes to build (2026-11-12). Deploys are manual: auto-deploy is off on the service (`render.yaml` does not say so), so a push to `main` deploys nothing and the live demo can be behind the code here.
+`render.yaml` describes the hosted demo: one Docker service on Render's free plan with Postgres inside the container and the simulation built into the image (`scripts/docker-build-demo.sh`), so a start or a wake from sleep only boots Postgres. The image builds the shared world by default (`WORLD=world`, its 91 days); `--build-arg DEMO_WORLD=legacy` builds the desk's own 90-day generator instead. The build fails if the coverage gate finds a scenario missing. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). On Render's own builder the image took about 17 minutes to build (2026-11-12, a build of the desk's own generator). Deploys are manual: auto-deploy is off on the service (`render.yaml` does not say so), so a push to `main` deploys nothing and the live demo can be behind the code here.
 
 ## Not yet proven
 
@@ -302,6 +304,8 @@ Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/cata
 - **Catch-all**: a mail server that accepts every address, so a normal check cannot say whether one is real.
 
 ## Portfolio
+
+Account Desk runs on its own: with no `CRM` and no `INTEGRATED_WITH` set, it keeps its simulated CRM and needs none of the desks below. Beside them, `CRM=crmdesk` makes CRM Desk its CRM, `INTEGRATED_WITH` names the desks present (with Market Desk the desk hides its own profile publishing and accounts import; with Events Desk it adds event follow-up plays), and `DESK_LINKS` links to them from the app.
 
 | Project | What it does | Links |
 |---|---|---|
