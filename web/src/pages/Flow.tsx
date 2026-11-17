@@ -62,7 +62,7 @@ export function Replies() {
                 <Avatar name={r.full_name || r.company || "?"} photo={r.photo_url} />
                 <div className="cell-main"><span className="t">{r.full_name || "Unknown sender"}</span><span className="s">{r.company || "No account matched"}</span><span className="s only-sm">{r.cleaned}</span></div>
                 <span className="clip mute hide-sm">{r.cleaned}</span>
-                <span className="hide-sm">{r.needs_review && !r.handled_at ? <Status kind="wait">Needs a person</Status> : <Status kind={l[0]}>{l[1]}</Status>}</span>
+                <span className="hide-sm">{r.needs_review && !r.handled_at ? <Status kind="wait">Needs a person</Status> : r.handled_at && r.outcome ? <Status kind="ok">{cap(r.outcome)}</Status> : <Status kind={l[0]}>{l[1]}</Status>}</span>
                 <span className="num mute small hide-sm">{ago(r.received_at)}</span>
               </button>
             );

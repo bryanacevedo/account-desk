@@ -254,6 +254,9 @@ def footer(*, company: str, address: str, unsubscribe_url: str, privacy_url: str
 # ---------------------------------------------------------------- suggested replies
 
 TIME_WORDS = re.compile(r"\b(\d{1,2}(:\d{2})?\s?(am|pm|h)|\d{1,2}:\d{2})\b", re.I)
+# A date is part of a meeting time: "19 November", "November 19th". It is not an invented number either.
+DATE_WORDS = re.compile(r"\b\d{1,2}(st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b|"
+                        r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(st|nd|rd|th)?\b", re.I)
 SUGGEST_NUMBER = re.compile(r"[$€£]\s?\d|\d+\s?%|\d{2,}")
 # Product facts an SDR's suggestion must never state on its own: integrations, certifications, where data lives,
 # discounts, trials, named customers. Stems cover the languages the desk handles.
@@ -270,7 +273,7 @@ def check_suggestion(body: str, their_text: str) -> list[dict]:
     theirs = their_text.lower()
     if re.search(r"[\[\]{}<>]", body):
         f.append({"code": "placeholder", "message": "It has a placeholder or bracket; it must be ready to send."})
-    nums = [m.group(0) for m in SUGGEST_NUMBER.finditer(TIME_WORDS.sub("", body)) if m.group(0).strip("$€£% ") not in theirs]
+    nums = [m.group(0) for m in SUGGEST_NUMBER.finditer(DATE_WORDS.sub("", TIME_WORDS.sub("", body))) if m.group(0).strip("$€£% ") not in theirs]
     if nums:
         f.append({"code": "invented_number", "message": f"It states a number the prospect did not give: {nums[0]}."})
     # A word the prospect used in any form ('integrate', 'integration') is theirs to bring up, not ours to invent.

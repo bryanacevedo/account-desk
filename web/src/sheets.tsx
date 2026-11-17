@@ -281,6 +281,7 @@ export function PersonSheet({ id }: { id: number }) {
 export function TaskSheet({ id }: { id: number }) {
   const { data: t, error, reload } = useData<any>(`/api/tasks/${id}`);
   const [text, setText] = useState<string | null>(null);
+  const [callNote, setCallNote] = useState("");
   const [busy, run] = useBusy();
   if (error) return <Frame crumb="Task"><Failed error={error} retry={reload} /></Frame>;
   if (!t) return <Frame crumb="Task"><Loading rows={6} /></Frame>;
@@ -290,7 +291,7 @@ export function TaskSheet({ id }: { id: number }) {
   const failures: any[] = t.draft_status === "failed_gate" && text === null ? (t.gate?.failures || []) : [];
   const open = t.status === "open";
   const done = (outcome: string) => run(async () => {
-    await api(`/api/tasks/${id}/done`, { method: "POST", body: { outcome, text: linkedin && outcome === "sent" ? body : null } });
+    await api(`/api/tasks/${id}/done`, { method: "POST", body: { outcome, text: linkedin && outcome === "sent" ? body : null, note: callNote.trim() || null } });
     closeSheet();
   }, t.outcomes[outcome] ? `${t.outcomes[outcome]}.` : "Skipped.");
   const copy = () => { navigator.clipboard?.writeText(body).then(() => toast("Copied."), () => toast("Select the text and copy it.")); };
@@ -341,8 +342,14 @@ export function TaskSheet({ id }: { id: number }) {
               value={t.phone && !t.phone_dnc ? <a className="tap" href={`tel:${t.phone.replace(/[^+\d]/g, "")}`}>{t.phone}</a> : t.phone}
               state={t.phone ? (t.phone_dnc ? ["stop", "Do not call"] : t.phone_status === "valid" ? ["ok", "Verified"] : ["half", cap(t.phone_status)]) : null} /></div>
             {t.note ? <div className="small mute">{t.note}</div> : null}
-            {t.call_hours ? <div className="small mute">{t.dnc_register ? `Screened against ${t.dnc_register}. ` : ""}Calling hours: {t.call_hours} their time, weekdays.</div> : null}
+            {t.call_hours ? <div className="small mute">{t.dnc_register ? `Screened against ${t.dnc_register}. ` : ""}Calling hours: {t.call_hours} their time, weekdays.{t.local_now ? ` Their time now ${t.local_now}${t.in_call_hours === false ? ", outside calling hours" : ""}.` : ""}</div> : null}
           </Section>
+          {open ? (
+            <Section title="What was said">
+              <textarea className="input" rows={3} maxLength={2000} value={callNote} onChange={(e) => setCallNote(e.target.value)}
+                aria-label="What was said on the call" placeholder="Optional. Kept with the call." />
+            </Section>
+          ) : null}
           {t.why ? (
             <Section title="Why now">
               <div className="cell-main"><span className="t" style={{ whiteSpace: "normal" }}>{t.why.summary}</span>
@@ -715,10 +722,11 @@ export function AccountSheet({ id }: { id: number }) {
   const a = data.account, s = data.score, cur = data.current;
   // A proposal is decided where it is read: the owner (or a manager) accepts or skips it here, as on Today.
   const canDecide = cur?.state === "proposed" && me && (me.user.role !== "sdr" || me.user.id === cur.owner_id);
-  const decide = (accept: boolean) => run(
+  const [accepting, setAccepting] = useState(false);
+  const decide = (accept: boolean) => { setAccepting(accept); return run(
     () => api(`/api/account-plays/${cur.id}/decide`, { method: "POST", body: { accept, reason: accept ? null : reason } }),
     accept ? "Accepted. The desk is researching the account and drafting first emails." : "Skipped.",
-  ).then(() => { setSkipping(false); setReason(""); reload(); });
+  ).then(() => { setSkipping(false); setReason(""); reload(); }).finally(() => setAccepting(false)); };
   const decision = canDecide ? (
     <div className="play-decide">
       {skipping ? (
@@ -731,7 +739,8 @@ export function AccountSheet({ id }: { id: number }) {
         <>
           <span className="small mute">Accept and the desk reads the company, finds the people who buy and drafts first emails for you to approve. Or skip, with a reason.</span>
           <button className="btn line" disabled={busy} onClick={() => setSkipping(true)}>Skip</button>
-          <button className="btn" disabled={busy} onClick={() => decide(true)}>Accept</button>
+          <button className="btn" disabled={busy} onClick={() => decide(true)}>{busy && accepting ? "Accepting..." : "Accept"}</button>
+          {busy && accepting ? <span className="small mute">Researching the account, this can take up to half a minute.</span> : null}
         </>
       )}
     </div>
@@ -955,7 +964,7 @@ export function SignalTimeline({ signals }: { signals: any[] }) {
           <SignalIcon type={s.type_key} />
           <div className="cell-main" style={{ whiteSpace: "normal" }}>
             <span className="t" style={{ whiteSpace: "normal" }}>{s.label}</span>
-            <span className="s" style={{ whiteSpace: "normal" }}>{s.evidence.summary}{s.evidence.url ? <> <SourceLink url={s.evidence.url} /></> : null}</span>
+            <span className="s" style={{ whiteSpace: "normal" }}>{s.evidence.summary}{s.evidence.url ? <> <SourceLink url={s.evidence.url} /></> : null}{s.sources && s.sources.length > 1 ? <span className="mute">, {s.sources.length} sources</span> : null}</span>
           </div>
         </li>
       ))}
@@ -1108,6 +1117,7 @@ function Approving({ m, id, reload }: { m: any; id: number; reload: () => void }
               <ul className="facts">{failures.map((f: any, i: number) => <li key={i}><Status kind="stop">{""}</Status><span>{f.message}</span></li>)}</ul>
             </Section>
           ) : null}
+          <div className="small mute">Click the text to edit. Every change is checked.</div>
           <input className="mg-subject" value={subject} onChange={(e) => setSubject(e.target.value)} aria-label="Subject" placeholder="Subject" />
           <textarea ref={area} className="mg-text" value={text} onChange={(e) => setText(e.target.value)} aria-label="Email" spellCheck />
           <div className="mg-foot" aria-label="Footer, locked">
@@ -1312,12 +1322,12 @@ function Composer({ r, id }: { r: any; id: number }) {
             onKeyDown={(e) => { if (e.key === "Enter" && ins.trim().length > 1 && !busy) { e.preventDefault(); refine(); } }} />
           <button className="btn line" disabled={busy || ins.trim().length < 2 || !!inFlight || studio.refines_left < 1} onClick={refine}>Refine</button>
         </div>
-        {problems.length ? <ul className="facts">{problems.map((p, i) => <li key={i}><span className="bad">{p}</span></li>)}</ul>
+        {problems.length ? <ul className="facts">{problems.map((p, i) => <li key={i}><Status kind="stop">{""}</Status><span className="bad">{p}</span></li>)}</ul>
           : text.trim() ? <div className="small mute">Copy checks pass</div> : null}
         {last?.status === "failed" || last?.status === "cancelled" ? <div className="small bad">{last.error || "It did not go out."}</div> : null}
         <div className="composer-send">
           <span className="small mute clip">{studio.from_mailbox ? `From ${studio.from_mailbox}` : ""}</span>
-          <button className="btn lead" disabled={!ok} onClick={send}>{inFlight ? (last.status === "sent" ? "Sent" : "Sending") : "Send"}</button>
+          <button className="btn lead" disabled={!ok} onClick={send}>{inFlight ? (last.status === "sent" ? "Sent" : last.status === "sending" ? "Sending" : "Queued") : "Send"}</button>
         </div>
       </div>
     </Section>
@@ -1355,7 +1365,7 @@ export function ReplySheet({ id }: { id: number }) {
           </>
         ) : (
           <>
-            <button className="btn line" disabled={busy} onClick={() => act({ outcome: "answered" }, "Marked answered.")}>I answered</button>
+            <button className="btn line" disabled={busy} title="Use this when you replied from your own inbox" onClick={() => act({ outcome: "answered" }, "Marked answered.")}>I answered elsewhere</button>
             <button className="btn" disabled={busy} onClick={() => setBooking(true)}>Meeting booked</button>
           </>
         )}
@@ -1387,6 +1397,7 @@ export function ReplySheet({ id }: { id: number }) {
         </Section>
       ) : null}
       {r.hot && r.account_id && !r.handled_at && r.colleagues_waiting ? <ColleaguesChoice replyId={id} count={r.colleagues_waiting} /> : null}
+      {open && r.studio && r.studio.can_send && ex.suggestion_withheld ? <div className="small mute">The desk's suggestion failed its own checks, so write your own.</div> : null}
       {open && r.studio && r.studio.can_send ? <Composer key={id} r={r} id={id} /> : null}
       {open && r.studio && !r.studio.can_send && r.studio.no_send && r.studio.no_send.code !== "needs_review" ? (
         <Section title="What the desk did"><div className="quote ours">{r.studio.no_send.message}</div></Section>

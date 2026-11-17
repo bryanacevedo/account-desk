@@ -103,8 +103,17 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
     sigs = db.all(cur, """select s.id, s.type_key, s.observed_at, s.strength, s.evidence, s.source, p.full_name
                           from signals s left join people p on p.id = s.person_id
                           where s.account_id = %s order by s.observed_at desc limit 60""", account_id)
+    # One thing seen by two sources is one line with two sources. Scoring already clusters these; this is display only.
+    merged: dict[tuple, dict] = {}
     for s in sigs:
         s["label"] = labels.get(s["type_key"], {}).get("label", s["type_key"])
+        key = (s["type_key"], (s["evidence"] or {}).get("summary"), s["observed_at"], s["full_name"])
+        if (s["evidence"] or {}).get("summary") and key in merged:
+            merged[key]["sources"].append(s["source"])
+            continue
+        s["sources"] = [s["source"]]
+        merged[key] = s
+    sigs = [s for s in sigs if s.get("sources")]
     contributions = []
     if score:
         for c in score["breakdown"].get("contributions", []):
@@ -210,7 +219,7 @@ def in_flight(cur, user: dict, *, mine: bool) -> dict:
 
 def task(cur, task_id: int) -> dict | None:
     t = db.one(cur, """select t.*, pe.full_name, pe.photo_url, pe.title as person_title, pe.phone, pe.phone_status, pe.phone_type, pe.phone_dnc,
-                              pe.linkedin_url, a.name as company, a.id as account_id, pl.name as play,
+                              pe.timezone as person_timezone, pe.country as person_country, pe.linkedin_url, a.name as company, a.id as account_id, pl.name as play,
                               m.body as draft, m.status as draft_status, m.gate, m.citations, u.name as owner
                        from tasks t left join people pe on pe.id = t.person_id
                        left join account_plays ap on ap.id = t.account_play_id left join plays pl on pl.id = ap.play_id
@@ -235,6 +244,16 @@ def task(cur, task_id: int) -> dict | None:
     if t["kind"] == "call":
         from .gate import call_window
         t["call_hours"] = "{} to {}".format(*call_window(cur))
+        # Their clock, so a rep does not dial at 7 AM. Unknown zone: no time shown and no verdict.
+        from zoneinfo import ZoneInfo
+
+        from .gate import call_zones, in_call_hours
+        from .gate import now as app_now
+        person = {"timezone": t.get("person_timezone"), "country": t.get("person_country")}
+        zones = call_zones(person)
+        at = app_now(cur)
+        t["local_now"] = at.astimezone(ZoneInfo(zones[0])).strftime("%H:%M") if zones else None
+        t["in_call_hours"] = in_call_hours(cur, person, at) if zones else None
     return t
 
 

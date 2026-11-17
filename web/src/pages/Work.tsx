@@ -81,7 +81,8 @@ export function Today() {
                 ) : (
                   <div className="actions">
                     <button className="btn quiet sm" onClick={() => setSkipping(p.id)}>Skip</button>
-                    <button className="btn sm" disabled={busy} onClick={() => decide(p.id, true)}>Accept</button>
+                    <button className="btn sm" disabled={busy} onClick={() => decide(p.id, true)}>{busy && leaving === p.id ? "Accepting..." : "Accept"}</button>
+                    {busy && leaving === p.id ? <span className="small mute">Researching the account, this can take up to half a minute.</span> : null}
                   </div>
                 )}
               </div>
@@ -146,10 +147,11 @@ function TaskRow({ t }: { t: any }) {
 
 export function Accounts() {
   const [, params] = usePath();
-  const view = (params.get("view") || "priority") as "priority" | "in_play" | "rising" | "all";
+  const view = (params.get("view") || "priority") as "priority" | "in_play" | "rising" | "all" | "mine";
+  const me = useData<any>("/api/me").data;
   const [q, setQ] = useState(params.get("q") || "");
   const page = Math.max(1, Number(params.get("page") || 1));
-  const { data, error, reload } = useData<any>(`/api/accounts?view=${view}&page=${page}${params.get("q") ? `&q=${encodeURIComponent(params.get("q")!)}` : ""}`);
+  const { data, error, reload } = useData<any>(`/api/accounts?view=${view === "mine" ? "all" : view}${view === "mine" && me ? `&owner=${me.user.id}` : ""}&page=${page}${params.get("q") ? `&q=${encodeURIComponent(params.get("q")!)}` : ""}`);
   const pages = data ? Math.max(1, Math.ceil(data.total / data.per_page)) : 1;
   const first = data ? (page - 1) * data.per_page + 1 : 0;
   const last = data ? Math.min(page * data.per_page, data.total) : 0;
@@ -166,7 +168,7 @@ export function Accounts() {
             if (v === "priority") u.searchParams.delete("view"); else u.searchParams.set("view", v);
             navigate(u.pathname + (u.search || ""), true);
           }}
-          options={[["priority", "Fit our profile"], ["in_play", "In a play"], ["rising", "Rising this week"], ["all", "All"]]} />
+          options={[["priority", "Fit our profile"], ["in_play", "In a play"], ["rising", "Rising this week"], ["mine", "Mine"], ["all", "All"]]} />
         <form onSubmit={(e) => e.preventDefault()}>
           <input className="input" style={{ width: 240 }} type="search" placeholder="Company or domain" value={q} aria-label="Search accounts"
             onChange={(e) => { const v = e.target.value; setQ(v); window.clearTimeout((window as any).__acctq); (window as any).__acctq = window.setTimeout(() => (() => { const u = new URL(window.location.href); u.searchParams.delete("page"); if (v.trim()) u.searchParams.set("q", v.trim()); else u.searchParams.delete("q"); navigate(u.pathname + (u.search || ""), true); })(), 220); }} />

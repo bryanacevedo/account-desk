@@ -822,7 +822,7 @@ a.cite:hover { color: var(--ink); }
 .mg { display: grid; grid-template-columns: minmax(0, 1fr) 272px; gap: 0 32px; align-items: start; }
 .mg-main { display: grid; gap: 16px; align-content: start; }
 .mg-subject { font: inherit; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); width: 100%; border: 0; border-bottom: 1px solid var(--line); padding: 6px 0 10px; background: transparent; border-radius: 0; }
-.mg-text { font: inherit; line-height: 1.6; color: var(--ink); width: 100%; border: 0; padding: 0; background: transparent; resize: none; min-height: 220px; overflow: hidden; }
+.mg-text { font: inherit; line-height: 1.6; color: var(--ink); width: 100%; border: 0; border-bottom: 1px dashed var(--line); cursor: text; padding: 0; background: transparent; resize: none; min-height: 220px; overflow: hidden; }
 .mg-subject:focus-visible, .mg-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 .mg-foot { border-top: 1px solid var(--line); padding-top: 10px; font-size: 11.5px; line-height: 1.55; color: var(--faint); overflow-wrap: anywhere; }
 .mg-side { display: grid; gap: 24px; align-content: start; border-left: 1px solid var(--line); padding-left: 24px; font-size: 13px; }
