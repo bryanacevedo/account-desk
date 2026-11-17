@@ -96,6 +96,9 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="Account Desk", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
+from .. import telemetry  # noqa: E402
+
+telemetry.setup("account-desk", app)  # off unless OTEL_EXPORTER_OTLP_ENDPOINT is set (local only)
 
 
 # ---------------------------------------------------------------- cross-cutting
