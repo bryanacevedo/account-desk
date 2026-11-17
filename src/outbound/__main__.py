@@ -27,9 +27,7 @@ from .config import CONFIG
 # 90 days, so the 90-day window of call notes behind play suggestions is full. 90 days later is 2026-11-11.
 DEMO_START = datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
 WORLD_JOURNAL = "world/journal.jsonl"
-# The zone the journal was recorded in (its timestamps end in -04:00). The replayed build runs the database in it, so a
-# runner or image whose Postgres is in UTC makes the same calls in the same order (decision 104).
-JOURNAL_TIMEZONE = "America/Santo_Domingo"
+JOURNAL_TIMEZONE = db.JOURNAL_TIMEZONE  # the zone the journal was recorded in (decision 104)
 
 
 def demo_crm(journal_path=WORLD_JOURNAL):

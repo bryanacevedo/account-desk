@@ -79,17 +79,28 @@ def configure(url: str | None = None, *, min_size: int = 1, max_size: int = 10) 
                            kwargs={"row_factory": dict_row, "autocommit": False})
 
 
+# The zone the shared world's journal was recorded in (its timestamps end in -04:00). A replayed build runs the database
+# in it, so a runner or image whose Postgres is in UTC makes the same calls in the same order (decision 104).
+JOURNAL_TIMEZONE = "America/Santo_Domingo"
+
+
 def pin_timezone(name: str) -> None:
     """Make the database's session time zone `name` for every connection from now on, in this process and in every
     later one (coverage, the snapshot, the hosted demo). `app_now()::date`, `date_trunc('day', ...)` and the like read
     the session's zone, so a build replayed against a recorded journal must not depend on where Postgres runs: the
-    journal was recorded on a laptop in America/Santo_Domingo, and a runner or container in UTC drew another day."""
+    journal was recorded on a laptop in America/Santo_Domingo, and a runner or container in UTC drew another day.
+    Refused in live mode: a real desk's zone is not this function's to change. The pool keeps the size the caller set."""
+    if CONFIG.mode == "live":
+        raise RuntimeError("pin_timezone is for the replayed demo build and is refused in live mode.")
     url = _url or CONFIG.database_url
     simguard.check(url)
     with psycopg.connect(url, autocommit=True) as conn:
         conn.execute(sql.SQL("alter database {} set timezone = {}").format(
             sql.Identifier(conn.execute("select current_database() as d").fetchone()[0]), sql.Literal(name)))
-    configure(url)  # new connections only: the open ones keep the old zone
+    kept = {}
+    if _pool is not None:
+        kept = {"min_size": _pool.min_size, "max_size": _pool.max_size}
+    configure(url, **kept)  # new connections only: the open ones keep the old zone
 
 
 def close() -> None:

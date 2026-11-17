@@ -77,5 +77,5 @@ Each `account_desk` step the rehearsal writes: `actor`, `at`, `method`, `path` (
 when the request had them, `query` (GET params), `idempotency_key` (the `idempotency-key` header) and `body`.
 `RecordingCrm(inner, path)` writes this format around a `CrmDeskCrm`.
 
-The replay also pins the database's time zone to America/Santo_Domingo (`db.pin_timezone`, decision 104): the journal was
+The replay (`demo` and `CRM=recorded`) also pins the database's time zone to America/Santo_Domingo (`db.pin_timezone`, decision 104): the journal was
 recorded there, and the build's day boundaries follow the session zone, so a UTC Postgres would make other calls.

@@ -13,6 +13,13 @@ from outbound.adapters.recorded import JournalMismatch, RecordedCrm, RecordingCr
 from outbound.config import CONFIG
 
 
+@pytest.fixture(autouse=True)
+def _no_database_pin(monkeypatch):
+    """choose_crm("recorded") pins the database zone; this file stays database free (tests/test_pin_timezone.py covers the pin)."""
+    from outbound import db
+    monkeypatch.setattr(db, "pin_timezone", lambda name: None)
+
+
 def fake(request: httpx.Request) -> httpx.Response:
     p = request.url.path
     if p.endswith("/activities"):

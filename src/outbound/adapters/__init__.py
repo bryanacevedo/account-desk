@@ -308,7 +308,9 @@ def choose_crm(current):
         # The demo build's CRM, replayed from the shared rehearsal's journal (JOURNAL_PATH, default world/journal.jsonl).
         if CONFIG.mode == "live" or CONFIG.public_demo:
             raise SystemExit("CRM=recorded replays a journal for the demo build; it is refused in live mode and on the public demo.")
+        from .. import db
         from .recorded import RecordedCrm
+        db.pin_timezone(db.JOURNAL_TIMEZONE)  # the replay's day boundaries must be the journal's, as in `demo` (decision 104)
         return RecordedCrm.from_journal()
     if choice == "salesforce":
         raise SystemExit("CRM=salesforce: this desk has no Salesforce adapter yet. Leave CRM unset or use CRM=crmdesk.")
