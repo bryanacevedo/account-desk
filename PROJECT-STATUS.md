@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-17. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 103. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-17. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 104. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -247,3 +247,9 @@ Account Desk can run against its own Neon simulation project (aws-us-east-1, Pos
 
 - README checked claim by claim against the code after 7d8492b. Fixed: the public demo's blocked actions (country email rules, acknowledging alerts and sending a reply were missing), the live demo is deployed by hand and can lag the code, the hosted image builds the shared world (`WORLD=world`, 91 days) while the figures table is the desk's own generator, Mexico is opt-out in every build, the full list of signal sources, `uv run` and an empty `DATABASE_URL` for `init` and the imports, and a line on running alone or beside the other desks. Every README link returned 200 on 2026-11-17. No code changed.
 - Hygiene, report only (code, fixtures and history untouched): eval fixtures use invented companies on non-reserved domains (for example `.com.do`, `.io`); 130 commits carry a personal Gmail as author email; `scripts/pg.sh` suggests `docker compose up`, but the repo has no compose file. Full list: `~/Developer/overnight-2026-11-16/s6/account-desk.txt`.
+
+## Static snapshot CI: journal replay failed on a UTC database (2026-11-17, decision 104)
+
+- The first run of the static snapshot workflow (run 44175455833, b93451b) failed in "Build the demo database" at call 42 of 21,905. Not a stale journal and not a code change since 3782ac6: the same commit reproduces it on a laptop when Postgres runs in UTC and passes when it runs in America/Santo_Domingo, where the journal was recorded. The build reads the database's session zone.
+- Fix: `demo` pins the database zone (`db.pin_timezone`, `JOURNAL_TIMEZONE`) before replaying. `world/journal.jsonl` is unchanged. `tests/test_pin_timezone.py` is new; no test removed. The same pin covers the Dockerfile build (Postgres in UTC there too) and the `built_demo` test fixture in ci.yml.
+- Checked: UTC database, bounded replay passes call 42 and beyond (see the session report for how far). Not checked: the real GitHub run; a full 90-day build and `docker build`. Not deployed (deploys are manual).

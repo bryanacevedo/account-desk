@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 import psycopg
+from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg.types.numeric import FloatLoader
@@ -76,6 +77,19 @@ def configure(url: str | None = None, *, min_size: int = 1, max_size: int = 10) 
     _demo_key = None
     _pool = ConnectionPool(_url, min_size=min_size, max_size=max_size, open=True, configure=_set_session_key,
                            kwargs={"row_factory": dict_row, "autocommit": False})
+
+
+def pin_timezone(name: str) -> None:
+    """Make the database's session time zone `name` for every connection from now on, in this process and in every
+    later one (coverage, the snapshot, the hosted demo). `app_now()::date`, `date_trunc('day', ...)` and the like read
+    the session's zone, so a build replayed against a recorded journal must not depend on where Postgres runs: the
+    journal was recorded on a laptop in America/Santo_Domingo, and a runner or container in UTC drew another day."""
+    url = _url or CONFIG.database_url
+    simguard.check(url)
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute(sql.SQL("alter database {} set timezone = {}").format(
+            sql.Identifier(conn.execute("select current_database() as d").fetchone()[0]), sql.Literal(name)))
+    configure(url)  # new connections only: the open ones keep the old zone
 
 
 def close() -> None:

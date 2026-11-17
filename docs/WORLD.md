@@ -76,3 +76,6 @@ idempotency key or body. `at` is not compared. With no `account_desk` step the b
 Each `account_desk` step the rehearsal writes: `actor`, `at`, `method`, `path` (no `/api/v1`), `status`, `answer`, and,
 when the request had them, `query` (GET params), `idempotency_key` (the `idempotency-key` header) and `body`.
 `RecordingCrm(inner, path)` writes this format around a `CrmDeskCrm`.
+
+The replay also pins the database's time zone to America/Santo_Domingo (`db.pin_timezone`, decision 104): the journal was
+recorded there, and the build's day boundaries follow the session zone, so a UTC Postgres would make other calls.
