@@ -20,8 +20,9 @@ def setup(service: str, app=None) -> bool:
     endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
     if not endpoint:
         return False
-    if urlsplit(endpoint).hostname not in LOCAL:
-        raise SystemExit("Telemetry goes to this machine only: OTEL_EXPORTER_OTLP_ENDPOINT must be localhost.")
+    for var in ("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"):  # the exporter prefers the traces one
+        if os.environ.get(var) and urlsplit(os.environ[var]).hostname not in LOCAL:
+            raise SystemExit("Telemetry goes to this machine only: the OTLP endpoint must be localhost.")
     try:
         from opentelemetry import trace
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
