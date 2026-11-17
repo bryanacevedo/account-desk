@@ -4,12 +4,13 @@ tests/test_docs_check.py. Standard library only, and fast (no database, no suite
 `check(root)` returns a list of problems, empty when the docs are true. Checks:
   1. The README carries no test-count claim ("325 passed", a "tests-325" badge). A count that is not derived from the
      collected suite goes stale, so none is kept.
-  2. Every "migrations (0001 to NNNN)" range in the README and docs (not the decision log, which is history) ends at the
+  2. Every "migrations (0001 to NNNN)" range (also "0001-NNNN", "0001 through NNNN") in the README and docs (not the decision log, which is history) ends at the
      highest file in migrations/, and the README states a range at all.
-  3. Every environment variable the code reads (src, evals, scripts, tests) appears in the README or .env.example, or is
+  3. Every environment variable the code reads (src, evals, scripts, tests; os.environ, getenv, _flag, tuple loops,
+     shell ${VAR}, Dockerfile ENV) appears in the README or .env.example, or is
      listed with a reason in docs/DOCS-CHECK-ALLOW.txt.
   4. The highest decision number in docs/DECISIONS.md equals "1 to N" in PROJECT-STATUS.
-  5. PROJECT-STATUS "Updated" is no more than one day older than the last commit that touched code. Skipped when there is
+  5. PROJECT-STATUS "Updated" is not in the future, and no more than one day older than the last commit that touched code. Skipped when there is
      no git history to read (no git, no repository, a shallow clone)."""
 from __future__ import annotations
 
@@ -22,10 +23,16 @@ from pathlib import Path
 CODE_PATHS = ["src", "migrations", "tests", "scripts", "evals", "web/src", "world", "Makefile", "Dockerfile", "render.yaml",
               "pyproject.toml"]
 SCAN_DIRS = ["src", "evals", "scripts", "tests"]
+SCAN_FILES = ["Dockerfile"]
 ENV_READ = re.compile(
     r"""(?:environ(?:\.get)?\s*[\(\[]|getenv\s*\(|_flag\s*\()\s*["']([A-Z][A-Z0-9_]*)["']""")
-TEST_CLAIM = re.compile(r"\b\d[\d,]*\s+(?:tests?|passed|passing)\b|tests-\d", re.IGNORECASE)
-MIGRATION_RANGE = re.compile(r"migrations?\s*\(?\s*0001 to (\d{4})", re.IGNORECASE)
+SHELL_VAR = re.compile(r"\$\{([A-Z][A-Z0-9_]*)[:}\-=]")
+TUPLE_LOOP = re.compile(r"environ[^\n]*\bfor\s+\w+\s+in\s+\(([^)]*)\)")
+DOCKER_ENV = re.compile(r"^ENV\s+((?:[^\n]*\\\n)*[^\n]*)", re.MULTILINE)
+TEST_CLAIM = re.compile(
+    r"\b\d[\d,]*(?:\s|%20)+(?:tests?|passed|passing)\b|\b\d[\d,]*\s+pass\b(?!\s+(?:every|the|all)\b)"
+    r"|\btests?-\d|badge/\d[\d,]*(?:%20|-)tests|\b(?:passed|tests?):\s*\d", re.IGNORECASE)
+MIGRATION_RANGE = re.compile(r"migrations?\s*\(?\s*0001\s*(?:to|-|\u2013|through)\s*(\d{4})", re.IGNORECASE)
 ALLOW_FILE = "docs/DOCS-CHECK-ALLOW.txt"
 
 
@@ -41,7 +48,7 @@ def _test_claims(root: Path) -> list[str]:
 def _migrations(root: Path) -> list[str]:
     files = sorted(p.name for p in (root / "migrations").glob("[0-9][0-9][0-9][0-9]_*.sql"))
     if not files:
-        return []
+        return ["migrations/: no migration files found"]
     last = int(files[-1][:4])
     out = []
     docs = [root / "README.md", root / "PROJECT-STATUS.md", *sorted((root / "docs").glob("*.md"))]
@@ -62,7 +69,15 @@ def env_vars(root: Path) -> set[str]:
         for p in (root / d).rglob("*"):
             if p.suffix in (".py", ".mjs", ".js", ".sh") and p.is_file() and "node_modules" not in p.parts \
                     and p.name not in ("docs_check.py", "test_docs_check.py"):
-                found.update(ENV_READ.findall(_read(p)))
+                text = _read(p)
+                found.update(ENV_READ.findall(text))
+                for group in TUPLE_LOOP.findall(text):
+                    found.update(re.findall(r"""["']([A-Z][A-Z0-9_]*)["']""", group))
+                if p.suffix == ".sh":
+                    found.update(SHELL_VAR.findall(text))
+    for name in SCAN_FILES:
+        for block in DOCKER_ENV.findall(_read(root / name)):
+            found.update(re.findall(r"(?:^|\s)([A-Z][A-Z0-9_]*)=", block.replace("\\\n", " ")))
     return found
 
 
@@ -87,6 +102,8 @@ def _decisions(root: Path) -> list[str]:
     nums = [int(m) for m in re.findall(r"^(\d+)\. \*\*", _read(root / "docs" / "DECISIONS.md"), re.MULTILINE)]
     if not nums:
         return ["docs/DECISIONS.md: no decisions found"]
+    if sorted(nums) != list(range(1, max(nums) + 1)):
+        return ["docs/DECISIONS.md: decision numbers are not exactly 1 to N (a duplicate or a gap)"]
     m = re.search(r"\*\*Decisions:\*\*[^\n]*?\b1 to (\d+)", _read(root / "PROJECT-STATUS.md"))
     if not m:
         return ["PROJECT-STATUS.md: no 'Decisions: ... 1 to N' count"]
@@ -107,6 +124,8 @@ def _updated(root: Path) -> list[str]:
     m = re.search(r"\*\*Updated:\*\*\s*(\d{4}-\d{2}-\d{2})", _read(root / "PROJECT-STATUS.md"))
     if not m:
         return ["PROJECT-STATUS.md: no 'Updated: YYYY-MM-DD' date"]
+    if date.fromisoformat(m.group(1)) > date.today() + timedelta(days=1):
+        return [f"PROJECT-STATUS.md: Updated {m.group(1)} is in the future"]
     if _git(root, "rev-parse", "--is-shallow-repository") != "false":
         return []  # no git, not a repository or a shallow clone: no history to compare with
     paths = [p for p in CODE_PATHS if (root / p).exists()]

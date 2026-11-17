@@ -258,8 +258,9 @@ Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts 
 | `SIM_ACTORS` | A Python file whose `act(at)` runs once per simulated hour, for the shared rehearsal. Never live or on the public demo |
 | `DESK_READ_KEY` | Turns on the read of campaign play counts that Events Desk may ask for (decision 94). Unset, the route answers 404 |
 | `EVENTS_DESK_URL`, `EVENTS_DESK_READ_KEY` | Where and with which key this desk reads Events Desk, under `INTEGRATED_WITH=events_desk` |
-| `SIM_DB_GUARD`, `SIM_ALLOWED_HOSTS`, `SIM_DB_PREFIX` | With `SIM_DB_GUARD=1`, refuse any database whose host is not listed or whose name lacks the prefix (default `sim_`); also refuses `PGHOST`, `PGDATABASE` and the other `PG*` overrides |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional tracing, to a collector on this machine only; any other address is refused. Needs `uv sync --extra otel` |
+| `SIM_DB_GUARD`, `SIM_ALLOWED_HOSTS`, `SIM_DB_PREFIX` | With `SIM_DB_GUARD=1`, refuse any database whose host is not listed or whose name lacks the prefix (default `sim_`); also refuses a `PGHOST`, `PGHOSTADDR`, `PGDATABASE`, `PGSERVICE`, `PGSERVICEFILE` or `PGOPTIONS` override |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional tracing, to a collector on this machine only; any other address is refused (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` too). Needs `uv sync --extra otel` |
+| `PGPORT_LOCAL` | The port of the private Postgres that `scripts/pg.sh` starts (default `54329`) |
 | `TEST_DATABASE_URL`, `TEST_DB_PREFIX` | For the tests: the Postgres server they create their own databases on, and the prefix of those names (default `outbound_`) |
 | `CRM_DESK_ADMIN_KEY` | For the CRM Desk half of the contract tests only |
 | `DEMO_DATABASE_URL` | For the tests: an already built demo database to read instead of building one (never changed) |
@@ -268,7 +269,7 @@ Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/cata
 
 ## Deploy
 
-`render.yaml` describes the hosted demo: one Docker service on Render's free plan with Postgres inside the container and the 90-day simulation built into the image (`scripts/docker-build-demo.sh`), so a start or a wake from sleep only boots Postgres. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). On Render's own builder the image took about 17 minutes to build (2026-11-12). Deploys are manual: auto-deploy is off on the service, so a push to `main` deploys nothing and the live demo can be behind the code here.
+`render.yaml` describes the hosted demo: one Docker service on Render's free plan with Postgres inside the container and the 90-day simulation built into the image (`scripts/docker-build-demo.sh`), so a start or a wake from sleep only boots Postgres. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). On Render's own builder the image took about 17 minutes to build (2026-11-12). Deploys are manual: auto-deploy is off on the service (`render.yaml` does not say so), so a push to `main` deploys nothing and the live demo can be behind the code here.
 
 ## Not yet proven
 

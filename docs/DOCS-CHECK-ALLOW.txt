@@ -1,2 +1,7 @@
 # Environment variables the code reads that the docs gate (scripts/docs_check.py) need not find in README.md or
 # .env.example. One per line: NAME: why. System variables only (PATH, HOME, CI); a variable of this desk belongs in the README table.
+LANG: locale of the container and shell scripts, not a setting of the desk
+LC_ALL: locale of the container and shell scripts, not a setting of the desk
+PYTHONDONTWRITEBYTECODE: Python interpreter setting in the Dockerfile
+PYTHONPATH: Python interpreter setting (the Makefile and the Dockerfile set it to src)
+PYTHONUNBUFFERED: Python interpreter setting in the Dockerfile

@@ -80,3 +80,47 @@ def test_stale_updated_date_fails_and_skips_without_history(tmp_path):
     assert any("code last changed" in p for p in docs_check.check(root))
     status.write_text(f"**Updated:** {today - timedelta(days=1)}. **Decisions:** `docs/DECISIONS.md`, 1 to 2.\n")
     assert docs_check.check(root) == []
+
+
+def test_more_test_count_spellings_fail(tmp_path):
+    for claim in ("badge/tests-325%20passing", "badge/325%20tests", "passed: 325", "Tests: 325", "325 pass", "325%20passing"):
+        root = _fixture(tmp_path, **{"README.md": f"Migrations (0001 to 0002). `FOO_KEY`. {claim}\n"})
+        assert any("test-count claim" in p for p in docs_check.check(root)), claim
+    root = _fixture(tmp_path, **{"README.md": "Migrations (0001 to 0002). `FOO_KEY`. 11 of 15 pass every check.\n"})
+    assert docs_check.check(root) == []
+
+
+def test_other_migration_range_spellings_fail(tmp_path):
+    for text in ("migrations 0001-0001", "migrations (0001 through 0001)"):
+        root = _fixture(tmp_path, **{"README.md": f"{text} `FOO_KEY`\n"})
+        assert any("ends at 0001" in p for p in docs_check.check(root)), text
+
+
+def test_missing_migrations_folder_fails(tmp_path):
+    root = _fixture(tmp_path)
+    for f in (root / "migrations").glob("*.sql"):
+        f.unlink()
+    assert any("no migration files" in p for p in docs_check.check(root))
+
+
+def test_env_in_shell_tuple_loop_and_dockerfile_fail(tmp_path):
+    root = _fixture(tmp_path, **{
+        "scripts/run.sh": 'PORT="${SHELL_VAR:-1}"\n',
+        "src/guard.py": 'import os\nany(os.environ.get(v) for v in ("LOOP_VAR", "LOOP_TWO"))\n',
+        "Dockerfile": "FROM x\nENV DOCKER_VAR=1 \\\n    DOCKER_TWO=2\n",
+    })
+    names = {p.split(":")[0] for p in docs_check.check(root)}
+    assert {"SHELL_VAR", "LOOP_VAR", "LOOP_TWO", "DOCKER_VAR", "DOCKER_TWO"} <= names
+
+
+def test_future_updated_date_fails(tmp_path):
+    future = date.today() + timedelta(days=10)
+    root = _fixture(tmp_path, **{"PROJECT-STATUS.md": f"**Updated:** {future}. **Decisions:** `docs/DECISIONS.md`, 1 to 2.\n"})
+    assert any("in the future" in p for p in docs_check.check(root))
+
+
+def test_duplicate_or_missing_decision_numbers_fail(tmp_path):
+    root = _fixture(tmp_path, **{"docs/DECISIONS.md": "1. **One.** x\n\n2. **Two.** x\n\n2. **Again.** x\n"})
+    assert any("duplicate or a gap" in p for p in docs_check.check(root))
+    root = _fixture(tmp_path, **{"docs/DECISIONS.md": "1. **One.** x\n\n3. **Three.** x\n"})
+    assert any("duplicate or a gap" in p for p in docs_check.check(root))

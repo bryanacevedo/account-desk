@@ -10,4 +10,4 @@ Save this as `.git/hooks/pre-push` and make it executable (`chmod +x .git/hooks/
 exec make docs-check
 ```
 
-What it checks is described at the top of `scripts/docs_check.py`: no test-count number in the README, the migrations range, every environment variable the code reads documented, the decision count in PROJECT-STATUS, and the Updated date. Skip it once with `git push --no-verify`. The same checks run in the test suite (`tests/test_docs_check.py`), so CI catches a drift even where the hook is not installed.
+What it checks is described at the top of `scripts/docs_check.py`: no test-count number in the README, the migrations range, every environment variable the code reads documented, the decision count in PROJECT-STATUS, and the Updated date. Skip it once with `git push --no-verify`. The same checks run in the test suite (`tests/test_docs_check.py`), so CI catches most drift even where the hook is not installed. The Updated-date check needs full git history and is skipped in CI's shallow checkout, so only the hook (or a local run) catches that one.
