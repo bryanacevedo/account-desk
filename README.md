@@ -7,7 +7,7 @@
 **Signal-based, account-based outbound for a small B2B sales team, with a person on every send until a play earns more.**
 
 [![CI](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-325%20passing%20on%20Postgres%2018-2B47C9)
+![tests](https://img.shields.io/badge/tests-on%20Postgres%2018-2B47C9)
 ![python](https://img.shields.io/badge/python-3.13-2B47C9)
 [![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial-5E6A62)](LICENSE.md)
 
@@ -73,7 +73,7 @@ flowchart LR
   RS -.->|SDRs and GTM adjust weights and plays| SC
 ```
 
-Python 3.13, FastAPI and Postgres 18 with plain SQL in numbered migrations (0001 to 0029). A job queue in Postgres claimed with `FOR UPDATE SKIP LOCKED`. React and Vite for the web app, served by the API. Model calls go through one function with structured outputs, record and replay, and a deterministic stand-in for the demo. The full behaviour is in [docs/SPEC.md](docs/SPEC.md) (section 22 holds every review decision and wins where they differ); decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).
+Python 3.13, FastAPI and Postgres 18 with plain SQL in numbered migrations (0001 to 0040). A job queue in Postgres claimed with `FOR UPDATE SKIP LOCKED`. React and Vite for the web app, served by the API. Model calls go through one function with structured outputs, record and replay, and a deterministic stand-in for the demo. The full behaviour is in [docs/SPEC.md](docs/SPEC.md) (section 22 holds every review decision and wins where they differ); decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Autonomy is earned per play
 
@@ -144,7 +144,7 @@ Every task the model does has an eval: 315 cases in all, 241 of them written by 
 | Task | Cases | Result |
 |---|---|---|
 | Labelling replies | 148 | 99% labelled as a careful person would (147), 95% exact; every stop request caught (13 of 13); every positive reply kept positive (53 of 53); no invented referral email; return dates 5 of 6 |
-| Drafting emails and LinkedIn notes | 50 | 88% pass the copy checks and the claim checker after one rewrite (44 of 50; 31 first time); the rest are held as Needs a rewrite, never sent on their own; none cites a private signal or a fact that does not exist; every instruction hidden in a fact ignored; the judge finds 84% (42 of 50) say nothing about the buyer the facts do not support; 1 mentions something its case forbids |
+| Drafting emails and LinkedIn notes | 50 | 94% pass the copy checks and the claim checker after one rewrite (47 of 50; 37 first time); the rest are held as Needs a rewrite, never sent on their own; none cites a private signal or a fact that does not exist; none mentions something its case forbids; every instruction hidden in a fact ignored; the judge finds 86% (43 of 50) say nothing about the buyer the facts do not support and 84% (42 of 50) specific to the buyer |
 | Account briefs | 20 | 16 of 20 with no number or name the code finds unfaithful; 20 of 20 faithful to their facts by the judge; every instruction hidden in a fact ignored |
 | Suggested replies | 30 | 63% pass every check (19 of 30; tone is the usual miss); no invented number or placeholder; 1 in 30 judged to invent something |
 | Learnings from call notes | 20 | 87% of expected learnings found (40 of 46); every quote verbatim; 95% invent nothing |
@@ -189,7 +189,7 @@ That builds the invented company and simulates 90 days of signals, SDRs, buyers 
 make test
 ```
 
-The tests run on real Postgres, including a 21-day simulation of the whole desk followed by every promise checked against what happened (nobody held back was contacted, nothing was sent after a reply, every sent email matches what was approved and carries its legal footer, no email cites tracking data) and one full 90-day demo build. On 2026-11-12: 325 passed, and 2 skipped, the CRM Desk half of the contract tests, which needs a running CRM Desk.
+The tests run on real Postgres, including a 21-day simulation of the whole desk followed by every promise checked against what happened (nobody held back was contacted, nothing was sent after a reply, every sent email matches what was approved and carries its legal footer, no email cites tracking data) and one full 90-day demo build. The CRM Desk half of the contract tests is skipped unless a CRM Desk is running.
 
 ### A real desk, not the demo
 
@@ -224,7 +224,7 @@ Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts 
 | Variable | What it does |
 |---|---|
 | `DATABASE_URL` | Postgres to use (default `postgres://postgres@127.0.0.1:54329/outbound`) |
-| `MODE` | `demo` (default) or `live`. Live refuses to start without `AUTH_MODE=header`, `WEBHOOK_SECRET`, and the operator's own `SENDER_COMPANY`, `SENDER_ADDRESS` and `PRIVACY_URL` (blank or the demo seller's values are refused) |
+| `MODE` | `demo` (default) or `live`. Live refuses to start without `AUTH_MODE=header`, `WEBHOOK_SECRET`, the operator's own `SENDER_COMPANY`, `SENDER_ADDRESS` and `PRIVACY_URL` (blank or the demo seller's values are refused), and `ERASURE_KEY` (at least 16 characters) |
 | `AUTH_MODE` | `demo` (pick who you act as) or `header` (a verified Cloudflare Access token; needs `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD`) |
 | `LIVE_SEND` | Needs `MODE=live` and `AUTH_MODE=header`; never allowed with `PUBLIC_DEMO` |
 | `PUBLIC_DEMO` | A shared public demo: admin writes blocked, moves of at most 24 hours |
@@ -234,12 +234,40 @@ Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts 
 | `ANTHROPIC_LIVE` | Live Claude instead of the stand-in |
 | `CRM` | Which CRM the desk uses. Unset keeps today's: the simulated CRM in demo mode, and in live mode one that refuses. `crmdesk` uses CRM Desk; `salesforce` is refused, since no Salesforce adapter exists yet (decision 61) |
 | `CRM_DESK_URL`, `CRM_DESK_KEY` | Needed with `CRM=crmdesk`: the CRM Desk install and a key made there with `--desk account_desk` |
+| `WEBHOOK_SECRET` | Signs the inbound reply webhook; required in live mode. Unset in the demo, a random one is made at start |
+| `ERASURE_KEY` | The install's key for the keyed erasure hashes (at least 16 characters, kept secret, never changed). Required in live mode; the demo makes its own and keeps it in settings |
+| `SENDER_COMPANY`, `SENDER_ADDRESS`, `PRIVACY_URL` | The seller named in every email's footer and privacy link. The demo's invented seller by default; live mode refuses those values |
+| `UNSUBSCRIBE_MAILTO` | A mailbox that receives mail and forwards it to the reply webhook. Without it only the https one-click unsubscribe link is offered |
+| `PUBLIC_URL` | The address links in emails point to (default `http://localhost:8800`) |
+| `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | Verify the signed Cloudflare Access token under `AUTH_MODE=header` |
+| `AUTH_HEADER` | The header that carries the signed-in email (default `Cf-Access-Authenticated-User-Email`) |
+| `WRITE_KEY` | In demo mode on a private install, changes need this key in an `X-Write-Key` header. Not used on the public demo |
+| `HOST`, `PORT` | Where `python -m outbound serve` listens (default `127.0.0.1` and `8800`) |
+| `NO_WORKER` | Set to 1 to stop the API process running the background jobs itself |
+| `SLACK_BOT_TOKEN` | Read into the settings; no Slack adapter uses it yet |
+| `LIVE_DNS` | Set to `0` in live mode to skip the real DNS lookups |
+| `ANTHROPIC_API_KEY` | Read by the Anthropic client when `ANTHROPIC_LIVE` is set |
+| `EVALS_STRICT` | Read into the settings; no code path reads it today |
+| `LIVE_ONLY` | `drafts` with `ANTHROPIC_LIVE=1`: `evals/run_writing.py` re-records the drafts and replays the briefs |
+| `CRM_DESK_OWNER_ROLE` | With `CRM=crmdesk`: which owner to follow, `account` (default) or `sdr` |
+| `CRM_JOURNAL` | With `CRM=crmdesk`, outside live mode: a file that records every request to CRM Desk and its answer (the shared rehearsal) |
+| `INTEGRATED_WITH` | Comma-separated desks present beside this one: `market_desk`, `events_desk`, `crm_desk` |
+| `DESK_LINKS` | Comma-separated `desk=https://address` links to those desks, shown in the app |
+| `WORLD` | `legacy` (default, the desk's own generator) or `world` (the demo is built from the shared world in `world/`) |
+| `JOURNAL_PATH` | The recorded journal the shared-world demo replays instead of a live CRM Desk (default `world/journal.jsonl`) |
+| `SIM_ACTORS` | A Python file whose `act(at)` runs once per simulated hour, for the shared rehearsal. Never live or on the public demo |
+| `DESK_READ_KEY` | Turns on the read of campaign play counts that Events Desk may ask for (decision 94). Unset, the route answers 404 |
+| `EVENTS_DESK_URL`, `EVENTS_DESK_READ_KEY` | Where and with which key this desk reads Events Desk, under `INTEGRATED_WITH=events_desk` |
+| `SIM_DB_GUARD`, `SIM_ALLOWED_HOSTS`, `SIM_DB_PREFIX` | With `SIM_DB_GUARD=1`, refuse any database whose host is not listed or whose name lacks the prefix (default `sim_`); also refuses `PGHOST`, `PGDATABASE` and the other `PG*` overrides |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional tracing, to a collector on this machine only; any other address is refused. Needs `uv sync --extra otel` |
+| `TEST_DATABASE_URL`, `TEST_DB_PREFIX` | For the tests: the Postgres server they create their own databases on, and the prefix of those names (default `outbound_`) |
+| `CRM_DESK_ADMIN_KEY` | For the CRM Desk half of the contract tests only |
 
 Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/catalog.py`): `retention_months` (12), `call_window` (09:00 to 18:00, weekdays, in the person's own time). Each play also carries `lia_ref` and `lia_review_due`, its legitimate-interest assessment and when it is next reviewed.
 
 ## Deploy
 
-`render.yaml` describes the hosted demo: one Docker service on Render's free plan with Postgres inside the container and the 90-day simulation built into the image (`scripts/docker-build-demo.sh`), so a start or a wake from sleep only boots Postgres. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). On Render's own builder the image took about 17 minutes to build (2026-11-12).
+`render.yaml` describes the hosted demo: one Docker service on Render's free plan with Postgres inside the container and the 90-day simulation built into the image (`scripts/docker-build-demo.sh`), so a start or a wake from sleep only boots Postgres. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). On Render's own builder the image took about 17 minutes to build (2026-11-12). Deploys are manual: auto-deploy is off on the service, so a push to `main` deploys nothing and the live demo can be behind the code here.
 
 ## Not yet proven
 
