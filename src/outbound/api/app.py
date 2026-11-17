@@ -829,7 +829,9 @@ def linkedin_event(person_id: int, body: LinkedInEvent, u: dict = Depends(writer
 
 
 class MeetingStatus(BaseModel):
-    status: Literal["held", "no_show", "cancelled"]
+    # "booked" means the meeting has not happened: notes are kept and the status stays as it is (the sheet sends the
+    # meeting's current status when only the notes are saved).
+    status: Literal["booked", "held", "no_show", "cancelled"]
     notes: str | None = Field(None, max_length=8000)
     learn: bool = False
 
@@ -840,7 +842,8 @@ def meeting_status(meeting_id: int, body: MeetingStatus, u: dict = Depends(write
         owner = db.val(cur, "select owner_id from meetings where id = %s", meeting_id)
         if u["role"] == "sdr" and owner not in (None, u["id"]):
             raise HTTPException(403, "This meeting belongs to another SDR.")
-        pipeline.set_meeting_status(cur, meeting_id, body.status, user_id=u["id"])
+        if body.status != "booked":
+            pipeline.set_meeting_status(cur, meeting_id, body.status, user_id=u["id"])
         kept = 0
         if body.notes:
             nid = pipeline.record_call_notes(cur, meeting_id, body.notes, u["id"])

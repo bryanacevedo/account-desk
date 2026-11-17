@@ -362,3 +362,17 @@ def test_health_ignores_the_frozen_clock_monitor_only_in_the_public_demo(client)
         object.__setattr__(CONFIG, "public_demo", old)
         with db.tx() as cur:
             cur.execute("delete from monitor_runs where monitor = 'slow_first_touch' and not ok and found = 3 and at > app_now()")
+
+
+def test_notes_can_be_saved_before_the_meeting_without_changing_its_status(client):
+    with db.tx() as cur:
+        p = db.one(cur, "select id, email from people where email is not null and status = 'active' order by id desc limit 1")
+    booked = {"event": "booked", "external_id": "cal-test-notes", "invitee_email": p["email"],
+              "starts_at": "2026-12-02T15:00:00+00:00", "inbound": True}
+    raw, h = signed(booked)
+    mid = client.post("/api/webhooks/meeting", content=raw, headers=h).json()["meeting_id"]
+    r = client.post(f"/api/meetings/{mid}/status", json={"status": "booked", "notes": "Prep: they use two billing tools.", "learn": False}, headers={"X-Acting-As": str(user("manager"))})
+    assert r.status_code == 200
+    with db.tx() as cur:
+        assert db.val(cur, "select status from meetings where id = %s", mid) == "booked"
+    assert "two billing tools" in str(client.get(f"/api/meetings/{mid}").json()["notes"])

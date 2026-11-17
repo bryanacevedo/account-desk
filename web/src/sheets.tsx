@@ -582,7 +582,7 @@ export function MeetingSheet({ id }: { id: number }) {
   const save = (status: string) => run(async () => {
     await api(`/api/meetings/${id}/status`, { method: "POST", body: { status, notes: notes.trim() || null, learn } });
     setNotes("");
-  }, status === "held" ? "Saved." : status === "no_show" ? "Saved. A task to rebook is on Today." : "Cancelled.");
+  }, status === "booked" ? "Notes saved." : status === "held" ? "Saved." : status === "no_show" ? "Saved. A task to rebook is on Today." : "Cancelled.");
   const open = m.status === "booked" && new Date(m.starts_at).getTime() <= useNowIso();
   // What the desk added: learnings that are not already the notes' own words, shown above.
   const said = m.notes.map((n: any) => n.text).join(" ");
