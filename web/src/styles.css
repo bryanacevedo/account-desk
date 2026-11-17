@@ -92,6 +92,8 @@ ul, ol { padding: 0; list-style: none; }
 .clock .note { font-size: 11.5px; color: var(--mute); line-height: 16px; }
 
 .main { flex: 1; min-width: 0; padding: 28px 40px 80px; }
+.snapshot-note { max-width: 1180px; margin: 0 auto 16px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--well); color: var(--mute); font-size: 13px; line-height: 18px; }
+.snapshot-note b { color: var(--ink); font-weight: 600; }
 .page { max-width: 1180px; margin: 0 auto; display: grid; gap: 28px; grid-template-columns: minmax(0, 1fr); }
 .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
 .head h1 { font-size: 24px; line-height: 32px; font-weight: 620; letter-spacing: -0.02em; }

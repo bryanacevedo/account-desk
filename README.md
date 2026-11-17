@@ -273,6 +273,8 @@ Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/cata
 
 `render.yaml` describes the hosted demo: one Docker service on Render's free plan with Postgres inside the container and the simulation built into the image (`scripts/docker-build-demo.sh`), so a start or a wake from sleep only boots Postgres. The image builds the shared world by default (`WORLD=world`, its 91 days); `--build-arg DEMO_WORLD=legacy` builds the desk's own 90-day generator instead. The build fails if the coverage gate finds a scenario missing. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). On Render's own builder the image took about 17 minutes to build (2026-11-12, a build of the desk's own generator). Deploys are manual: auto-deploy is off on the service (`render.yaml` does not say so), so a push to `main` deploys nothing and the live demo can be behind the code here.
 
+`make snapshot` builds the demo as static files in `.snapshot/`: the web app plus every response it reads from the built demo database, for each person the demo can act as, with every change refused. How it is built, deployed to Cloudflare Pages and rolled back: `docs/RUNBOOK.md`.
+
 ## Not yet proven
 
 - Every AI task is measured on real Claude answers; the demo and tests use a deterministic stand-in. The eval cases are written to be realistic, but none is a real buyer's reply.

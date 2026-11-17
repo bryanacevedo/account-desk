@@ -1,4 +1,4 @@
-.PHONY: setup db demo serve web dev test lint docs-check monitors coverage docker evals evals-live
+.PHONY: setup db demo serve web dev test lint docs-check monitors coverage docker evals evals-live snapshot
 PY = PYTHONPATH=src .venv/bin/python
 
 setup:            ## install Python and web dependencies
@@ -48,3 +48,6 @@ docker:           ## the same image the hosted demo runs
 
 coverage:         ## count every scenario the built demo shows (exits 1 if any is at zero)
 	$(PY) -m outbound coverage
+
+snapshot:         ## the public demo as static files in .snapshot/ (needs the built demo database: make demo, or DATABASE_URL)
+	PUBLIC_DEMO=1 $(PY) scripts/build_static_snapshot.py --out .snapshot

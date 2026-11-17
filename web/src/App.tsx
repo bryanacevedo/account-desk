@@ -14,7 +14,7 @@ import { Approvals, Plays, Replies, Signals } from "./pages/Flow";
 import { Deliverability, Ops, Results, Settings } from "./pages/Desk";
 
 type Me = { user: { id: number; name: string; role: string }; users: any[]; counts: Record<string, number>; money: boolean;
-  now: string; simulated: boolean; public_demo: boolean; company: string; integration?: { integrated_with: string[]; links: Record<string, string> } };
+  now: string; simulated: boolean; public_demo: boolean; snapshot?: { taken_on: string }; company: string; integration?: { integrated_with: string[]; links: Record<string, string> } };
 
 const ROUTES: { path: string; label: string; icon: ReactNode; page: () => JSX.Element; roles?: string[]; count?: string; group?: string; offBar?: boolean }[] = [
   { path: "/", label: "Today", icon: <Sun size={18} />, page: Today, count: "today" },
@@ -101,6 +101,7 @@ export function App() {
             </select>
           ) : null}
         </div>
+        {me?.snapshot ? <SnapshotNote at={me.snapshot.taken_on} /> : null}
         {me ? <div className="page-enter" key={`${route.path}:${me.user.id}`}><Page /></div> : null}
       </main>
       <nav className="phone-nav" aria-label="Main">
@@ -117,6 +118,11 @@ export function App() {
       <Toaster />
     </div>
   );
+}
+
+/** Only on the static snapshot (scripts/build_static_snapshot.py): what the visitor is looking at, said once per page. */
+function SnapshotNote({ at }: { at: string }) {
+  return <p className="snapshot-note" role="note"><b>Read-only snapshot</b> of the Account Desk demo, taken {at}. Lumen Ledger and everyone in it are invented sample data. Nothing you change is saved.</p>;
 }
 
 // The pages that do not fit the phone's bottom bar, and the demo clock.

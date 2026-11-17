@@ -717,12 +717,12 @@ export function AccountSheet({ id }: { id: number }) {
   const [busy, run] = useBusy();
   const [skipping, setSkipping] = useState(false);
   const [reason, setReason] = useState("");
+  const [accepting, setAccepting] = useState(false);  // before the early returns: a hook after them crashes the sheet when data arrives
   if (error) return <Frame crumb="Account"><Failed error={error} retry={reload} /></Frame>;
   if (!data) return <Frame crumb="Account"><Loading rows={8} /></Frame>;
   const a = data.account, s = data.score, cur = data.current;
   // A proposal is decided where it is read: the owner (or a manager) accepts or skips it here, as on Today.
   const canDecide = cur?.state === "proposed" && me && (me.user.role !== "sdr" || me.user.id === cur.owner_id);
-  const [accepting, setAccepting] = useState(false);
   const decide = (accept: boolean) => { setAccepting(accept); return run(
     () => api(`/api/account-plays/${cur.id}/decide`, { method: "POST", body: { accept, reason: accept ? null : reason } }),
     accept ? "Accepted. The desk is researching the account and drafting first emails." : "Skipped.",

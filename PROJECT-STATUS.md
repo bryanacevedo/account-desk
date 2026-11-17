@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-17. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 95. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-17. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 96. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -15,6 +15,16 @@ Checked by running them (the date is on each line):
 - `ruff check src tests evals`, `tsc --noEmit` and `vite build`: clean on 2026-11-12.
 - `make demo` (fresh build into database `outbound_release`, 2026-11-12, current code): 3,000 accounts, six SDRs plus a manager and GTM, 90 simulated days (13 August to 11 November 2026) in 514 s, a 125 MB database. People: 24,667 in the world at the start; 14,429 on the desk after 90 days (`people`); 11,092 still hidden in the simulation (`sim_hidden_people`). 894 accounts proposed (126 to 190 per SDR), 785 accepted, 237 held back; 1,636 emails sent, 103 positive replies; 201 meetings (74 booked by SDRs, 127 inbound); 36 sourced deals worth $4,147,000 (6 won, $673,000). Plays: six shipped plus one draft from a suggestion; 3 suggestions. Coverage: 89 of 93 scenarios shown, none missing, 4 of the chance ones absent. A later build of the same day with the suggestion plant (`outbound_check2`, decision 62): suggestions in every state (three open, one drafted, two set aside, one back, one dismissed, one lapsed); coverage 97 of 99, none missing. A fourth planted reason (prepaid credits) was added after it for margin. The build `outbound_release` is kept for reuse.
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Since then two fresh design reviews and checks at 375 wide (see below).
+
+## Static snapshot of the public demo (2026-11-17, session S7, Backlog bl_116)
+
+What it is: the public demo as static files, served by Cloudflare Pages (project `account-desk-demo`), no server (`docs/RUNBOOK.md`, DECISIONS 96). `make snapshot` runs `scripts/build_static_snapshot.py` against the built demo database; `.github/workflows/static-snapshot.yml` builds the demo and the snapshot on a push to `main` touching the web app or the script, keeps the bundle as an artifact, and deploys only when the secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are set (they are not yet: Bryan sets them). Tests: `tests/test_static_snapshot.py`.
+
+URL: https://account-desk-demo.pages.dev, staged, noindex, unlinked (not in the README or anywhere else until Bryan says). Deployed from the laptop with wrangler 4.156.1. It reads the shared world's demo (3,000 accounts, 91 days), the one the hosted image holds. Local build on 2026-11-17: 22,377 saved answers (every account, 14,875 people, 2,809 emails, replies, tasks, meetings, plays and suggestions, for each of the 8 people the demo can act as), 19.2 MB in 4,098 files, 75 seconds on top of the demo build (the demo itself took about 55 minutes on a loaded laptop), the database fingerprint equal before and after the crawl. Checked live as a visitor: every navigation page for an SDR, the manager and GTM, a sheet of each kind, a change refused with "Not available in the public demo.", the Accounts search, Lumen Ledger's data, 390 wide with no sideways scroll, noindex in the page, the header and robots.txt. Edited-text checks and changed-settings previews are not in the snapshot and say so.
+
+A bug found by building it, fixed here: the account sheet crashed the whole page (React error 310, a hook after an early return) since 7d8492b; `tests/test_hooks_order.py` now reads the source for that pattern. The Render demo is deployed by hand, so it carries the crash until the next deploy (not done here).
+
+GitHub Actions minutes: none counted; the repository is public, so its runs are free. The demo build takes a runner roughly 15 to 60 minutes (the job's limit is 150). Render untouched.
 
 ## Standalone-day review, small fixes (2026-11-17, branch s4/standalone)
 

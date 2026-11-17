@@ -12,3 +12,5 @@ web/dist/
 
 .venv
 node_modules
+.snapshot/
+.wrangler/
