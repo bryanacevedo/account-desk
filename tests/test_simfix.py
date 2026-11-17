@@ -42,8 +42,16 @@ def lapsed(world):
         if ap is None:
             pytest.skip("the world has no proposed play")
         plays.set_state(cur, ap["id"], "expired", reason="expired", cooldown_key="expired")
+        # The shared world leaves this account's priority right at the play's minimum (40 of 40), and any earlier test
+        # that rescores it nudges it below. Pin it clearly above the minimum so these cases do not depend on test order.
+        minimum = db.val(cur, "select coalesce((p.trigger->>'min_priority')::int, 0) from account_plays x join plays p on p.id = x.play_id where x.id = %s", ap["id"])
+        was_priority = db.val(cur, "select priority from account_scores where account_id = %s", ap["account_id"])
+        db.run(cur, "update account_scores set priority = %s where account_id = %s", minimum + 20, ap["account_id"])
+        ap = {**ap, "min_priority": minimum}
     yield ap
     with db.tx() as cur:
+        if was_priority is not None:
+            db.run(cur, "update account_scores set priority = %s where account_id = %s", was_priority, ap["account_id"])
         db.run(cur, "delete from account_plays where account_id = %s and id <> %s and proposed_at >= (select proposed_at from account_plays where id = %s)",
                ap["account_id"], ap["id"], ap["id"])
         db.run(cur, "delete from holds where account_id = %s and reason = 'expired'", ap["account_id"])
@@ -332,6 +340,20 @@ def test_propose_again_is_refused_when_the_signal_is_out_of_the_plays_window(cli
     finally:
         with db.tx() as cur:
             db.run(cur, "update signals set observed_at = %s where id = %s", was, sig)
+
+
+def test_propose_again_is_refused_when_the_priority_is_below_the_plays_minimum(client, lapsed):
+    with db.tx() as cur:
+        db.run(cur, "update account_scores set priority = %s where account_id = %s", lapsed["min_priority"] - 1, lapsed["account_id"])
+        ap = db.one(cur, "select * from account_plays where id = %s", lapsed["id"])
+        why = plays.propose_again_blockers(cur, lapsed["account_id"], ap)
+    assert why and any("below this play's minimum" in w for w in why)
+    r = client.post(f"/api/account-plays/{lapsed['id']}/propose-again", headers=as_("manager"))
+    assert r.status_code == 409 and "below this play's minimum" in r.text
+    with db.tx() as cur:  # exactly at the minimum is enough
+        db.run(cur, "update account_scores set priority = %s where account_id = %s", lapsed["min_priority"], lapsed["account_id"])
+        ap = db.one(cur, "select * from account_plays where id = %s", lapsed["id"])
+        assert not plays.propose_again_blockers(cur, lapsed["account_id"], ap)
 
 
 def test_propose_again_and_matching_share_one_set_of_play_gates():
