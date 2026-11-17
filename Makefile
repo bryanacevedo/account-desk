@@ -1,4 +1,4 @@
-.PHONY: setup db demo serve web dev test lint monitors coverage docker evals evals-live
+.PHONY: setup db demo serve web dev test lint docs-check monitors coverage docker evals evals-live
 PY = PYTHONPATH=src .venv/bin/python
 
 setup:            ## install Python and web dependencies
@@ -36,6 +36,9 @@ evals-live:       ## every AI eval against live Claude, recording each answer (c
 lint:
 	.venv/bin/ruff check src tests evals
 	cd web && npm run typecheck
+
+docs-check:       ## fail when the README, PROJECT-STATUS or docs drift from the code (a few seconds, no database)
+	python3 scripts/docs_check.py
 
 monitors:         ## run every monitor once
 	$(PY) -m outbound monitors

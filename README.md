@@ -262,6 +262,7 @@ Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts 
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional tracing, to a collector on this machine only; any other address is refused. Needs `uv sync --extra otel` |
 | `TEST_DATABASE_URL`, `TEST_DB_PREFIX` | For the tests: the Postgres server they create their own databases on, and the prefix of those names (default `outbound_`) |
 | `CRM_DESK_ADMIN_KEY` | For the CRM Desk half of the contract tests only |
+| `DEMO_DATABASE_URL` | For the tests: an already built demo database to read instead of building one (never changed) |
 
 Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/catalog.py`): `retention_months` (12), `call_window` (09:00 to 18:00, weekdays, in the person's own time). Each play also carries `lia_ref` and `lia_review_due`, its legitimate-interest assessment and when it is next reviewed.
 

@@ -1,0 +1,2 @@
+# Environment variables the code reads that the docs gate (scripts/docs_check.py) need not find in README.md or
+# .env.example. One per line: NAME: why. System variables only (PATH, HOME, CI); a variable of this desk belongs in the README table.

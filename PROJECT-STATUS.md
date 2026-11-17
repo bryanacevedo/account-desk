@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-16. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 95. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-17. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 95. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -202,3 +202,11 @@ Open for Bryan or the next writer: the draft prompt has no fallback when a case 
 
 ## Simulation database guard and tracing (2026-11-16, session S3, bl_148)
 Account Desk can run against its own Neon simulation project (aws-us-east-1, Postgres 18.7) by `DATABASE_URL` alone: the default is unchanged and the public demo keeps its built-in database. A guard (`src/outbound/simguard.py`, on only when `SIM_DB_GUARD=1`) refuses any host that is not this laptop or a simulation project and any database not named `neondb` or `sim_*`; tested. Optional OpenTelemetry tracing (`telemetry`, off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set, localhost only). Tools and measurements: `~/Developer/workday-sim-plan/simdb` and `observability`, PLAN.md Revision 6. Finding: a live rebuild over Neon's 60 ms round trip is far too slow (hours), so databases are built on the laptop and copied in bulk. Not deployed (deploys are manual).
+
+## S2b: docs that cannot go stale (2026-11-17)
+
+- Docs are part of done: README, PROJECT-STATUS and docs change in the same commit as the behaviour, counts or setup they describe.
+- README made true to the code: Mexico is opt-out (decision 76) and replies to blocked countries are allowed (decision 92), migrations 0001 to 0040, the drafting eval numbers from `evals/WRITING.md`, the full environment table, no test count (the badge and the "passed" line are gone; they went stale twice). `docs/WORLD.md` lists the ERP plant and `SPREAD_WORLD`.
+- Deploys are manual: auto-deploy is off on the Render service (read from the API on 2026-11-16). Live on 2026-11-16 was 2d9b491 (2026-11-15); `main` is ahead of it.
+- Decisions 72, 77, 79, 89 and 91 each carry a "Superseded in part by" line; none was reworded.
+- The docs gate: `make docs-check` runs `scripts/docs_check.py`, and `tests/test_docs_check.py` runs it in the suite and against a failing fixture. It checks the README test-count claim (none allowed), the migrations range, every environment variable the code reads (allowlist `docs/DOCS-CHECK-ALLOW.txt`), the decision count here against `docs/DECISIONS.md`, and this file's Updated date against the last code commit (skipped on a shallow clone). A pre-push hook is proposed in `docs/PRE-PUSH-HOOK.md`, not installed.
