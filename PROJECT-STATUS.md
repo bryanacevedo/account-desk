@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-17. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 96. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-17. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 98. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -15,6 +15,14 @@ Checked by running them (the date is on each line):
 - `ruff check src tests evals`, `tsc --noEmit` and `vite build`: clean on 2026-11-12.
 - `make demo` (fresh build into database `outbound_release`, 2026-11-12, current code): 3,000 accounts, six SDRs plus a manager and GTM, 90 simulated days (13 August to 11 November 2026) in 514 s, a 125 MB database. People: 24,667 in the world at the start; 14,429 on the desk after 90 days (`people`); 11,092 still hidden in the simulation (`sim_hidden_people`). 894 accounts proposed (126 to 190 per SDR), 785 accepted, 237 held back; 1,636 emails sent, 103 positive replies; 201 meetings (74 booked by SDRs, 127 inbound); 36 sourced deals worth $4,147,000 (6 won, $673,000). Plays: six shipped plus one draft from a suggestion; 3 suggestions. Coverage: 89 of 93 scenarios shown, none missing, 4 of the chance ones absent. A later build of the same day with the suggestion plant (`outbound_check2`, decision 62): suggestions in every state (three open, one drafted, two set aside, one back, one dismissed, one lapsed); coverage 97 of 99, none missing. A fourth planted reason (prepaid credits) was added after it for margin. The build `outbound_release` is kept for reuse.
 - Every page walked in the browser pane at 1440 wide: Today, Accounts and the account sheet, Approvals and the email sheet. Since then two fresh design reviews and checks at 375 wide (see below).
+
+## Clock-only move and background Accept (2026-11-17, branch product/account, not pushed)
+
+Two product changes, decisions 97 and 98, migration 0041 (`jobs.lane`, `request_ref`, `requested_by`).
+- Clock: `POST /api/sim/clock {days}` (1 to 30; manager or GTM; 409 off a simulated clock; 403 on the public demo; audit `clock_advanced`). Moves `sim_clock.at` and nothing else. The clock panel has "Move the clock" beside "Move a day ahead". The desk has no role named director; manager and GTM are used.
+- Accept: answers at once and queues `research` as the person's request; the API's worker drains it (request lane first; only that lane while the clock is simulated). The account sheet shows queued, running, done or failed with the reason, and looks again every 3 seconds. `SYNC_DRAIN=1` restores the old inline drain for tests and dev. A restart puts orphaned running jobs of dead local processes back in line.
+- Tests: `tests/test_clock_only.py`, `tests/test_background_accept.py`.
+- Not verified: the worker thread in a running server (tests call `worker_pass()` and `run_ready` directly), the account sheet polling in a browser, Neon timings, and the snapshot build with the new `work` field.
 
 ## Static snapshot of the public demo (2026-11-17, session S7, Backlog bl_116)
 

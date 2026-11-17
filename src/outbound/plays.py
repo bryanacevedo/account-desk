@@ -178,10 +178,13 @@ def set_state(cur, ap_id: int, to: str, *, reason: str | None = None, actor: str
     return ap
 
 
-def decide(cur, ap_id: int, *, accept: bool, user_id: int, reason: str | None = None) -> None:
+def decide(cur, ap_id: int, *, accept: bool, user_id: int, reason: str | None = None, background: bool = False) -> None:
+    """Accept or skip a proposal. `background=True` (the web app's Accept) queues the research as the person's request:
+    it runs in the request lane and its progress shows on the account. The simulation leaves it False."""
     if accept:
         set_state(cur, ap_id, "accepted", actor="person", actor_id=user_id)
-        jobs.enqueue(cur, "research", {"account_play_id": ap_id}, dedupe_key=f"research:{ap_id}")
+        jobs.enqueue(cur, "research", {"account_play_id": ap_id}, dedupe_key=f"research:{ap_id}",
+                     request_ref=f"account_play:{ap_id}" if background else None, requested_by=user_id)
     else:
         if not reason:
             raise ValueError("A skip needs a reason")

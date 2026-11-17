@@ -23,7 +23,7 @@ export function Today() {
   // A decided row slides away before the list refreshes, so the change is seen, not just noticed.
   const decide = (id: number, accept: boolean) => { setLeaving(id); return new Promise((r) => setTimeout(r, 260)).then(() => run(
     () => api(`/api/account-plays/${id}/decide`, { method: "POST", body: { accept, reason: accept ? null : reason } }),
-    accept ? "Accepted. The desk is researching the account and drafting first emails." : "Skipped.",
+    accept ? "Accepted. The desk is researching the account and drafting first emails in the background." : "Skipped.",
   )).then(() => { setSkipping(null); setReason(""); setLeaving(null); }); };
   const overdue = data.replies.filter((r: any) => r.sla_due_at && new Date(r.sla_due_at).getTime() < new Date(data.now).getTime()).length;
   return (

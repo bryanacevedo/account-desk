@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from . import adapters, alerts, db, monitors, outreach, region_rules, spend, stats, suggestions
+from .jobs import request_progress
 
 OPEN = ("proposed", "accepted", "researching", "approving", "active", "engaged", "meeting")
 
@@ -159,7 +160,9 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
             where e.account_play_id = %s order by e.id, m.step_index""", current["id"])
     return {"account": a, "score": score, "contributions": contributions, "signals": sigs, "plays": plays_,
             "current": current, "people": people, "gaps": gaps, "messages": messages, "replies": reps,
-            "meetings": meetings, "opportunities": opps, "holds": holds, "calendar": calendar}
+            "meetings": meetings, "opportunities": opps, "holds": holds, "calendar": calendar,
+            # What became of the work Accept queued (research, people, first drafts): queued, running, done or failed.
+            "work": request_progress(cur, f"account_play:{plays_[0]['id']}") if plays_ else None}
 
 
 # ---------------------------------------------------------------- in flight

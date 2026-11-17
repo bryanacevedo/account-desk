@@ -389,6 +389,20 @@ export function TaskSheet({ id }: { id: number }) {
 
 /** What happened on LinkedIn, recorded by the SDR: an accepted request, or their message pasted in (it becomes a
  *  reply, so their emails stop first). */
+/** What became of the work Accept queued: queued, running, done, or failed with the reason. */
+function WorkStatus({ work }: { work: any }) {
+  if (!work) return null;
+  const parts = [["queued", work.queued], ["running", work.running], ["done", work.done], ["failed", work.failed]]
+    .filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}`).join(", ");
+  const head = work.state === "failed" ? "Some background work failed" : work.active ? (work.state === "running" ? "Working in the background" : "Waiting in the background queue") : "Background work is done";
+  return (
+    <div className="work-status" role="status" aria-live="polite">
+      <span><b>{head}.</b> {parts}</span>
+      {work.reason ? <span className="why">{work.reason}</span> : null}
+    </div>
+  );
+}
+
 function LinkedInLog({ personId, canAccept, onDone }: { personId: number; canAccept: boolean; onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
@@ -718,6 +732,13 @@ export function AccountSheet({ id }: { id: number }) {
   const [skipping, setSkipping] = useState(false);
   const [reason, setReason] = useState("");
   const [accepting, setAccepting] = useState(false);  // before the early returns: a hook after them crashes the sheet when data arrives
+  // While the background work is queued or running, look again every 3 seconds.
+  const workActive = !!data?.work?.active;
+  useEffect(() => {
+    if (!workActive) return;
+    const t = setInterval(reload, 3000);
+    return () => clearInterval(t);
+  }, [workActive]);
   if (error) return <Frame crumb="Account"><Failed error={error} retry={reload} /></Frame>;
   if (!data) return <Frame crumb="Account"><Loading rows={8} /></Frame>;
   const a = data.account, s = data.score, cur = data.current;
@@ -725,7 +746,7 @@ export function AccountSheet({ id }: { id: number }) {
   const canDecide = cur?.state === "proposed" && me && (me.user.role !== "sdr" || me.user.id === cur.owner_id);
   const decide = (accept: boolean) => { setAccepting(accept); return run(
     () => api(`/api/account-plays/${cur.id}/decide`, { method: "POST", body: { accept, reason: accept ? null : reason } }),
-    accept ? "Accepted. The desk is researching the account and drafting first emails." : "Skipped.",
+    accept ? "Accepted. The desk is researching the account and drafting first emails. Progress shows on this page." : "Skipped.",
   ).then(() => { setSkipping(false); setReason(""); reload(); }).finally(() => setAccepting(false)); };
   const decision = canDecide ? (
     <div className="play-decide">
@@ -740,7 +761,6 @@ export function AccountSheet({ id }: { id: number }) {
           <span className="small mute">Accept and the desk reads the company, finds the people who buy and drafts first emails for you to approve. Or skip, with a reason.</span>
           <button className="btn line" disabled={busy} onClick={() => setSkipping(true)}>Skip</button>
           <button className="btn" disabled={busy} onClick={() => decide(true)}>{busy && accepting ? "Accepting..." : "Accept"}</button>
-          {busy && accepting ? <span className="small mute">Researching the account, this can take up to half a minute.</span> : null}
         </>
       )}
     </div>
@@ -767,6 +787,7 @@ export function AccountSheet({ id }: { id: number }) {
       <div className="tabs" role="tablist">
         {tabs.map(([k, l, n]) => <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}{n !== undefined ? <span className="n">{n}</span> : null}</button>)}
       </div>
+      <WorkStatus work={data.work} />
       {tab === "overview" && <AccountOverview d={data} decision={decision} recorded={recorded} />}
       {tab === "people" && <AccountPeople d={data} />}
       {tab === "signals" && <SignalTimeline signals={data.signals} />}

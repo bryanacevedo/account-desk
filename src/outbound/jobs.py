@@ -5,6 +5,7 @@ commit together, or roll back together and the job is retried with backoff.
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 import os
 import socket
@@ -20,6 +21,8 @@ log = logging.getLogger("outbound.jobs")
 Handler = Callable[[Any, dict], None]
 HANDLERS: dict[str, Handler] = {}
 WORKER_ID = f"{socket.gethostname()}:{os.getpid()}"
+# The request a running job belongs to, so the jobs it queues belong to it too (decision 98).
+_request: contextvars.ContextVar[tuple[str, int | None] | None] = contextvars.ContextVar("request_of_job", default=None)
 
 # Each kind of job in words, for alerts and the Health page (served with /api/ops, so there is one list).
 JOB_NAMES = {
@@ -74,13 +77,20 @@ def handler(kind: str) -> Callable[[Handler], Handler]:
 
 
 def enqueue(cur, kind: str, payload: dict | None = None, *, delay: timedelta | None = None,
-            run_at=None, dedupe_key: str | None = None, max_attempts: int = 5) -> int | None:
-    """Queue a job. With a dedupe_key, a second enqueue while the first is queued or running is a no-op."""
+            run_at=None, dedupe_key: str | None = None, max_attempts: int = 5,
+            request_ref: str | None = None, requested_by: int | None = None) -> int | None:
+    """Queue a job. With a dedupe_key, a second enqueue while the first is queued or running is a no-op.
+
+    With a `request_ref` the job is a person's request ('account_play:12'): it runs in the 'request' lane and its
+    progress is shown. A job queued by a request's job inherits the request, so the whole chain shows and drains."""
+    if request_ref is None and (inherited := _request.get()) is not None:
+        request_ref, requested_by = inherited[0], requested_by or inherited[1]
     row = db.one(cur, """
-        insert into jobs (kind, payload, run_at, dedupe_key, max_attempts)
-        values (%s, %s, coalesce(%s, app_now() + coalesce(%s, interval '0')), %s, %s)
+        insert into jobs (kind, payload, run_at, dedupe_key, max_attempts, lane, request_ref, requested_by)
+        values (%s, %s, coalesce(%s, app_now() + coalesce(%s, interval '0')), %s, %s, %s, %s, %s)
         on conflict (dedupe_key) where dedupe_key is not null and status in ('queued', 'running') do nothing
-        returning id""", kind, J(payload or {}), run_at, delay, dedupe_key, max_attempts)
+        returning id""", kind, J(payload or {}), run_at, delay, dedupe_key, max_attempts,
+                 "request" if request_ref else "system", request_ref, requested_by)
     return row["id"] if row else None
 
 
@@ -110,8 +120,10 @@ def _play_of(cur, payload: dict) -> int | None:
     return None
 
 
-def run_ready(limit: int = 200) -> int:
-    """Run jobs whose time has come, one transaction each. Returns how many ran."""
+def run_ready(limit: int = 200, *, lane: str | None = None) -> int:
+    """Run jobs whose time has come, one transaction each. Returns how many ran. `lane='request'` runs only what
+    people asked for (and what that work queued); the default runs everything. A job is claimed with FOR UPDATE SKIP
+    LOCKED, so two workers never take the same one."""
     ran = 0
     while ran < limit:
         with db.pool().connection() as conn:
@@ -119,7 +131,8 @@ def run_ready(limit: int = 200) -> int:
                 with conn.cursor() as cur:
                     job = db.one(cur, """
                         select * from jobs where status = 'queued' and run_at <= app_now()
-                        order by run_at, id limit 1 for update skip locked""")
+                          and (%s::text is null or lane = %s)
+                        order by run_at, id limit 1 for update skip locked""", lane, lane)
                     if job is None:
                         return ran
                     db.run(cur, "update jobs set status = 'running', locked_at = now(), locked_by = %s, "
@@ -133,8 +146,12 @@ def run_ready(limit: int = 200) -> int:
                 with conn.transaction():
                     with conn.cursor() as cur:
                         # Every charge this job makes is tagged with the play it works for, so the play's cap holds.
-                        with spend.for_play(_play_of(cur, job["payload"])):
-                            fn(cur, job["payload"])
+                        token = _request.set((job["request_ref"], job["requested_by"]) if job["request_ref"] else None)
+                        try:
+                            with spend.for_play(_play_of(cur, job["payload"])):
+                                fn(cur, job["payload"])
+                        finally:
+                            _request.reset(token)
                         db.run(cur, "update jobs set status = 'done', finished_at = app_now() where id = %s", job["id"])
             except (spend.OverBudget, adapters_missing()) as exc:
                 # Out of budget is "not now", never a failure: the job waits a day without using up a retry.
@@ -181,6 +198,47 @@ def reap(cur, stale_minutes: int = 10) -> int:
                        locked_by = null, run_at = app_now()
                        where status = 'running' and locked_at < now() - (%s || ' minutes')::interval""", stale_minutes)
     return n
+
+
+def reap_orphans(cur) -> int:
+    """After a restart: a job still 'running' whose worker was a process on this machine that no longer exists goes
+    back in line at once, without waiting for `reap`'s 10 minutes. A lock held by another machine is left to `reap`."""
+    host = socket.gethostname()
+    n = 0
+    for j in db.all(cur, "select id, locked_by from jobs where status = 'running' and locked_by like %s", host + ":%"):
+        pid = j["locked_by"].rsplit(":", 1)[-1]
+        if not pid.isdigit() or int(pid) == os.getpid():
+            continue
+        try:
+            os.kill(int(pid), 0)
+            continue  # that worker is alive
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            continue
+        n += db.run(cur, """update jobs set status = case when attempts >= max_attempts then 'dead' else 'queued' end,
+                            last_error = coalesce(last_error, '') || ' [reclaimed after a restart]',
+                            locked_by = null, run_at = app_now() where id = %s and status = 'running'""", j["id"])
+    return n
+
+
+def request_progress(cur, request_ref: str) -> dict | None:
+    """What became of a person's request, in words a person can read: counts by state, whether work is still going,
+    and the reason of the last failure. None when nothing was queued for it."""
+    rows = db.all(cur, """select status, kind, last_error, attempts, max_attempts from jobs where request_ref = %s
+                          order by id""", request_ref)
+    if not rows:
+        return None
+    counts = {"queued": 0, "running": 0, "done": 0, "failed": 0}
+    reason = None
+    for r in rows:
+        state = "failed" if r["status"] in ("dead", "failed") else r["status"]
+        counts[state] = counts.get(state, 0) + 1
+        if r["last_error"] and (state == "failed" or r["status"] == "queued") and reason is None:
+            reason = f"{job_name(r['kind'])}: {r['last_error'].strip()}"[:300]
+    active = counts["queued"] + counts["running"] > 0
+    state = "running" if counts["running"] else "queued" if counts["queued"] else "failed" if counts["failed"] else "done"
+    return {"state": state, "active": active, **counts, "reason": reason}
 
 
 def run_forever(poll_seconds: float = 2.0) -> None:  # pragma: no cover - the live worker loop

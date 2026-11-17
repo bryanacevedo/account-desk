@@ -73,7 +73,7 @@ flowchart LR
   RS -.->|SDRs and GTM adjust weights and plays| SC
 ```
 
-Python 3.13, FastAPI and Postgres 18 with plain SQL in numbered migrations (0001 to 0040). A job queue in Postgres claimed with `FOR UPDATE SKIP LOCKED`. React and Vite for the web app, served by the API. Model calls go through one function with structured outputs, record and replay, and a deterministic stand-in for the demo. The full behaviour is in [docs/SPEC.md](docs/SPEC.md) (section 22 holds every review decision and wins where they differ); decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).
+Python 3.13, FastAPI and Postgres 18 with plain SQL in numbered migrations (0001 to 0041). A job queue in Postgres claimed with `FOR UPDATE SKIP LOCKED`. React and Vite for the web app, served by the API. Model calls go through one function with structured outputs, record and replay, and a deterministic stand-in for the demo. The full behaviour is in [docs/SPEC.md](docs/SPEC.md) (section 22 holds every review decision and wins where they differ); decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Autonomy is earned per play
 
@@ -183,7 +183,7 @@ make setup
 make demo
 ```
 
-That builds the invented company and simulates 90 days of signals, SDRs, buyers and vendors, then serves the desk at http://localhost:8800. Pick who you are acting as in the sidebar; "Move a day ahead" runs the world forward a day. `make coverage` counts every scenario the demo shows. To build into another database, set `DATABASE_URL` first.
+That builds the invented company and simulates 90 days of signals, SDRs, buyers and vendors, then serves the desk at http://localhost:8800. Pick who you are acting as in the sidebar; "Move a day ahead" runs the world forward a day; a manager or GTM also has "Move the clock", which moves the simulated clock 1 to 30 days and does nothing else (decision 97). `make coverage` counts every scenario the demo shows. To build into another database, set `DATABASE_URL` first.
 
 ```bash
 make test
@@ -245,7 +245,8 @@ Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts 
 | `AUTH_HEADER` | The header that carries the signed-in email (default `Cf-Access-Authenticated-User-Email`) |
 | `WRITE_KEY` | In demo mode on a private install, changes need this key in an `X-Write-Key` header. Not used on the public demo |
 | `HOST`, `PORT` | Where `python -m outbound serve` listens (default `127.0.0.1` and `8800`) |
-| `NO_WORKER` | Set to 1 to stop the API process running the background jobs itself |
+| `NO_WORKER` | Set to 1 to stop the API process running the background jobs itself. With it set nothing drains the queue, so Accept only queues the research |
+| `SYNC_DRAIN` | Set to 1 to make Accept run the queued research before it answers, as it did before decision 98. For tests and dev; by default Accept answers at once and the worker runs the work |
 | `SLACK_BOT_TOKEN` | Read into the settings; no Slack adapter uses it yet |
 | `LIVE_DNS` | Set to `0` in live mode to skip the real DNS lookups |
 | `ANTHROPIC_API_KEY` | Read by the Anthropic client when `ANTHROPIC_LIVE` is set |

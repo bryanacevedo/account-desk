@@ -155,6 +155,27 @@ function Clock({ me }: { me: Me }) {
         const r = await api<any>("/api/sim/advance", { method: "POST", body: { hours: 24 } });
         toast(`A day passed: ${r.signals} new signals.`);
       })}>{busy ? "Working" : "Move a day ahead"}</button>
+          {me.user.role !== "sdr" ? <ClockOnly /> : null}
+    </div>
+  );
+}
+
+/** Manager or GTM only: move the clock and nothing else. No simulated rep acts and no job runs; what is due reads the new time. */
+function ClockOnly() {
+  const [busy, run] = useBusy();
+  const [days, setDays] = useState(1);
+  return (
+    <div className="clock-only">
+      <span className="note">Move the clock only: nothing else happens, and the simulated reps do not act.</span>
+      <div className="row-inline">
+        <select className="input" value={days} aria-label="Days to move the clock" onChange={(e) => setDays(Number(e.target.value))}>
+          {[1, 2, 3, 7, 14, 30].map((d) => <option key={d} value={d}>{d} {d === 1 ? "day" : "days"}</option>)}
+        </select>
+        <button className="btn line sm" disabled={busy} onClick={() => run(async () => {
+          await api<any>("/api/sim/clock", { method: "POST", body: { days } });
+          toast(`The clock moved ${days} ${days === 1 ? "day" : "days"}.`);
+        })}>{busy ? "Working" : "Move the clock"}</button>
+      </div>
     </div>
   );
 }

@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from .. import (  # noqa: F401
     alerts,
     audit,
+    clock,
     db,
     gate,
     integration,
@@ -668,12 +669,17 @@ def decide(ap_id: int, body: Decide, u: dict = Depends(writer)) -> dict:
         if u["role"] == "sdr" and ap["owner_id"] != u["id"]:
             raise HTTPException(403, "This account belongs to someone else.")
         try:
-            plays.decide(cur, ap_id, accept=body.accept, user_id=u["id"], reason=body.reason)
+            plays.decide(cur, ap_id, accept=body.accept, user_id=u["id"], reason=body.reason, background=True)
         except (ValueError, plays.BadTransition) as exc:
             raise bad_request(exc) from exc
-    if CONFIG.worker_inline:
-        jobs.run_ready(limit=50)
-    return {"ok": True}
+    # Accept answers now. The research and the first drafts run in the background worker (decision 98); the account
+    # shows queued, running, done or failed. SYNC_DRAIN=1 (tests, dev) runs the queue before answering instead.
+    if body.accept:
+        if CONFIG.sync_drain:
+            jobs.run_ready(limit=50, lane="request")
+        else:
+            _wake_worker()
+    return {"ok": True, "queued": bool(body.accept)}
 
 
 class Check(BaseModel):
@@ -1497,6 +1503,9 @@ def erase(person_id: int, u: dict = Depends(writer)) -> dict:
     return result
 
 
+MAX_CLOCK_DAYS = 30
+
+
 class Advance(BaseModel):
     hours: int = Field(ge=1, le=24 * 14)
 
@@ -1526,6 +1535,32 @@ def sim_advance(body: Advance, u: dict = Depends(writer)) -> dict:
     finally:
         _sim_lock.release()
     return {"ok": True, "hours": hours, **totals}
+
+
+class ClockMove(BaseModel):
+    days: int = Field(ge=1, le=MAX_CLOCK_DAYS)
+
+
+@app.post("/api/sim/clock")
+def sim_clock_move(body: ClockMove, u: dict = Depends(writer)) -> dict:
+    """Move the simulated clock forward by whole days and do nothing else (decision 97): no simulated rep acts, no
+    simulated buyer writes, no job runs and no schedule ticks. Whatever depends only on the time (what is due, what is
+    overdue, when a sequence step is next) reads the new time. A manager or GTM only. Never backwards (days is 1 or more)."""
+    need(u, "manager", "gtm")
+    not_in_public_demo()
+    if not _sim_lock.acquire(blocking=False):
+        raise HTTPException(409, "The clock is already moving. Try again in a moment.")
+    try:
+        with db.tx() as cur:
+            before = db.val(cur, "select at from sim_clock where enabled")
+            if before is None:
+                raise HTTPException(409, "This desk is not on a simulated clock.")
+            after = clock.advance(cur, timedelta(days=body.days))
+            audit.log(cur, "person", "clock_advanced", "clock", None,
+                      {"days": body.days, "from": before.isoformat(), "to": after.isoformat()}, actor_id=u["id"])
+    finally:
+        _sim_lock.release()
+    return {"ok": True, "days": body.days, "from": before, "now": after}
 
 
 # ---------------------------------------------------------------- webhooks (signed)
@@ -1746,22 +1781,44 @@ def spa(path: str):
 
 # ---------------------------------------------------------------- the worker
 
+_wake = threading.Event()
+
+
+def _wake_worker() -> None:
+    """Tell the background worker there is new work, so it starts at once instead of at its next 5 second look."""
+    _wake.set()
+
+
+def worker_pass() -> int:
+    """One look at the queue. On a real clock: the schedule ticks and every ready job runs. On the simulated clock the
+    simulation drives the schedule and the desk's own jobs, so this takes only what a person asked for (the 'request'
+    lane). Either way, a job left 'running' by a stopped worker goes back in line first."""
+    with db.tx() as cur:
+        simulated = clock.sim_enabled(cur)
+        if simulated:
+            jobs.reap(cur)
+        else:
+            scheduler.tick(cur)
+    ran = jobs.run_ready(lane="request")
+    if not simulated:
+        ran += jobs.run_ready()
+    return ran
+
+
 def start_worker() -> None:
     db.pool()
     if not CONFIG.worker_inline:
         return
+    with db.tx() as cur:
+        jobs.reap_orphans(cur)  # work the last process left half done resumes now
 
     def loop() -> None:
         while True:
             try:
-                with db.tx() as cur:
-                    simulated = db.val(cur, "select enabled from sim_clock")
-                    if not simulated:
-                        scheduler.tick(cur)
-                if not simulated:
-                    jobs.run_ready()
+                worker_pass()
             except Exception:
                 log.exception("worker tick failed")
-            time.sleep(5)
+            _wake.wait(5)
+            _wake.clear()
 
     threading.Thread(target=loop, daemon=True, name="worker").start()
