@@ -13,6 +13,7 @@ from psycopg.types.json import Jsonb
 from psycopg.types.numeric import FloatLoader
 from psycopg_pool import ConnectionPool
 
+from . import simguard
 from .config import CONFIG
 
 # Numeric columns come back as float: scores, rates and shares are measurements, not money (money is integer cents).
@@ -70,6 +71,7 @@ def configure(url: str | None = None, *, min_size: int = 1, max_size: int = 10) 
     if _pool is not None:
         _pool.close()
     _url = url or CONFIG.database_url
+    simguard.check(_url)
     _demo_key = None
     _pool = ConnectionPool(_url, min_size=min_size, max_size=max_size, open=True, configure=_set_session_key,
                            kwargs={"row_factory": dict_row, "autocommit": False})
@@ -131,6 +133,7 @@ def read1(sql: str, *args: Any) -> dict | None:
 def migrate(url: str | None = None) -> list[str]:
     """Apply every migration not yet applied, in order, each in its own transaction."""
     applied: list[str] = []
+    simguard.check(url or _url or CONFIG.database_url)
     with psycopg.connect(url or _url or CONFIG.database_url, autocommit=True) as conn:
         # One migrator at a time, so two app instances starting together never apply the same file twice.
         conn.execute("select pg_advisory_lock(7342001)")

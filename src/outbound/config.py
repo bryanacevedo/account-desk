@@ -63,6 +63,10 @@ class Config:
     def erasure_key(self) -> str:
         return erasure_key()
 
+    def __post_init__(self) -> None:
+        from . import simguard
+        simguard.check(self.database_url)
+
     def validate(self) -> None:
         if self.live_send and self.auth_mode == "demo":
             raise SystemExit("LIVE_SEND=1 needs a real AUTH_MODE (header). Refusing to start.")
