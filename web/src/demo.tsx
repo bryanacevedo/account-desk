@@ -6,9 +6,10 @@ import { navigate } from "./lib";
 /** The one sentence the public demo's refusal already uses (api/app.py PUBLIC_DEMO_MESSAGE, scripts/static_snapshot/shim.js). */
 export const REFUSAL = "Not available in the public demo.";
 
-/** Where a buyer goes next. Not decided: left empty on purpose so no invented address ships. Set it to a real contact
- *  link (a booking page or a mailto:) and the next-step line below becomes a link. */
-export const NEXT_STEP_URL = "";
+/** Where a buyer writes to (Bryan's decision, 2026-11-17). A mailto opens the mail app, so it gets no target or rel; only an
+ *  http(s) address opens in a new tab with rel. The space in the subject is encoded as %20. */
+export const NEXT_STEP_URL = "mailto:bryan@leandrive.io?subject=Account%20Desk%20demo";
+const isHttp = (u: string) => /^https?:/i.test(u);
 
 export type DemoMe = { simulated: boolean; public_demo: boolean; now: string; snapshot?: { taken_on: string } };
 
@@ -112,7 +113,7 @@ export function Welcome({ firstStep }: { firstStep: { label: string; go: () => v
               <li>Results: meetings and deals, against accounts held back.</li>
             </ol>
             <p className="tour-next"><b>Next step:</b>{" "}
-              {NEXT_STEP_URL ? <a href={NEXT_STEP_URL} className="link">Run this on your own accounts and data.</a> : "to run this on your own accounts and data, get in touch with Leandrive."}</p>
+              <a href={NEXT_STEP_URL} className="link" {...(isHttp(NEXT_STEP_URL) ? { target: "_blank", rel: "noreferrer noopener" } : {})}>Write to Bryan about your own data</a></p>
           </div>
         </div>
       </details>

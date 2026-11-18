@@ -242,7 +242,12 @@ def test_the_sample_notice_is_on_every_screen_and_says_the_four_things():
     assert "Sample company, invented data." in demo
     assert "Not available in the public demo." in demo  # the wording the refusal already uses
     assert "Sample day:" in demo and "the demo keeps its own clock" in demo
-    assert "NEXT_STEP_URL = \"\"" in demo  # no invented address
+    # Was: the constant had to be empty (no invented address). Bryan named the address, so the pin is now the exact mailto,
+    # the link text, and that a mailto gets no target/rel (only http links do).
+    assert 'export const NEXT_STEP_URL = "mailto:bryan@leandrive.io?subject=Account%20Desk%20demo";' in demo
+    assert "Write to Bryan about your own data" in demo
+    assert 'target: "_blank", rel: "noreferrer noopener"' in demo and "isHttp(NEXT_STEP_URL)" in demo
+    assert 'href={NEXT_STEP_URL} target=' not in demo
     assert "Take the tour" in demo and "If you are hiring" in demo and "If you are buying" in demo and "Next step:" in demo
 
 
