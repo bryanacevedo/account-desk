@@ -1409,31 +1409,30 @@ export function ReplySheet({ id }: { id: number }) {
   const ex = r.extracted || {};
   const open = !r.handled_at;
   const act = (body: any, msg: string) => run(() => api(`/api/replies/${id}/handle`, { method: "POST", body }), msg);
+  const picker = (
+    <>
+      <select className="select" style={{ width: 220 }} value={label} onChange={(e) => setLabel(e.target.value)} aria-label="What the reply means">
+        <option value="">What does it mean?</option>
+        {Object.entries(LABEL).map(([k, v]) => <option key={k} value={k}>{v[1]}</option>)}
+      </select>
+      <button className="btn" disabled={busy || !label} onClick={() => act({ outcome: "labelled", label }, "Labelled. The desk acts on it now.")}>Save</button>
+    </>
+  );
+  const outcomes = booking ? (
+    <>
+      <input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} aria-label="When the meeting is" style={{ width: 220 }} />
+      <button className="btn quiet" onClick={() => setBooking(false)}>Cancel</button>
+      <button className="btn" disabled={busy || !when} onClick={() => act({ outcome: "meeting_booked", meeting_at: new Date(when).toISOString() }, "Meeting booked. The rest of the sequence stops.")}>Book it</button>
+    </>
+  ) : (
+    <>
+      <button className="btn line" disabled={busy} title="Use this when you replied from your own inbox" onClick={() => act({ outcome: "answered" }, "Marked answered.")}>I answered elsewhere</button>
+      <button className="btn" disabled={busy} onClick={() => setBooking(true)}>Meeting booked</button>
+    </>
+  );
+  // A reply the desk flagged offers the label only. One it has not read yet offers the label and everything else.
   const foot = open ? (
-    r.needs_review || !r.label ? (
-      <>
-        <select className="select" style={{ width: 220 }} value={label} onChange={(e) => setLabel(e.target.value)} aria-label="What the reply means">
-          <option value="">What does it mean?</option>
-          {Object.entries(LABEL).map(([k, v]) => <option key={k} value={k}>{v[1]}</option>)}
-        </select>
-        <button className="btn" disabled={busy || !label} onClick={() => act({ outcome: "labelled", label }, "Labelled. The desk acts on it now.")}>Save</button>
-      </>
-    ) : (
-      <>
-        {booking ? (
-          <>
-            <input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} aria-label="When the meeting is" style={{ width: 220 }} />
-            <button className="btn quiet" onClick={() => setBooking(false)}>Cancel</button>
-            <button className="btn" disabled={busy || !when} onClick={() => act({ outcome: "meeting_booked", meeting_at: new Date(when).toISOString() }, "Meeting booked. The rest of the sequence stops.")}>Book it</button>
-          </>
-        ) : (
-          <>
-            <button className="btn line" disabled={busy} title="Use this when you replied from your own inbox" onClick={() => act({ outcome: "answered" }, "Marked answered.")}>I answered elsewhere</button>
-            <button className="btn" disabled={busy} onClick={() => setBooking(true)}>Meeting booked</button>
-          </>
-        )}
-      </>
-    )
+    r.needs_review ? picker : !r.label ? <>{booking ? null : picker}{outcomes}</> : outcomes
   ) : undefined;
   return (
     <Frame kind="reply" crumb={<>{r.company || r.from_addr}</>} foot={foot}>

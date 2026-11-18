@@ -436,7 +436,8 @@ def unread(world):
 
 
 def test_a_person_can_label_a_reply_the_desk_has_not_read_and_the_classifier_leaves_it(client, unread):
-    assert "r.needs_review || !r.label ?" in web("sheets.tsx")
+    src = web("sheets.tsx")
+    assert "r.needs_review ? picker : !r.label ?" in src
     r = client.get(f"/api/replies/{unread}", headers=as_("manager")).json()
     assert r["label"] is None
     res = client.post(f"/api/replies/{unread}/handle", headers=as_("manager"), json={"outcome": "labelled", "label": "other"})
@@ -460,9 +461,12 @@ def test_unread_replies_count_as_needing_a_person_in_the_list_and_the_badge(clie
         user = db.one(cur, "select id, role from users where id = %s", int(h["X-Acting-As"]))
         listed = [r["id"] for r in views.replies_page(cur, view="needs_person")]
         badge = views.badge_counts(cur, user)["replies"]
-        open_n = db.val(cur, "select count(*) from replies r where (r.needs_review or r.label is null) and r.handled_at is null")
     assert unread in listed
-    assert badge == open_n
+    # Expected count worked out from the rows, not from the badge's own query.
+    with db.tx() as cur:
+        rows = db.all(cur, "select label, needs_review, handled_at from replies")
+    expected = len([x for x in rows if x["handled_at"] is None and (x["needs_review"] or x["label"] is None)])
+    assert badge == expected == len(listed)
 
 
 def test_the_account_emails_list_holds_email_messages_only(client, world):
@@ -473,3 +477,12 @@ def test_the_account_emails_list_holds_email_messages_only(client, world):
             pytest.skip("the world has no call or LinkedIn step")
     d = client.get(f"/api/accounts/{row['account_id']}", headers=as_("manager")).json()
     assert row["id"] not in [m["id"] for m in d["messages"]]
+
+
+def test_an_unread_reply_keeps_answered_and_meeting_booked_beside_the_label():
+    src = web("sheets.tsx")
+    foot = src[src.index("const foot = open ? (\n    r.needs_review ? picker"):]
+    foot = foot[:foot.index("undefined;")]
+    assert "!r.label ? <>{booking ? null : picker}{outcomes}</>" in foot
+    outcomes = src[src.index("const outcomes = booking"):src.index("// A reply the desk flagged")]
+    assert "I answered elsewhere" in outcomes and "Meeting booked" in outcomes and "Book it" in outcomes
