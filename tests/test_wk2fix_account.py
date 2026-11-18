@@ -705,8 +705,8 @@ def test_an_outbox_row_keeps_the_requests_trace_and_the_push_is_a_linked_span(wo
             adapters.override(was)
         assert "wk2fix-linked" in seen
         push = next(s for s in exporter.get_finished_spans() if s.name == "crm push activity")
-        assert [f"{link.context.trace_id:032x}" for link in push.links] == [trace_id]    # a link, not a parent
-        assert push.parent is None or f"{push.context.trace_id:032x}" != trace_id
+        assert [f"{link.context.trace_id:032x}" for link in push.links] == [trace_id]    # kept as a link
+        assert push.parent is not None and f"{push.context.trace_id:032x}" == trace_id   # and the request is its parent: one trace
     _rolled_back(go)
 
 
