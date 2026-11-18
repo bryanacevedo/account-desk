@@ -717,6 +717,9 @@ def maybe_auto_approve(cur, message_id: int) -> bool:
         mode = "auto_autonomous"
     if mode is None:
         return False
+    from . import replies
+    if replies.unread_reply(cur, db.val(cur, "select person_id from enrollments where id = %s", m["enrollment_id"])):
+        return False                # decision 108 holds for the automatic path too: a person reads their reply first
     _approve(cur, m, user_id=None, mode=mode)
     return True
 

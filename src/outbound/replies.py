@@ -524,8 +524,14 @@ def handle(cur, reply_id: int, *, user_id: int, outcome: str, label: str | None 
     r = db.one(cur, "select * from replies where id = %s for update", reply_id)
     if label and (label != r["label"] or r["needs_review"]):
         old = r["label"]
+        audit.log(cur, "person", "reply_relabelled" if old is not None else "reply_labelled", "reply", reply_id,
+                  {"from": old, "to": label}, actor_id=user_id)
+        if old in HOT and label in HOT and not r["needs_review"]:
+            # One hot label for another: the task, the alert and the suggestion stand; only what the reply is called changes.
+            db.run(cur, "update replies set label = %s, classified_by = 'person', hot = true where id = %s", label, reply_id)
+            return
         if old is not None and old != label:
-            # A person's label wins over the desk's: what the old label opened is closed, and the change is audited.
+            # A person's label wins over the desk's: what the old label opened is closed.
             db.run(cur, "update tasks set status = 'skipped', done_at = app_now(), note = 'Closed: relabelled' "
                         "where reply_id = %s and kind = 'reply' and status = 'open'", reply_id)
             alerts.resolve(cur, ["hot_reply", "sla_missed"], object_kind="reply", object_id=reply_id)
@@ -533,7 +539,6 @@ def handle(cur, reply_id: int, *, user_id: int, outcome: str, label: str | None 
                                                           f"task:reply:{reply_id}"):
                 crmq.enqueue(cur, "task_close", {"reply_id": reply_id, "person_id": r["person_id"], "outcome": "cancelled",
                                                  "note": "Relabelled by the SDR"}, f"task_close:{reply_id}")
-            audit.log(cur, "person", "reply_relabelled", "reply", reply_id, {"from": old, "to": label}, actor_id=user_id)
         db.run(cur, "update replies set label = %s, classified_by = 'person', needs_review = false, hot = %s, "
                     "handled_at = null where id = %s", label, label in HOT, reply_id)
         r = db.one(cur, "select * from replies where id = %s", reply_id)

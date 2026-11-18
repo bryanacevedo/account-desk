@@ -73,14 +73,20 @@ def reschedule_meeting(cur, meeting_id: int, starts_at: datetime, user_id: int) 
         return
     db.run(cur, "update meetings set starts_at = %s where id = %s", starts_at, meeting_id)
     who = db.val(cur, "select name from users where id = %s", user_id)
-    if m["person_id"]:
+    # A booking the CRM has not received yet is corrected in the queue, so the CRM is given the new time and needs no note.
+    corrected = db.val(cur, """with u as (update crm_outbox set payload = payload || %s where idempotency_key = %s
+                                          and status = 'pending' returning 1) select count(*) from u""",
+                       J({"starts_at": starts_at.isoformat()}), f"meeting:{meeting_id}")
+    if m["person_id"] and not corrected:
         fmt = "%-d %b %Y, %H:%M UTC"
         old_utc, new_utc = m["starts_at"].astimezone(timezone.utc), starts_at.astimezone(timezone.utc)
+        n = db.val(cur, "select count(*) from crm_outbox where kind = 'meeting_note' and payload->>'meeting_id' = %s", str(meeting_id))
+        stamp = f"{n}-{old_utc:%Y%m%dT%H%M}-{new_utc:%Y%m%dT%H%M}"   # the move's number too: A to B, B to A, A to B is three moves
         crmq.enqueue(cur, "meeting_note",
-                     {"meeting_id": meeting_id, "person_id": m["person_id"], "key": new_utc.strftime("%Y%m%dT%H%M"),
+                     {"meeting_id": meeting_id, "person_id": m["person_id"], "key": stamp,
                       "text": f"The meeting moved from {old_utc.strftime(fmt)} to {new_utc.strftime(fmt)}"
                               + (f", by {who}." if who else ".")},
-                     f"meeting_note:{meeting_id}:{new_utc.strftime('%Y%m%dT%H%M')}")
+                     f"meeting_note:{meeting_id}:{stamp}")
     audit.log(cur, "person", "meeting_moved", "meeting", meeting_id,
               {"from": m["starts_at"].isoformat(), "to": starts_at.isoformat()}, actor_id=user_id)
 

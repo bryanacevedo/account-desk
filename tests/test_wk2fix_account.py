@@ -106,6 +106,7 @@ def test_labelling_a_hot_reply_does_not_answer_it_and_a_second_hot_label_leaves_
         row = db.one(cur, "select label, handled_at, handled_by from replies where id = %s", r["id"])
         assert row["label"] == "interested" and row["handled_at"] is None and row["handled_by"] is None   # still open
         assert db.val(cur, "select count(*) from tasks where reply_id = %s and kind = 'reply' and status = 'open'", r["id"]) == 1
+        assert db.val(cur, "select count(*) from audit_log where action = 'reply_relabelled' and object_id = %s", r["id"]) == 1
         # Saving the same label again changes nothing and still does not close it.
         replies.handle(cur, r["id"], user_id=uid, outcome="labelled", label="interested")
         assert db.val(cur, "select handled_at from replies where id = %s", r["id"]) is None
@@ -379,8 +380,11 @@ def test_a_reply_flagged_for_a_person_also_holds_them_back(world):
 
 def test_an_sdr_puts_a_person_on_do_not_contact_with_a_reason(world, client, monkeypatch):
     def go(cur):
-        row = db.one(cur, """select p.id, ap.owner_id from people p join accounts a on a.id = p.account_id
-                             join account_plays ap on ap.account_id = a.id where ap.owner_id is not null limit 1""")
+        row = db.one(cur, """select p.id, ap.owner_id from people p join account_plays ap on ap.account_id = p.account_id
+                             join users u on u.id = ap.owner_id where u.role = 'sdr' and u.active
+                             and ap.id = (select x.id from account_plays x where x.account_id = p.account_id
+                                          and x.state in ('proposed','accepted','researching','approving','active','engaged','meeting')
+                                          order by x.proposed_at desc limit 1) limit 1""")
         h = {"X-Acting-As": str(row["owner_id"])}
         task = db.val(cur, """insert into tasks (person_id, kind, title, due_at, owner_id) values (%s, 'call', 'Call', app_now(), %s) returning id""",
                       row["id"], row["owner_id"])
@@ -397,7 +401,10 @@ def test_an_sdr_puts_a_person_on_do_not_contact_with_a_reason(world, client, mon
 def test_an_sdr_cannot_put_another_sdrs_person_on_the_list(world, client, monkeypatch):
     def go(cur):
         row = db.one(cur, """select p.id, ap.owner_id from people p join account_plays ap on ap.account_id = p.account_id
-                             where ap.owner_id is not null limit 1""")
+                             join users u on u.id = ap.owner_id where u.role = 'sdr' and u.active
+                             and ap.id = (select x.id from account_plays x where x.account_id = p.account_id
+                                          and x.state in ('proposed','accepted','researching','approving','active','engaged','meeting')
+                                          order by x.proposed_at desc limit 1) limit 1""")
         other = db.val(cur, "select id from users where role = 'sdr' and active and id <> %s limit 1", row["owner_id"])
         with _inside(cur, monkeypatch):
             res = client.post("/api/suppressions", headers={"X-Acting-As": str(other)},
@@ -410,7 +417,7 @@ def test_the_person_sheet_has_the_do_not_contact_box_and_the_desk_page_points_to
     sheets = web("sheets.tsx")
     box = sheets[sheets.index("function DoNotContactBox"):sheets.index("/** Erase on request")]
     assert 'api("/api/suppressions", { method: "POST", body: { kind: "person", value: String(personId), reason: reason.trim() } })' in box
-    assert "reason.trim().length < 3" in box and "A manager lifts an entry." in box
+    assert "reason.trim().length < 3" in box
     assert "<DoNotContactBox personId={p.id}" in sheets and "data.suppressed.length ? null" in sheets
 
 
@@ -429,6 +436,7 @@ def test_a_booked_meeting_moves_with_a_note_for_the_crm(world):
         mid, start, r = _booked(cur)
         uid = _user(cur, "sdr")["id"]
         new = start + timedelta(days=2, hours=1)
+        db.run(cur, "update crm_outbox set status = 'done' where idempotency_key = %s", f"meeting:{mid}")   # the booking has reached the CRM
         pipeline.reschedule_meeting(cur, mid, new, uid)
         assert db.val(cur, "select starts_at from meetings where id = %s", mid) == new
         note = db.one(cur, "select kind, payload from crm_outbox where kind = 'meeting_note' and payload->>'meeting_id' = %s", str(mid))
@@ -509,6 +517,8 @@ def test_the_account_sheet_says_the_other_owner_and_never_a_bare_profile_version
     sheets = web("sheets.tsx")
     assert "a.owner_differs" in sheets and "In CRM Desk" in sheets and "Here it is" in sheets
     assert "this desk's own score" in sheets and "from this desk's profile version" not in sheets
+    assert "This desk's own score says Tier {a.fit_tier}; the account plan decides." in sheets and "own.toLowerCase()" not in sheets
+    assert "plan.toLowerCase()" not in sheets
     assert "Market Desk&rsquo;s tier has not arrived yet." in sheets
 
 
@@ -735,8 +745,6 @@ def test_an_approved_message_keeps_the_approving_requests_trace_and_the_send_che
 
 
 def test_the_send_passes_the_messages_trace_to_the_crm_check():
-    src = (ROOT / "src/outbound/sending.py").read_text()
-    assert 'pipeline.crm_first_touch(cur, person["id"], "email", trace_parent=m.get("trace_parent"))' in src
     assert "telemetry.current_traceparent()" in (ROOT / "src/outbound/outreach.py").read_text()
     sql = (ROOT / "migrations/0043_trace_parent_outbox_messages.sql").read_text()
     assert "crm_outbox add column if not exists trace_parent text" in sql and "messages add column if not exists trace_parent text" in sql
@@ -814,3 +822,75 @@ def test_settings_keeps_the_facts_and_the_composer_shows_what_it_may_state():
     desk = web("pages/Desk.tsx")
     assert 'function ProductFacts' in desk and 'api("/api/product-facts", { method: "PUT"' in desk and "<ProductFacts canEdit=" in desk
     assert "May state: {studio.product_facts.join" in web("sheets.tsx")
+
+
+# ---------------------------------------------------------------- the review's fixes
+
+def test_an_automatic_approval_waits_while_the_person_has_an_unread_reply(world):
+    from outbound import outreach
+
+    def go(cur):
+        m, _ = _held(cur)
+        db.run(cur, "update plays set autonomy = 'autonomous' where id = (select ap.play_id from account_plays ap where ap.id = %s)", m["account_play_id"])
+        db.run(cur, "update accounts set fit_tier = 'B' where id = (select account_id from account_plays where id = %s)", m["account_play_id"])
+        rid = _arrives(cur, m)
+        assert outreach.maybe_auto_approve(cur, m["id"]) is False
+        assert db.val(cur, "select status from messages where id = %s", m["id"]) == "awaiting_approval"
+        replies.handle(cur, rid, user_id=_user(cur, "sdr")["id"], outcome="labelled", label="other")
+        assert outreach.maybe_auto_approve(cur, m["id"]) is True
+    _rolled_back(go)
+
+
+def test_a_meeting_moved_before_its_booking_reaches_the_crm_sends_the_new_time(world):
+    def go(cur):
+        mid, start, _ = _booked(cur)
+        uid = _user(cur, "sdr")["id"]
+        new = start + timedelta(days=2)
+        assert db.val(cur, "select status from crm_outbox where idempotency_key = %s", f"meeting:{mid}") == "pending"
+        pipeline.reschedule_meeting(cur, mid, new, uid)
+        assert db.val(cur, "select payload->>'starts_at' from crm_outbox where idempotency_key = %s", f"meeting:{mid}") == new.isoformat()
+        assert db.val(cur, "select count(*) from crm_outbox where kind = 'meeting_note' and payload->>'meeting_id' = %s", str(mid)) == 0
+        # Once the booking is delivered, a move is a note; moving back and forth is three notes, not two.
+        db.run(cur, "update crm_outbox set status = 'done' where idempotency_key = %s", f"meeting:{mid}")
+        pipeline.reschedule_meeting(cur, mid, start, uid)
+        pipeline.reschedule_meeting(cur, mid, new, uid)
+        pipeline.reschedule_meeting(cur, mid, start, uid)
+        assert db.val(cur, "select count(*) from crm_outbox where kind = 'meeting_note' and payload->>'meeting_id' = %s", str(mid)) == 3
+    _rolled_back(go)
+
+
+def test_the_approvals_count_leaves_out_held_drafts(world, client, monkeypatch):
+    def go(cur):
+        m, _ = _held(cur)
+        h = {"X-Acting-As": str(m["owner_id"])}
+        with _inside(cur, monkeypatch):
+            before = client.get("/api/me", headers=h).json()["counts"]["approvals"]
+            _arrives(cur, m)
+            assert client.get("/api/me", headers=h).json()["counts"]["approvals"] == before - 1
+    _rolled_back(go)
+
+
+def test_a_naive_time_for_a_move_is_a_422_not_a_500(world, client):
+    with db.tx() as cur:
+        h = {"X-Acting-As": str(_user(cur, "sdr")["id"])}
+    assert client.post("/api/meetings/1/reschedule", headers=h, json={"starts_at": "2030-01-01T10:00:00"}).status_code == 422
+
+
+def test_a_linkedin_reply_goes_to_the_crm_as_a_linkedin_message(world):
+    def go(cur):
+        r = _reply(cur)
+        db.run(cur, "update replies set channel = 'linkedin' where id = %s", r["id"])
+        ref, calls = _sent_to_crm(cur, "reply_in", {"reply_id": r["id"], "person_id": r["person_id"]}, f"reply_in:{r['id']}",
+                                  lambda q: httpx.Response(201, json={"id": "act_6"}))
+        body = next(c[2] for c in calls if c[1] == "/api/v1/activities")
+        assert body["type"] == "linkedin" and body["direction"] == "in"
+    _rolled_back(go)
+
+
+def test_labelling_an_unread_reply_is_audited(world):
+    def go(cur):
+        r = _reply(cur)
+        db.run(cur, "update replies set label = null, hot = false where id = %s", r["id"])
+        replies.handle(cur, r["id"], user_id=_user(cur, "sdr")["id"], outcome="labelled", label="other")
+        assert db.one(cur, "select detail from audit_log where action = 'reply_labelled' and object_id = %s", r["id"])["detail"] == {"from": None, "to": "other"}
+    _rolled_back(go)

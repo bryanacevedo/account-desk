@@ -12,7 +12,7 @@ from datetime import datetime
 
 import httpx
 
-from .. import db
+from .. import crmq, db
 from . import CrmAccount, CrmCampaignMember, CrmDeal, CrmOwner
 
 SDR_TYPES = {"call": "call", "linkedin_connect": "linkedin", "linkedin_message": "linkedin"}
@@ -95,9 +95,7 @@ class CrmDeskCrm:
             # A first activity whose person was never queued for a contact write (an SDR step done by hand): the contact
             # goes first, here, and is noted as written so it is not written again.
             ref = self._contact(cur, pid, f"contact:{pid}")
-            db.run(cur, """insert into crm_outbox (kind, payload, idempotency_key, status, done_at)
-                           values ('contact', %s, %s, 'done', app_now()) on conflict do nothing""",
-                   db.J({"person_id": pid, "crm_ref": ref}), f"contact:{pid}")
+            crmq.enqueue(cur, "contact", {"person_id": pid}, f"contact:{pid}", done=ref)
         if kind == "opt_out":
             if not email:
                 raise CrmDeskUnresolved(f"opt-out {idempotency_key} has no address")
@@ -130,10 +128,10 @@ class CrmDeskCrm:
         elif kind == "reply_in":
             # What the person wrote, as an inbound email on their contact: the cleaned words, never the raw message with
             # its quoted history. The reply row is gone when the person was erased.
-            r = db.one(cur, "select received_at, subject, cleaned from replies where id = %s", payload["reply_id"])
+            r = db.one(cur, "select received_at, subject, cleaned, channel from replies where id = %s", payload["reply_id"])
             if r is None:
                 return "refused:erased"
-            body = {"type": "email", "direction": "in", "contact": email, "subject": r["subject"],
+            body = {"type": "linkedin" if r["channel"] == "linkedin" else "email", "direction": "in", "contact": email, "subject": r["subject"],
                     "body": (r["cleaned"] or "")[:8000], "occurred_at": r["received_at"].isoformat(),
                     "external_id": f"reply_in:{payload['reply_id']}"}
         elif kind == "meeting_note":

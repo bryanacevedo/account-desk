@@ -604,7 +604,7 @@ export function MeetingSheet({ id }: { id: number }) {
   const move = () => run(async () => {
     await api(`/api/meetings/${id}/reschedule`, { method: "POST", body: { starts_at: new Date(when).toISOString() } });
     setMoving(false); setWhen("");
-  }, "Moved. The CRM is told.");
+  }, "Moved.");
   // What the desk added: learnings that are not already the notes' own words, shown above.
   const said = m.notes.map((n: any) => n.text).join(" ");
   const added = m.learnings.filter((l: any) => !said.includes(l.text));
@@ -762,12 +762,12 @@ function DoNotContactBox({ personId, name, onDone }: { personId: number; name: s
             <button className="btn ink sm" disabled={busy || reason.trim().length < 3} onClick={() => run(async () => {
               await api("/api/suppressions", { method: "POST", body: { kind: "person", value: String(personId), reason: reason.trim() } });
               setOpen(false); setReason(""); onDone();
-            }, "Added to Do not contact. Their sequences stop and their open tasks close.")}>Add {name}</button>
+            }, "Added to Do not contact.")}>Add {name}</button>
           </div>
         </div>
       ) : (
         <div className="actions" style={{ justifyContent: "space-between" }}>
-          <span className="small mute">A manager lifts an entry.</span>
+          <span />
           <button className="btn line sm" onClick={() => setOpen(true)}>Do not contact</button>
         </div>
       )}
@@ -956,8 +956,8 @@ function OwnerAndTier({ d }: { d: any }) {
   // This desk's own profile ids are not Market Desk's version numbers, so they are never shown as "version N" (decision 113).
   const own = a.fit_tier ? `Tier ${a.fit_tier}, this desk's own score` : null;
   const plan = a.crm_tier ? `Tier ${a.crm_tier}${a.crm_icp_version ? `, from the account plan's profile version ${a.crm_icp_version}` : ""}${a.crm_read_at ? `, read ${ago(a.crm_read_at)}` : ""}` : null;
-  if (kept && plan) rows.push(["Tier", <>{plan}{own && a.fit_tier !== a.crm_tier ? <span className="mute small"> This desk's own score says {own.toLowerCase()}; the account plan decides.</span> : null}</>]);
-  else if (own) rows.push(["Tier", <>{own}{plan && a.crm_tier !== a.fit_tier ? <span className="mute small"> The account plan says {plan.toLowerCase()}.</span> : null}{kept && !plan ? <span className="mute small"> Market Desk&rsquo;s tier has not arrived yet.</span> : null}</>]);
+  if (kept && plan) rows.push(["Tier", <>{plan}{own && a.fit_tier !== a.crm_tier ? <span className="mute small"> This desk's own score says Tier {a.fit_tier}; the account plan decides.</span> : null}</>]);
+  else if (own) rows.push(["Tier", <>{own}{plan && a.crm_tier !== a.fit_tier ? <span className="mute small"> The account plan says Tier {a.crm_tier}.</span> : null}{kept && !plan ? <span className="mute small"> Market Desk&rsquo;s tier has not arrived yet.</span> : null}</>]);
   return (
     <Section title="Who owns it, and what the tier is based on">
       <div className="ledger">

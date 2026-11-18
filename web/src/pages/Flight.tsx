@@ -131,8 +131,7 @@ function Next({ p, mine }: { p: any; mine: boolean }) {
   // An answer written in the desk leaves "Waiting on you" the moment it is queued, and comes back if the send fails.
   if (p.state === "engaged" && p.answer_queued_id && !p.reply_id) {
     return <button className="link-row cell-main" onClick={() => openSheet("reply", p.answer_queued_id)}>
-      <span className="t"><ChatCircleText size={14} style={{ verticalAlign: -2 }} aria-hidden="true" /> Answer queued</span>
-      <span className="s">Goes out from the SDR&rsquo;s mailbox</span></button>;
+      <span className="t"><ChatCircleText size={14} style={{ verticalAlign: -2 }} aria-hidden="true" /> Answer queued</span></button>;
   }
   if (p.state === "engaged" && p.reply_id) {
     return <button className="link-row cell-main" onClick={() => openSheet("reply", p.reply_id)}>

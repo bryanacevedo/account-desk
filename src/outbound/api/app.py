@@ -24,7 +24,7 @@ import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 from .. import (  # noqa: F401
     alerts,
@@ -390,7 +390,8 @@ def me(u: dict = Depends(current_user)) -> dict:
             **views.badge_counts(cur, u),
             "approvals": db.val(cur, """select count(*) from messages m join enrollments e on e.id = m.enrollment_id
                                         join account_plays ap on ap.id = e.account_play_id
-                                        where m.status in ('awaiting_approval','failed_gate') and m.channel = 'email' and (ap.owner_id = %s or %s)""",
+                                        where m.status in ('awaiting_approval','failed_gate') and m.channel = 'email' and (ap.owner_id = %s or %s)
+                                        and not """ + views.UNREAD_REPLY.format(person="e.person_id"),
                                 u["id"], u["role"] != "sdr"),
             # Open play suggestions wait on a manager or GTM; an SDR never decides them.
             "suggested": suggestions.open_count(cur) if u["role"] != "sdr" else 0,
@@ -930,7 +931,7 @@ def meeting_status(meeting_id: int, body: MeetingStatus, u: dict = Depends(write
 
 
 class MeetingMove(BaseModel):
-    starts_at: datetime
+    starts_at: AwareDatetime
 
 
 @app.post("/api/meetings/{meeting_id}/reschedule")
