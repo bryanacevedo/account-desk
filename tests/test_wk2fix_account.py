@@ -562,6 +562,10 @@ def test_a_lapsed_proposal_can_be_skipped_with_a_reason(world, client, monkeypat
     def go(cur):
         ap = db.one(cur, """select ap.id, ap.owner_id from account_plays ap join plays p on p.id = ap.play_id
                             where ap.state = 'proposed' and ap.arm = 'treated' and p.status = 'live' order by ap.id limit 1""")
+        if ap is None:  # earlier tests may have decided every proposal in the shared world (CI runs them in another order)
+            ap = db.one(cur, """select ap.id, ap.owner_id from account_plays ap join plays p on p.id = ap.play_id
+                                where ap.arm = 'treated' and p.status = 'live' and ap.owner_id is not null order by ap.id limit 1""")
+            db.run(cur, "update account_plays set state = 'proposed', decided_at = null, decided_by = null, close_reason = null where id = %s", ap["id"])
         plays.set_state(cur, ap["id"], "expired", reason="expired", cooldown_key="expired")
         sdr = db.one(cur, "select * from users where id = %s", ap["owner_id"])
         assert ap["id"] in [x["id"] for x in views.today(cur, sdr)["expired"]]
