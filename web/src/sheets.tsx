@@ -121,6 +121,8 @@ export const LABEL: Record<string, [Glyph, string]> = {
   left_company: ["off", "Left the company"], out_of_office: ["none", "Out of office"], unsubscribe: ["stop", "Unsubscribed"],
   wrong_person: ["off", "Wrong person"], bounce: ["stop", "Bounced"], auto_reply: ["none", "Automatic reply"], other: ["wait", "Unclear"],
 };
+// A reply the desk has not read yet has no label: say so instead of "Unclear".
+export const labelOf = (label: string | null | undefined): [Glyph, string] => (label ? LABEL[label] || LABEL.other : ["wait", "Not read yet"]);
 export const MSG: Record<string, [Glyph, string]> = {
   draft: ["none", "Draft"], failed_gate: ["stop", "Needs a rewrite"], awaiting_approval: ["wait", "To approve"],
   approved: ["half", "Approved"], rejected: ["off", "Rejected"], scheduled: ["half", "Scheduled"], sending: ["go", "Sending"],
@@ -260,7 +262,7 @@ export function PersonSheet({ id }: { id: number }) {
                   ) : <div className="cell-main"><span className="t">{TOUCH[h.t.kind] || cap(h.t.kind.replace(/_/g, " "))}</span><span className="s">{h.t.source === "person" ? "Logged by the SDR" : ""}</span></div>
                 ) : h.kind === "reply" ? (
                   <button className="cell-main link-row" onClick={() => openSheet("reply", h.r.id)}>
-                    <span className="t">Replied, {(LABEL[h.r.label] || LABEL.other)[1].toLowerCase()}</span>
+                    <span className="t">Replied, {labelOf(h.r.label)[1].toLowerCase()}</span>
                     <span className="s" style={{ whiteSpace: "normal" }}>{h.r.cleaned}</span>
                   </button>
                 ) : (
@@ -1042,7 +1044,7 @@ function AccountOutreach({ d }: { d: any }) {
             {d.replies.map((r: any) => (
               <button key={r.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto auto" }} onClick={() => openSheet("reply", r.id)}>
                 <div className="cell-main"><span className="t">{r.full_name || "Unknown sender"}</span><span className="s">{r.cleaned}</span></div>
-                <Status kind={(LABEL[r.label] || LABEL.other)[0]}>{(LABEL[r.label] || LABEL.other)[1]}</Status>
+                <Status kind={labelOf(r.label)[0]}>{labelOf(r.label)[1]}</Status>
                 <span className="mute small num" style={{ minWidth: 56 }}>{day(r.received_at)}</span>
               </button>
             ))}
@@ -1403,12 +1405,12 @@ export function ReplySheet({ id }: { id: number }) {
   const [when, setWhen] = useState("");
   if (error) return <Frame crumb="Reply"><Failed error={error} retry={reload} /></Frame>;
   if (!r) return <Frame crumb="Reply"><Loading rows={8} /></Frame>;
-  const l = LABEL[r.label] || LABEL.other;
+  const l = labelOf(r.label);
   const ex = r.extracted || {};
   const open = !r.handled_at;
   const act = (body: any, msg: string) => run(() => api(`/api/replies/${id}/handle`, { method: "POST", body }), msg);
   const foot = open ? (
-    r.needs_review ? (
+    r.needs_review || !r.label ? (
       <>
         <select className="select" style={{ width: 220 }} value={label} onChange={(e) => setLabel(e.target.value)} aria-label="What the reply means">
           <option value="">What does it mean?</option>

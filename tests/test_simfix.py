@@ -139,7 +139,7 @@ def test_the_replies_badge_counts_what_the_default_replies_view_calls_needs_a_pe
     me = client.get("/api/me", headers=h).json()
     uid = int(h["X-Acting-As"])
     with db.tx() as cur:
-        mine = [r for r in views.replies_page(cur, view="mine", user_id=uid) if r["needs_review"] and not r["handled_at"]]
+        mine = [r for r in views.replies_page(cur, view="mine", user_id=uid) if (r["needs_review"] or r["label"] is None) and not r["handled_at"]]
     assert me["counts"]["replies"] == len(mine)
 
 
@@ -414,3 +414,62 @@ def test_the_do_not_contact_page_says_an_sdr_can_add():
     desk = web("pages/Desk.tsx")
     assert "To add or lift an entry, ask a manager" not in desk
     assert "ask a manager" in desk and "An SDR can add a person" in desk
+
+
+# ---------------------------------------------------------------- integrated week 2: unread replies, email-only list
+
+@pytest.fixture
+def unread(world):
+    """One reply the desk has not read yet (no label), put away afterwards."""
+    from datetime import datetime, timezone
+
+    from outbound import replies
+    with db.tx() as cur:
+        rid = replies.ingest(cur, from_addr="nobody@unread-case.example", subject="Re: hello", raw="Send me the details.",
+                             received_at=datetime(2026, 11, 1, 12, tzinfo=timezone.utc), provider_id="wk2fix-unread-1")
+    yield rid
+    with db.tx() as cur:
+        db.run(cur, "delete from tasks where reply_id = %s", rid)
+        db.run(cur, "delete from jobs where kind = 'classify_reply' and payload->>'reply_id' = %s", str(rid))
+        db.run(cur, "delete from touches where dedup_key = %s", f"reply:{rid}")
+        db.run(cur, "delete from replies where id = %s", rid)
+
+
+def test_a_person_can_label_a_reply_the_desk_has_not_read_and_the_classifier_leaves_it(client, unread):
+    assert "r.needs_review || !r.label ?" in web("sheets.tsx")
+    r = client.get(f"/api/replies/{unread}", headers=as_("manager")).json()
+    assert r["label"] is None
+    res = client.post(f"/api/replies/{unread}/handle", headers=as_("manager"), json={"outcome": "labelled", "label": "other"})
+    assert res.status_code == 200 and res.json()["label"] == "other"
+    from outbound import replies
+    with db.tx() as cur:
+        replies.classify_job(cur, {"reply_id": unread})
+        assert db.one(cur, "select label, classified_by from replies where id = %s", unread) == {"label": "other", "classified_by": "person"}
+
+
+def test_an_unread_reply_says_not_read_yet_not_unclear():
+    sheets = web("sheets.tsx")
+    assert '"Not read yet"' in sheets and "label ? LABEL[label] || LABEL.other" in sheets
+    for name in ("sheets.tsx", "pages/Work.tsx", "pages/Flow.tsx"):
+        assert "LABEL[r.label] || LABEL.other" not in web(name) and "LABEL[h.r.label]" not in web(name), name
+
+
+def test_unread_replies_count_as_needing_a_person_in_the_list_and_the_badge(client, unread):
+    h = as_("manager")
+    with db.tx() as cur:
+        user = db.one(cur, "select id, role from users where id = %s", int(h["X-Acting-As"]))
+        listed = [r["id"] for r in views.replies_page(cur, view="needs_person")]
+        badge = views.badge_counts(cur, user)["replies"]
+        open_n = db.val(cur, "select count(*) from replies r where (r.needs_review or r.label is null) and r.handled_at is null")
+    assert unread in listed
+    assert badge == open_n
+
+
+def test_the_account_emails_list_holds_email_messages_only(client, world):
+    with db.tx() as cur:
+        row = db.one(cur, """select ap.account_id, m.id from messages m join enrollments e on e.id = m.enrollment_id
+                             join account_plays ap on ap.id = e.account_play_id where m.channel <> 'email' order by m.id limit 1""")
+        if row is None:
+            pytest.skip("the world has no call or LinkedIn step")
+    d = client.get(f"/api/accounts/{row['account_id']}", headers=as_("manager")).json()
+    assert row["id"] not in [m["id"] for m in d["messages"]]

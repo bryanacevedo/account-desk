@@ -6,7 +6,7 @@ import {
   Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, day, n0, navigate, pct, usePath, useData,
   SourceLink, withParam, useBusy,
 } from "../lib";
-import { LABEL, STAGE, openSheet } from "../sheets";
+import { labelOf, STAGE, openSheet } from "../sheets";
 import { Hint, Sample, isSample } from "../demo";
 
 // ---------------------------------------------------------------- Approvals
@@ -59,7 +59,7 @@ export function Replies() {
         <div className="ledger">
           <div className="row head" style={{ gridTemplateColumns: R_COLS }}><span /><span>From</span><span>What they said</span><span>Read as</span><span className="num">Received</span></div>
           {data.replies.map((r: any) => {
-            const l = LABEL[r.label] || LABEL.other;
+            const l = labelOf(r.label);
             return (
               <button key={r.id} className="row" style={{ gridTemplateColumns: R_COLS }} onClick={() => openSheet("reply", r.id)}>
                 <Avatar name={r.full_name || r.company || "?"} photo={r.photo_url} />

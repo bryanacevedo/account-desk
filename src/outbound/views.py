@@ -204,7 +204,7 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
     messages = db.all(cur, """select m.id, m.step_index, email_no(m.enrollment_id, m.step_index) as email_no, m.subject, m.status, m.sent_at, m.scheduled_for, pe.full_name, pe.photo_url,
                                      m.approval_mode
                               from messages m join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
-                              join people pe on pe.id = e.person_id where ap.account_id = %s
+                              join people pe on pe.id = e.person_id where ap.account_id = %s and m.channel = 'email'
                               order by coalesce(m.sent_at, m.scheduled_for, m.created_at) desc limit 60""", account_id)
     reps = db.all(cur, """select r.id, r.received_at, r.label, r.cleaned, r.hot, pe.full_name, pe.photo_url from replies r
                           left join people pe on pe.id = r.person_id where r.account_id = %s order by r.received_at desc""",
@@ -616,7 +616,7 @@ def replies_page(cur, *, view: str, user_id: int | None = None, own_only: bool =
     mine = f"""coalesce((select ap.owner_id from account_plays ap where ap.account_id = r.account_id
                          order by ap.proposed_at desc limit 1), (select owner_id from accounts where id = r.account_id))
                          = {int(user_id or 0)}"""
-    where = {"needs_person": "r.needs_review and r.handled_at is null" + (f" and {mine}" if own_only else ""),
+    where = {"needs_person": "(r.needs_review or r.label is null) and r.handled_at is null" + (f" and {mine}" if own_only else ""),
              "hot": "r.hot", "all": "true", "mine": mine}.get(view, "true")
     return db.all(cur, f"""select r.id, r.received_at, r.label, r.confidence, r.classified_by, r.cleaned, r.hot,
                                   r.needs_review, r.review_reason, r.handled_at, r.outcome, r.sla_due_at, r.same_person,
@@ -840,6 +840,6 @@ def badge_counts(cur, user: dict) -> dict:
                   and due_at <= app_now() + interval '1 day'), 50)""", uid, not sdr, uid, not sdr, uid)
     mine = """coalesce((select ap.owner_id from account_plays ap where ap.account_id = r.account_id
                         order by ap.proposed_at desc limit 1), (select owner_id from accounts where id = r.account_id)) = %s"""
-    replies_n = db.val(cur, "select count(*) from replies r where r.needs_review and r.handled_at is null"
+    replies_n = db.val(cur, "select count(*) from replies r where (r.needs_review or r.label is null) and r.handled_at is null"
                             + (f" and {mine}" if sdr else ""), *([uid] if sdr else []))
     return {"today": today_n, "replies": replies_n}

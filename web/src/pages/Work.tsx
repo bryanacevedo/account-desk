@@ -7,7 +7,7 @@ import {
   Empty, Failed, Fig, Loading, Section, Seg, Status, ago, ahead, cap, day, dayTime, n0, navigate, useBusy, useData,
   weekday, withParam, usePath,
 } from "../lib";
-import { LABEL, MSG, PLAY_STATE, openSheet } from "../sheets";
+import { labelOf, MSG, PLAY_STATE, openSheet } from "../sheets";
 import { Hint, Welcome, isSample } from "../demo";
 
 const ROLE_WORD: Record<string, string> = { sdr: "SDR", manager: "Manager", gtm: "GTM" };
@@ -31,7 +31,7 @@ export function Today() {
   )).then(() => { setSkipping(null); setReason(""); setLeaving(null); }); };
   const old = (r: any) => new Date(data.now).getTime() - new Date(r.received_at).getTime() > OLD_REPLY_DAYS * 86_400_000;
   const replyRow = (r: any) => {
-    const l = LABEL[r.label] || LABEL.other;
+    const l = labelOf(r.label);
     const late = r.sla_due_at && new Date(r.sla_due_at).getTime() < new Date(data.now).getTime();
     return (
       <button key={r.id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1.2fr) minmax(0,2fr) 150px 92px" }} onClick={() => openSheet("reply", r.id)}>

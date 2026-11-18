@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-18. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 105. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-18. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 106. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
@@ -19,6 +19,8 @@ Checked by running them (the date is on each line):
 ## Integrated week 2, a job keeps the trace of the request that queued it (2026-11-18, Backlog bl_148, decision 105, migration 0042)
 
 Every call to CRM Desk runs in a background job, and the job lost the trace of the request that queued it, so a person's action and the CRM call showed as two traces. `jobs.trace_parent` (nullable text) now holds the W3C traceparent of the span that queued the job (`telemetry.current_traceparent()`); `run_ready` runs the handler inside `telemetry.job_span(kind, trace_parent)`, a span "job <kind>" (consumer) in that trace. Tracing off (the default) changes nothing: the column stays NULL and `job_span` does nothing. A dedupe no-op keeps the first job's value; retries keep the column. Tests: `tests/test_job_trace.py` (off stores NULL and runs as before; with an in-memory exporter the job span has the enqueuing span's trace id and an HTTPX call in the handler carries it). Not checked against a live collector (OpenObserve).
+
+Display fixes from the same week (branch wk2fix/outbound-desk, decision 106, not pushed): a reply the desk has not read yet says "Not read yet" (not "Unclear") and can be labelled by a person in the reply sheet; the Replies "Needs a person" list and the sidebar badge both count unread replies with the flagged ones; the account's Emails list shows email messages only. Tests: four added to `tests/test_simfix.py`. Not checked in a browser.
 
 ## Simulation fixes (2026-11-17, branch simfix/outbound-desk, not pushed)
 
