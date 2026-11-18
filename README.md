@@ -73,7 +73,7 @@ flowchart LR
   RS -.->|SDRs and GTM adjust weights and plays| SC
 ```
 
-Python 3.13, FastAPI and Postgres 18 with plain SQL in numbered migrations (0001 to 0041). A job queue in Postgres claimed with `FOR UPDATE SKIP LOCKED`. React and Vite for the web app, served by the API. Model calls go through one function with structured outputs, record and replay, and a deterministic stand-in for the demo. The full behaviour is in [docs/SPEC.md](docs/SPEC.md) (section 22 holds every review decision and wins where they differ); decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).
+Python 3.13, FastAPI and Postgres 18 with plain SQL in numbered migrations (0001 to 0042). A job queue in Postgres claimed with `FOR UPDATE SKIP LOCKED`. React and Vite for the web app, served by the API. Model calls go through one function with structured outputs, record and replay, and a deterministic stand-in for the demo. The full behaviour is in [docs/SPEC.md](docs/SPEC.md) (section 22 holds every review decision and wins where they differ); decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Autonomy is earned per play
 
@@ -264,7 +264,7 @@ Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts 
 | `DESK_READ_KEY` | Turns on the read of campaign play counts that Events Desk may ask for (decision 94). Unset, the route answers 404 |
 | `EVENTS_DESK_URL`, `EVENTS_DESK_READ_KEY` | Where and with which key this desk reads Events Desk, under `INTEGRATED_WITH=events_desk` |
 | `SIM_DB_GUARD`, `SIM_ALLOWED_HOSTS`, `SIM_DB_PREFIX` | With `SIM_DB_GUARD=1`, refuse any database whose host is not listed or whose name lacks the prefix (default `sim_`); also refuses a `PGHOST`, `PGHOSTADDR`, `PGDATABASE`, `PGSERVICE`, `PGSERVICEFILE` or `PGOPTIONS` override |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional tracing, to a collector on this machine only; any other address is refused (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` too). Needs `uv sync --extra otel` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional tracing, to a collector on this machine only; any other address is refused (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` too). Needs `uv sync --extra otel`. A queued job keeps the request's `traceparent` (`jobs.trace_parent`), so its CRM calls join the request's trace |
 | `PGPORT_LOCAL` | The port of the private Postgres that `scripts/pg.sh` starts (default `54329`) |
 | `TEST_DATABASE_URL`, `TEST_DB_PREFIX` | For the tests: the Postgres server they create their own databases on, and the prefix of those names (default `outbound_`) |
 | `CRM_DESK_ADMIN_KEY` | For the CRM Desk half of the contract tests only |

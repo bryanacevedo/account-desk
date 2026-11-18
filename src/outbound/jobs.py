@@ -14,7 +14,7 @@ import traceback
 from datetime import timedelta
 from typing import Any, Callable
 
-from . import db
+from . import db, telemetry
 from .db import J
 
 log = logging.getLogger("outbound.jobs")
@@ -96,15 +96,18 @@ def enqueue(cur, kind: str, payload: dict | None = None, *, delay: timedelta | N
     """Queue a job. With a dedupe_key, a second enqueue while the first is queued or running is a no-op.
 
     With a `request_ref` the job is a person's request ('account_play:12'): it runs in the 'request' lane and its
-    progress is shown. A job queued by a request's job inherits the request, so the whole chain shows and drains."""
+    progress is shown. A job queued by a request's job inherits the request, so the whole chain shows and drains.
+
+    The job keeps the W3C traceparent of the span that queued it (NULL with tracing off), so its run joins that trace.
+    A dedupe no-op inserts nothing, so the first job keeps its own value."""
     if request_ref is None and (inherited := _request.get()) is not None:
         request_ref, requested_by = inherited[0], requested_by or inherited[1]
     row = db.one(cur, """
-        insert into jobs (kind, payload, run_at, dedupe_key, max_attempts, lane, request_ref, requested_by)
-        values (%s, %s, coalesce(%s, app_now() + coalesce(%s, interval '0')), %s, %s, %s, %s, %s)
+        insert into jobs (kind, payload, run_at, dedupe_key, max_attempts, lane, request_ref, requested_by, trace_parent)
+        values (%s, %s, coalesce(%s, app_now() + coalesce(%s, interval '0')), %s, %s, %s, %s, %s, %s)
         on conflict (dedupe_key) where dedupe_key is not null and status in ('queued', 'running') do nothing
         returning id""", kind, J(payload or {}), run_at, delay, dedupe_key, max_attempts,
-                 "request" if request_ref else "system", request_ref, requested_by)
+                 "request" if request_ref else "system", request_ref, requested_by, telemetry.current_traceparent())
     return row["id"] if row else None
 
 
@@ -162,7 +165,8 @@ def run_ready(limit: int = 200, *, lane: str | None = None) -> int:
                         # Every charge this job makes is tagged with the play it works for, so the play's cap holds.
                         token = _request.set((job["request_ref"], job["requested_by"]) if job["request_ref"] else None)
                         try:
-                            with spend.for_play(_play_of(cur, job["payload"])):
+                            with spend.for_play(_play_of(cur, job["payload"])), \
+                                    telemetry.job_span(job["kind"], job.get("trace_parent")):
                                 fn(cur, job["payload"])
                         finally:
                             _request.reset(token)

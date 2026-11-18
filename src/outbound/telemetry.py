@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+from contextlib import contextmanager
 from urllib.parse import urlsplit
 
 LOCAL = {"127.0.0.1", "localhost", "::1"}
@@ -45,3 +46,39 @@ def setup(service: str, app=None) -> bool:
     if app is not None:
         FastAPIInstrumentor.instrument_app(app, excluded_urls="api/health")
     return True
+
+
+def current_traceparent() -> str | None:
+    """The W3C `traceparent` of the span recording now, or None (tracing off, no recording span, or anything goes wrong).
+    A job stores it when it is queued, so the job can run later under the trace of the request that queued it."""
+    if not _on:
+        return None
+    try:
+        from opentelemetry import trace
+        from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+        if not trace.get_current_span().is_recording():
+            return None
+        carrier: dict[str, str] = {}
+        TraceContextTextMapPropagator().inject(carrier)
+        return carrier.get("traceparent")
+    except Exception:
+        return None
+
+
+@contextmanager
+def job_span(kind: str, trace_parent: str | None):
+    """Run a job's handler inside a span "job <kind>" (CONSUMER) whose parent is the stored `traceparent`, so the job
+    and the request that queued it are one trace. A no-op when tracing is off (and when the packages are missing)."""
+    if not _on:
+        yield
+        return
+    try:
+        from opentelemetry import trace
+        from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+        parent = TraceContextTextMapPropagator().extract({"traceparent": trace_parent}) if trace_parent else None
+        cm = trace.get_tracer("jobs").start_as_current_span(f"job {kind}", context=parent, kind=trace.SpanKind.CONSUMER)
+    except Exception:
+        yield
+        return
+    with cm:
+        yield
