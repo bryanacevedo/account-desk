@@ -4,10 +4,10 @@ import { api } from "../api";
 import { Avatar, Logo } from "../marks";
 import { SignalLabel } from "../signalIcons";
 import {
-  Empty, Failed, Fig, Loading, Section, Seg, Status, ago, ahead, cap, day, dayTime, n0, navigate, useBusy, useData,
-  weekday, withParam, usePath,
+  Empty, Failed, Fig, Loading, Section, Seg, Status, ago, ahead, cap, day, n0, navigate, useBusy, useData,
+  weekday, withParam, usePath, dayTimeZ,
 } from "../lib";
-import { labelOf, MSG, PLAY_STATE, openSheet } from "../sheets";
+import { labelOf, MSG, PLAY_STATE, ReadFirst, openSheet } from "../sheets";
 import { Hint, Welcome, isSample } from "../demo";
 
 const ROLE_WORD: Record<string, string> = { sdr: "SDR", manager: "Manager", gtm: "GTM" };
@@ -22,6 +22,7 @@ export function Today() {
   const [skipping, setSkipping] = useState<number | null>(null);
   const [reason, setReason] = useState("");
   const [leaving, setLeaving] = useState<number | null>(null);
+  const [skippingLapsed, setSkippingLapsed] = useState<number | null>(null);
   if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
   if (!data) return <div className="page"><div className="head"><h1>Today</h1></div><Loading /></div>;
   // A decided row slides away before the list refreshes, so the change is seen, not just noticed.
@@ -45,6 +46,8 @@ export function Today() {
       </button>
     );
   };
+  const skipLapsed = (id: number) => run(() => api(`/api/account-plays/${id}/skip-lapsed`, { method: "POST", body: { reason } }), "Skipped.")
+    .then(() => { setSkippingLapsed(null); setReason(""); });
   const again = (id: number) => run(() => api(`/api/account-plays/${id}/propose-again`, { method: "POST" }), "Proposed again. It is in the list above.");
   const freshReplies = data.replies.filter((r: any) => !old(r));
   const oldReplies = data.replies.filter(old);
@@ -79,6 +82,8 @@ export function Today() {
         ) : <Empty title="No replies waiting">Example: a reply that says &ldquo;Yes, send times for Thursday&rdquo; appears here with the hours left to answer it.</Empty>}
       </Section>
 
+      <ReadFirst rows={data.read_first || []} title="They replied" />
+
       <Section icon={Lightbulb} title={me?.user.role === "sdr" ? "Plays proposed to you" : "Plays proposed to the team"}>
         <Hint>A play is a ready-made outreach plan for one account, started by one signal (something the desk saw, such as a hiring post or a pricing visit). Accept starts it: the desk researches the account and drafts emails for you to approve. Skip needs a reason. Priority is how strongly the account looks right now, out of 100.</Hint>
         {data.proposals.length ? (
@@ -110,7 +115,7 @@ export function Today() {
         ) : <Empty title="Nothing to decide">Example: &ldquo;Pricing page visit at Northwind, priority 71&rdquo; appears here with Accept and Skip.</Empty>}
         {data.expired?.length ? (
           <>
-            <p className="old-note">Lapsed: nobody decided in time. Each one can be proposed again; its account is not offered again by the desk until a person does.</p>
+            <p className="old-note">Lapsed: nobody decided in time. The account is on hold until its date; proposing it again lifts the hold. Skip dismisses it, with a reason.</p>
             <div className="ledger">
               {data.expired.map((p: any) => (
                 <div key={p.id} className="row again-row" style={{ gridTemplateColumns: "28px minmax(0,1.4fr) minmax(0,1.6fr) auto" }}>
@@ -119,9 +124,20 @@ export function Today() {
                     <span className="t">{p.play}</span><span className="s">at {p.name}, expired {ago(p.closed_at)}</span>
                   </button>
                   <span className="s mute hide-sm">Nobody decided in {p.limit_days} business {p.limit_days === 1 ? "day" : "days"}.</span>
-                  {p.can_propose_again
-                    ? <button className="btn line sm" disabled={busy} onClick={() => again(p.id)}>Propose again</button>
-                    : <span className="s mute" title={p.why.join(" ")}>Cannot be proposed again: {p.why[0]}</span>}
+                  {skippingLapsed === p.id ? (
+                    <div className="actions">
+                      <input className="input" style={{ width: 200 }} placeholder="Why skip?" value={reason} autoFocus onChange={(e) => setReason(e.target.value)} aria-label="Reason for skipping" />
+                      <button className="btn line sm" disabled={busy || reason.trim().length < 3} onClick={() => skipLapsed(p.id)}>Skip</button>
+                      <button className="btn quiet sm" onClick={() => setSkippingLapsed(null)}>Cancel</button>
+                    </div>
+                  ) : (
+                    <div className="actions">
+                      <button className="btn quiet sm" onClick={() => { setSkippingLapsed(p.id); setReason(""); }}>Skip</button>
+                      {p.can_propose_again
+                        ? <button className="btn line sm" disabled={busy} onClick={() => again(p.id)}>Propose again</button>
+                        : <span className="s mute" title={p.why.join(" ")}>Cannot be proposed again: {p.why[0]}</span>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -157,7 +173,7 @@ export function Today() {
           <div className="ledger">
             {data.meetings.map((m: any) => (
               <button key={m.id} className="row" style={{ gridTemplateColumns: "120px minmax(0,1fr) auto" }} onClick={() => openSheet("meeting", m.id)}>
-                <span className="mute">{dayTime(m.starts_at)}</span>
+                <span className="mute">{dayTimeZ(m.starts_at)}</span>
                 <div className="cell-main"><span className="t">{m.company}</span><span className="s">{m.full_name}</span></div>
                 <Status kind={m.status === "held" ? "ok" : "go"}>{m.status === "held" ? "Meeting held" : cap(m.status)}</Status>
               </button>

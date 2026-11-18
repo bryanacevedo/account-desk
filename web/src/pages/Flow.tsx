@@ -6,7 +6,7 @@ import {
   Bar, Empty, Failed, Fig, Loading, Section, Seg, Status, ago, cap, day, n0, navigate, pct, usePath, useData,
   SourceLink, withParam, useBusy,
 } from "../lib";
-import { labelOf, STAGE, openSheet } from "../sheets";
+import { labelOf, ReadFirst, STAGE, openSheet } from "../sheets";
 import { Hint, Sample, isSample } from "../demo";
 
 // ---------------------------------------------------------------- Approvals
@@ -37,6 +37,7 @@ export function Approvals() {
       <Hint>Every first email waits here until a person approves it. Open one to read the facts it cites, edit it and approve it. Nothing is sent without that click.</Hint>
       <Section title="Ready to approve">{ready.length ? list(ready) : <Empty title="Nothing waiting">Example: &ldquo;Quick question about your 2027 pricing&rdquo; to a CFO, with the 3 facts it uses.</Empty>}</Section>
       {failed.length ? <Section title="Needs a rewrite">{list(failed)}</Section> : null}
+      <ReadFirst rows={(data.read_first || []).filter((r: any) => r.drafts_held > 0)} title="They replied" />
     </div>
   );
 }

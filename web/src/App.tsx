@@ -86,7 +86,7 @@ export function App() {
         {nav}
         <div className="grow" />
         <div className="side-foot">
-          {me?.simulated ? <Clock me={me} /> : null}
+          {/* The picker comes first: below the clock controls it fell off the bottom of a 768 px screen. */}
           {me && me.users.length ? (
             <div className="acting">
               <label htmlFor="acting" title="Pick who you are in this desk. An SDR sees their own accounts; a manager and GTM see everyone's and the settings.">Acting as</label>
@@ -95,6 +95,7 @@ export function App() {
               </select>
             </div>
           ) : null}
+          {me?.simulated ? <Clock me={me} /> : null}
         </div>
       </aside>
       <main className="main" id="main" tabIndex={-1}>
@@ -147,7 +148,7 @@ function More({ routes, me }: { routes: typeof ROUTES; me: Me | null }) {
 
 function Clock({ me }: { me: Me }) {
   const [busy, run] = useBusy();
-  const when = new Date(me.now).toLocaleString("en-US", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const when = new Date(me.now).toLocaleString("en-US", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
   return (
     <div className="clock">
       <span className="when">{when}</span>

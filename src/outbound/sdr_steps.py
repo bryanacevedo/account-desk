@@ -16,8 +16,7 @@ import re
 
 import psycopg
 
-from . import audit, copy_gate, db, gate, replies
-from .db import J
+from . import audit, copy_gate, crmq, db, gate, replies
 
 LINKEDIN_OUTCOMES = {
     "linkedin_connect": {"sent": "Connection request sent", "already_connected": "Already connected",
@@ -108,6 +107,8 @@ def complete(cur, task_id: int, *, user: dict, outcome: str, text: str | None = 
         raise ValueError("No open task with that id.")
     if user["role"] == "sdr" and t["owner_id"] not in (None, user["id"]):
         raise ValueError("This task belongs to another SDR.")
+    if t["kind"] not in ("reply", "review_reply") and replies.unread_reply(cur, t["person_id"]):
+        raise ValueError(replies.READ_FIRST + ".")      # decision 108: their reply is read before anything else is done
     if t["kind"] in LINKEDIN_OUTCOMES:
         allowed = LINKEDIN_OUTCOMES[t["kind"]]
     elif t["kind"] == "call":
@@ -168,8 +169,8 @@ def complete(cur, task_id: int, *, user: dict, outcome: str, text: str | None = 
     db.run(cur, "update tasks set status = %s, done_at = app_now(), note = coalesce(%s, note, %s) where id = %s",
            "skipped" if outcome == "skipped" else "done", note, label, task_id)
     if t["kind"] in ("linkedin_connect", "linkedin_message", "call"):
-        db.run(cur, "insert into crm_outbox (kind, payload, idempotency_key) values ('activity', %s, %s) on conflict do nothing",
-               J({"task_id": task_id, "kind": t["kind"], "outcome": outcome, "person_id": t["person_id"]}), f"task:{task_id}")
+        crmq.enqueue(cur, "activity", {"task_id": task_id, "kind": t["kind"], "outcome": outcome, "person_id": t["person_id"]},
+                     f"task:{task_id}")
     audit.log(cur, "person", "task_" + outcome, "task", task_id, {"kind": t["kind"]}, actor_id=user["id"])
     return {"ok": True, "outcome": label}
 

@@ -2,10 +2,23 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # suggestions and themes are unused here; importing them registers their jobs wherever learn_from can queue one.
-from . import adapters, alerts, audit, db, integration, jobs, plays, scoring, suggestions, themes  # noqa: F401
+from . import (  # noqa: F401
+    adapters,
+    alerts,
+    audit,
+    crmq,
+    db,
+    integration,
+    jobs,
+    plays,
+    scoring,
+    suggestions,
+    telemetry,
+    themes,
+)
 from .db import J
 
 log = logging.getLogger("outbound.pipeline")
@@ -36,15 +49,40 @@ def book_meeting(cur, *, account_id: int, person_id: int | None, starts_at: date
     db.run(cur, """insert into touches (account_id, person_id, account_play_id, channel, direction, kind, at, source, dedup_key)
                    values (%s,%s,%s,'meeting','in','meeting_booked',app_now(),%s,%s) on conflict do nothing""",
            account_id, person_id, ap["id"] if ap else None, source, f"meeting:{mid}")
-    db.run(cur, "insert into crm_outbox (kind, payload, idempotency_key) values ('meeting', %s, %s) on conflict do nothing",
-           J({"meeting_id": mid, "account_id": account_id, "person_id": person_id, "starts_at": starts_at.isoformat(),
-              "source": source}),
-           f"meeting:{mid}")
+    crmq.enqueue(cur, "meeting", {"meeting_id": mid, "account_id": account_id, "person_id": person_id,
+                                  "starts_at": starts_at.isoformat(), "source": source}, f"meeting:{mid}")
     audit.log(cur, "desk", "meeting_booked", "meeting", mid, {"source": source})
     return mid
 
 
 MEETING_OUTCOMES = ("held", "no_show", "cancelled")
+
+
+def reschedule_meeting(cur, meeting_id: int, starts_at: datetime, user_id: int) -> None:
+    """Move a booked meeting that has not started to another time (decision 112). The CRM keeps the booking it was given
+    and is told of the move as a note on the contact. Raises ValueError with the reason when it cannot be moved."""
+    m = db.one(cur, "select * from meetings where id = %s for update", meeting_id)
+    if m is None:
+        raise ValueError("No such meeting.")
+    now = db.val(cur, "select app_now()")
+    if m["status"] != "booked" or m["starts_at"] <= now:
+        raise ValueError("Only a meeting that has not started yet can be moved.")
+    if starts_at <= now:
+        raise ValueError("Pick a time that has not passed.")
+    if starts_at == m["starts_at"]:
+        return
+    db.run(cur, "update meetings set starts_at = %s where id = %s", starts_at, meeting_id)
+    who = db.val(cur, "select name from users where id = %s", user_id)
+    if m["person_id"]:
+        fmt = "%-d %b %Y, %H:%M UTC"
+        old_utc, new_utc = m["starts_at"].astimezone(timezone.utc), starts_at.astimezone(timezone.utc)
+        crmq.enqueue(cur, "meeting_note",
+                     {"meeting_id": meeting_id, "person_id": m["person_id"], "key": new_utc.strftime("%Y%m%dT%H%M"),
+                      "text": f"The meeting moved from {old_utc.strftime(fmt)} to {new_utc.strftime(fmt)}"
+                              + (f", by {who}." if who else ".")},
+                     f"meeting_note:{meeting_id}:{new_utc.strftime('%Y%m%dT%H%M')}")
+    audit.log(cur, "person", "meeting_moved", "meeting", meeting_id,
+              {"from": m["starts_at"].isoformat(), "to": starts_at.isoformat()}, actor_id=user_id)
 
 
 def set_meeting_status(cur, meeting_id: int, status: str, user_id: int | None = None) -> None:
@@ -62,8 +100,8 @@ def set_meeting_status(cur, meeting_id: int, status: str, user_id: int | None = 
                            values (%s,%s,'call','Rebook the meeting',app_now(),%s)""", ap["id"], m["person_id"], ap["owner_id"])
     if status in MEETING_OUTCOMES:
         # The CRM learns how the meeting this desk booked turned out. The row waits for the booking to reach the CRM first.
-        db.run(cur, "insert into crm_outbox (kind, payload, idempotency_key) values ('meeting_outcome', %s, %s) on conflict do nothing",
-               J({"meeting_id": meeting_id, "person_id": m["person_id"], "status": status}), f"meeting_outcome:{meeting_id}:{status}")
+        crmq.enqueue(cur, "meeting_outcome", {"meeting_id": meeting_id, "person_id": m["person_id"], "status": status},
+                     f"meeting_outcome:{meeting_id}:{status}")
     audit.log(cur, "person" if user_id else "desk", f"meeting_{status}", "meeting", meeting_id, {}, actor_id=user_id)
 
 
@@ -173,7 +211,7 @@ def opportunity_closed(cur, crm_id: str, won: bool, closed_at: datetime, loss_re
 
 # Kinds added after the three-method CRM contract. A CRM that does not know them is not an error: the row is finished
 # with a note, so a stub or a Salesforce-shaped adapter that only has today's kinds runs the whole flow.
-OPTIONAL_KINDS = ("contact", "meeting_outcome")
+OPTIONAL_KINDS = ("contact", "meeting_outcome", "task_close", "reply_in", "meeting_note")
 
 
 def _push(cur, crm, item: dict) -> str:
@@ -194,7 +232,8 @@ def crm_push(cur, payload: dict) -> None:
                                order by id limit 100 for update skip locked"""):
         try:
             with cur.connection.transaction():
-                ref = _push(cur, adapters.get().crm, item)
+                with telemetry.linked_span(f"crm push {item['kind']}", item.get("trace_parent")):
+                    ref = _push(cur, adapters.get().crm, item)
                 pid = item["payload"].get("person_id")
                 if str(ref).startswith("refused:erased") and pid and db.val(cur, "select exists (select 1 from people where id = %s)", pid):
                     from . import privacy  # the CRM says this person was erased there: erase them here too
@@ -646,11 +685,34 @@ def ingest_members(cur, members, events: dict | None = None) -> int:
             evidence["summary"] = f"Someone at the company is a person we want to meet at {where or what}."
             if event:
                 evidence["event"] = event
-        raws.append({"type": kind, "external_id": f"member:{m.campaign_ref}:{_who(m)}:{m.status}", "observed_at": m.updated_at,
+        raws.append({"type": kind, "external_id": f"member:{m.campaign_ref}:{_who(m)}:{m.status}", "observed_at": _happened_at(m),
                      "account_id": account_id, "strength": strength, "campaign_ref": m.campaign_ref, "evidence": evidence,
                      **({"person": {"email": person["email"], "linkedin_url": person["linkedin_url"]}} if person else {})})
     refresh_event_evidence(cur, events)
     return signals.ingest(cur, "crm", raws)["matched"] if raws else 0
+
+
+AT_THE_EVENT = frozenset({"attended", "met", "no_show"})
+
+
+def _happened_at(m):
+    """When the thing the member row says happened. Attending, meeting us and missing an event happen at the event, so
+    the signal is dated no later than the event's last day (the campaign's end date, else its start), not when the CRM
+    happened to touch the row, which can be days later (decision 114). Registering and being targeted are dated by the
+    row, as before. A row touched before the event's last day keeps its own time."""
+    at = m.updated_at
+    day = getattr(m, "event_ends_on", None) or getattr(m, "event_starts_on", None)
+    if m.status not in AT_THE_EVENT or not day or not at:
+        return at
+    try:
+        end = datetime.fromisoformat(day[:10]).replace(tzinfo=timezone.utc) + timedelta(days=1)
+    except ValueError:
+        return at
+    from . import signals
+    stamp = signals.parse_observed(at)
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return end if stamp > end else at
 
 
 def refresh_event_evidence(cur, events: dict) -> None:
@@ -680,8 +742,7 @@ WAITS_BEFORE_ALERT = 3
 
 def enqueue_contact(cur, person_id: int) -> None:
     """Write the person to the CRM before their first activity, once per person (the outbox is read oldest first)."""
-    db.run(cur, "insert into crm_outbox (kind, payload, idempotency_key) values ('contact', %s, %s) on conflict do nothing",
-           J({"person_id": person_id}), f"contact:{person_id}")
+    crmq.enqueue(cur, "contact", {"person_id": person_id}, f"contact:{person_id}")
 
 
 def _barred(answer: dict, channel: str) -> str | None:
@@ -698,7 +759,7 @@ def _barred(answer: dict, channel: str) -> str | None:
     return None
 
 
-def crm_first_touch(cur, person_id: int, channel: str = "email") -> str:
+def crm_first_touch(cur, person_id: int, channel: str = "email", trace_parent: str | None = None) -> str:
     """Ask the CRM whether a person may be contacted, before the first email, call or LinkedIn step. Returns `ok`,
     `wait` (the CRM did not answer: nothing is sent on a guess, the caller tries again) or `stopped` (flagged or erased:
     the person is stopped, or erased here). Alone, or with a CRM that cannot answer, the desk's own suppression list
@@ -720,7 +781,9 @@ def crm_first_touch(cur, person_id: int, channel: str = "email") -> str:
         item = {"ref": str(person_id), "email": p["email"], "world_id": p["world_id"], "full_name": p["full_name"],
                 "domain": p["primary_domain"]}
         try:
-            answer = ask(cur, [item])[0]
+            # A span linked (not parented) to the approval's request, so the CRM call is found from the action behind it.
+            with telemetry.linked_span("crm contactability", trace_parent):
+                answer = ask(cur, [item])[0]
         except Exception as exc:
             waits = (row["waits"] if row else 0) + 1
             db.run(cur, """insert into crm_contact_checks (person_id, state, waits, last_error) values (%s, 'waiting', %s, %s)

@@ -278,11 +278,22 @@ def sim(task: str) -> Callable[[Callable[[dict], dict]], Callable[[dict], dict]]
     return wrap
 
 
-def system_blocks(task: str) -> list[dict]:
+PRODUCT_FACTS_NOTE = (
+    "The payload carries product_facts: statements RevOps keeps about our product, each true as written. For a reply you "
+    "may state a product fact only when one of them says it, in its own words and without changing a number or a name. "
+    "Anything about the product they do not cover is still confirmed later, never stated.")
+
+
+def system_blocks(task: str, payload: dict | None = None) -> list[dict]:
     """The task's system prompt as one block marked as a cache breakpoint. It is the stable part of the request, so it
     goes first; the per-request payload is the user message after it. A prefix under the model's minimum (512 tokens on
-    Opus 5.5) is silently not cached: the call still works and bills at the normal rate."""
-    return [{"type": "text", "text": TASKS[task]["system"], "cache_control": {"type": "ephemeral"}}]
+    Opus 5.5) is silently not cached: the call still works and bills at the normal rate. When the payload carries the
+    desk's product facts, a short fixed note follows the breakpoint to say what they are (decision 115); the facts
+    themselves stay in the user message."""
+    blocks = [{"type": "text", "text": TASKS[task]["system"], "cache_control": {"type": "ephemeral"}}]
+    if (payload or {}).get("product_facts"):
+        blocks.append({"type": "text", "text": PRODUCT_FACTS_NOTE})
+    return blocks
 
 
 def usage_of(resp) -> dict:
@@ -305,7 +316,7 @@ def _live(task: str, payload: dict) -> tuple[dict, dict]:  # pragma: no cover - 
     spec = TASKS[task]
     client = anthropic.Anthropic()
     resp = client.messages.parse(
-        model=spec["model"], max_tokens=spec["max_tokens"], system=system_blocks(task),
+        model=spec["model"], max_tokens=spec["max_tokens"], system=system_blocks(task, payload),
         messages=[{"role": "user", "content": json.dumps(payload, default=str)}],
         thinking={"type": "adaptive"}, output_config={"effort": spec["effort"]}, output_format=spec["schema"],
         extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"}, extra_body={"fallbacks": "default"},

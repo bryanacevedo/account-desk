@@ -31,6 +31,11 @@ def _when(v):
     return datetime.fromisoformat(v) if isinstance(v, str) else v
 
 
+def _day(v) -> str | None:
+    """A date the CRM sent, as YYYY-MM-DD, or None."""
+    return v[:10] if isinstance(v, str) and len(v) >= 10 and v[4] == "-" and v[7] == "-" else None
+
+
 # What the CRM's contactability answer calls a flag, in the words a person reads in the stop reason.
 FLAG_WORDS = {"do_not_contact": "marked do not contact", "do_not_email": "marked do not email",
               "do_not_call": "marked do not call", "unsubscribed": "unsubscribed", "bounced": "address bounced",
@@ -81,9 +86,11 @@ class CrmDeskCrm:
         email = (person or {}).get("email") or payload.get("email")
         if kind == "meeting_outcome":
             return self._meeting_outcome(cur, payload, idempotency_key)
+        if kind == "task_close":
+            return self._task_close(cur, payload, idempotency_key)
         if kind == "contact":
             return self._contact(cur, pid, idempotency_key)
-        if kind in ("activity", "meeting", "task") and pid and not db.val(
+        if kind in ("activity", "meeting", "task", "reply_in", "meeting_note") and pid and not db.val(
                 cur, "select 1 from crm_outbox where idempotency_key = %s", f"contact:{pid}"):
             # A first activity whose person was never queued for a contact write (an SDR step done by hand): the contact
             # goes first, here, and is noted as written so it is not written again.
@@ -120,6 +127,19 @@ class CrmDeskCrm:
                     # What an AE sees on the activity: a buyer who asked for a demo came to us; the rest an SDR booked.
                     **({"subject": "Demo request from the website"} if payload.get("source") == "inbound" else {}),
                     **({"account": f"domain:{domain}"} if domain else {}), "external_id": f"meeting:{payload['meeting_id']}"}
+        elif kind == "reply_in":
+            # What the person wrote, as an inbound email on their contact: the cleaned words, never the raw message with
+            # its quoted history. The reply row is gone when the person was erased.
+            r = db.one(cur, "select received_at, subject, cleaned from replies where id = %s", payload["reply_id"])
+            if r is None:
+                return "refused:erased"
+            body = {"type": "email", "direction": "in", "contact": email, "subject": r["subject"],
+                    "body": (r["cleaned"] or "")[:8000], "occurred_at": r["received_at"].isoformat(),
+                    "external_id": f"reply_in:{payload['reply_id']}"}
+        elif kind == "meeting_note":
+            # A meeting the desk booked was moved: the CRM keeps the booking as it was and gets the change as a note.
+            body = {"type": "note", "contact": email, "subject": "Meeting moved", "body": payload["text"],
+                    "external_id": f"meeting_note:{payload['meeting_id']}:{payload['key']}", **when}
         elif kind == "task":
             owner = db.val(cur, "select email from users where id = %s", payload.get("owner")) if payload.get("owner") else None
             body = {"title": "Hot reply" if payload.get("type") == "hot_reply" else "Follow up", "contact": email,
@@ -176,6 +196,23 @@ class CrmDeskCrm:
                 r = self._call("PUT", f"/contacts/by-email/{p['email']}", json=body, headers=headers)
         if r.status_code == 409 and r.json().get("code") == "erased":
             return "refused:erased"
+        return self._ok(r)["id"]
+
+    def _task_close(self, cur, payload: dict, idempotency_key: str) -> str:
+        """Close the "Hot reply" task this desk made for a reply, by the external id it was made under. It waits for the
+        task to reach the CRM first. A CRM Desk with no such route (404 or 405 from an older one), or with no open task
+        by that id (already closed there), is a finished write with a note: the desk works with the CRM it has."""
+        made = db.one(cur, "select status, payload->>'crm_ref' as ref from crm_outbox where idempotency_key = %s",
+                      f"task:reply:{payload['reply_id']}")
+        if made and made["status"] == "pending":
+            raise CrmDeskUnresolved(f"the task for reply {payload['reply_id']} has not reached the CRM yet")
+        if made and (made["ref"] or "").startswith("refused:"):
+            return made["ref"]
+        r = self._call("POST", "/tasks/close", headers={"idempotency-key": idempotency_key},
+                       json={"external_id": f"reply:{payload['reply_id']}", "outcome": payload.get("outcome", "done"),
+                             "note": payload.get("note") or ""})
+        if r.status_code in (404, 405):
+            return "skipped:no_open_task" if r.status_code == 404 else "skipped:unsupported"
         return self._ok(r)["id"]
 
     def _meeting_outcome(self, cur, payload: dict, idempotency_key: str) -> str:
@@ -247,19 +284,42 @@ class CrmDeskCrm:
                                   updated_at=_when(r["updated_at"]), change_id=r["id"]))
         return out
 
+    bulk_contacts = True     # POST /contacts/batch; set False once a CRM Desk answers 404 or 405 to it
+
+    def _contacts(self, ids: list[str]) -> dict[str, dict]:
+        """Each contact once, read in batches of 200 (POST /contacts/batch) instead of one request each. A CRM Desk
+        without the route (404 or 405), or an id the batch calls missing, is read one at a time as before."""
+        want = list(dict.fromkeys(ids))
+        got: dict[str, dict] = {}
+        if self.bulk_contacts:
+            for i in range(0, len(want), 200):
+                chunk = want[i:i + 200]
+                r = self._call("POST", "/contacts/batch", json={"ids": chunk})
+                if r.status_code in (404, 405):
+                    self.bulk_contacts = False
+                    break
+                j = self._ok(r)
+                for c in j.get("contacts") or []:
+                    got[str(c["id"])] = c
+        for cid in want:
+            if cid not in got:
+                got[cid] = self._ok(self._call("GET", f"/contacts/{cid}"))
+        return got
+
     def campaign_members_changed(self, cur, since: str | None, limit: int) -> list[CrmCampaignMember]:
         campaigns: dict[str, dict] = {}
-        contacts: dict[str, dict] = {}
+        rows = self._feed("campaign_members", since, limit)
+        contacts = self._contacts([r["contact_id"] for r in rows])
         out = []
-        for r in self._feed("campaign_members", since, limit):
+        for r in rows:
             c = campaigns.get(r["campaign_id"]) or campaigns.setdefault(
                 r["campaign_id"], self._ok(self._call("GET", f"/campaigns/{r['campaign_id']}")))
-            k = contacts.get(r["contact_id"]) or contacts.setdefault(
-                r["contact_id"], self._ok(self._call("GET", f"/contacts/{r['contact_id']}")))
+            k = contacts[r["contact_id"]]
             out.append(CrmCampaignMember(campaign_ref=r["campaign_id"], campaign_name=c.get("name") or "", campaign_type=c.get("type") or "other",
                                          event_name=c.get("name"), status=r["status"], contact_email=(r.get("contact_email") or k.get("email") or "").lower() or None,
                                          contact_crm_id=r["contact_id"], account_domain=k.get("account_domain"),
-                                         updated_at=_when(r["updated_at"]), change_id=r["id"]))
+                                         updated_at=_when(r["updated_at"]), change_id=r["id"],
+                                         event_starts_on=_day(c.get("start_date")), event_ends_on=_day(c.get("end_date"))))
         return out
 
     def contactability(self, cur, items: list[dict]) -> list[dict]:

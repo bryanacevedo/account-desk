@@ -530,7 +530,8 @@ def check_reply_text(reply_id: int, body: ReplyText, u: dict = Depends(current_u
     from ..copy_gate import check_suggestion
     with db.tx() as cur:
         r = _own_reply(cur, reply_id, u)
-    return {"problems": [x["message"] for x in check_suggestion(body.body, r["cleaned"])]}
+        facts = replies.product_facts(cur)
+    return {"problems": [x["message"] for x in check_suggestion(body.body, r["cleaned"], facts)]}
 
 
 @app.post("/api/replies/{reply_id}/refine")
@@ -577,7 +578,7 @@ def deliverability(u: dict = Depends(current_user)) -> dict:
 @app.get("/api/results")
 def results(u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
-        return views.results(cur, money=money(u))
+        return views.results(cur, money=money(u), user_id=u["id"])
 
 
 @app.get("/api/vendors")
@@ -646,6 +647,34 @@ def decide_suggestion(suggestion_id: int, body: SuggestionDecision, u: dict = De
     return {"ok": True}
 
 
+class ProductFacts(BaseModel):
+    facts: list[str] = Field(max_length=40)
+
+
+@app.get("/api/product-facts")
+def get_product_facts(u: dict = Depends(current_user)) -> dict:
+    """What RevOps says is true about the product, which a reply may state (decision 115). Anyone may read it."""
+    with db.tx() as cur:
+        return {"facts": replies.product_facts(cur)}
+
+
+@app.put("/api/product-facts")
+def put_product_facts(body: ProductFacts, u: dict = Depends(writer)) -> dict:
+    """The whole list, replaced. Manager and GTM; each fact is one plain sentence."""
+    need(u, "manager", "gtm")
+    not_in_public_demo()
+    facts = [" ".join(f.split()) for f in body.facts if f.strip()]
+    if any(len(f) > 300 for f in facts):
+        raise HTTPException(422, "Keep each fact to one sentence, under 300 characters.")
+    if any("[" in f or "]" in f or "{" in f or "<" in f for f in facts):
+        raise HTTPException(422, "A fact is plain words: no brackets or placeholders.")
+    with db.tx() as cur:
+        db.run(cur, """insert into settings (key, value) values ('product_facts', %s)
+                       on conflict (key) do update set value = excluded.value""", db.J(facts))
+        audit.log(cur, "person", "product_facts_set", "desk", None, {"count": len(facts)}, actor_id=u["id"])
+    return {"facts": facts}
+
+
 @app.get("/api/settings")
 def settings_page(u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
@@ -695,6 +724,26 @@ def propose_again(ap_id: int, u: dict = Depends(writer)) -> dict:
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
     return {"ok": True, "id": new}
+
+
+class SkipLapsed(BaseModel):
+    reason: str = Field(min_length=3, max_length=300)
+
+
+@app.post("/api/account-plays/{ap_id}/skip-lapsed")
+def skip_lapsed(ap_id: int, body: SkipLapsed, u: dict = Depends(writer)) -> dict:
+    """Dismiss a lapsed proposal with a reason; the owner or a manager."""
+    with db.tx() as cur:
+        ap = db.one(cur, "select owner_id from account_plays where id = %s", ap_id)
+        if ap is None:
+            raise HTTPException(404, "No such proposal.")
+        if u["role"] == "sdr" and ap["owner_id"] != u["id"]:
+            raise HTTPException(403, "This account belongs to someone else.")
+        try:
+            plays.skip_lapsed(cur, ap_id, user_id=u["id"], reason=body.reason)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+    return {"ok": True}
 
 
 @app.get("/api/my-mailbox")
@@ -789,6 +838,8 @@ def handle_reply(reply_id: int, body: Handle, u: dict = Depends(writer)) -> dict
                            r["account_id"], r["account_id"])
             if owner not in (None, u["id"]):
                 raise HTTPException(403, "This reply belongs to another SDR's account.")
+        if (why := replies.relabel_refusal(r, body.label)):
+            raise HTTPException(409, why)
         if body.outcome == "meeting_booked":
             if not r["account_id"]:
                 raise HTTPException(422, "This reply is not tied to an account.")
@@ -878,6 +929,25 @@ def meeting_status(meeting_id: int, body: MeetingStatus, u: dict = Depends(write
     return {"ok": True, "learnings": kept}
 
 
+class MeetingMove(BaseModel):
+    starts_at: datetime
+
+
+@app.post("/api/meetings/{meeting_id}/reschedule")
+def meeting_reschedule(meeting_id: int, body: MeetingMove, u: dict = Depends(writer)) -> dict:
+    """Move a booked meeting that has not started. Cancelling it, at any time, is the status call."""
+    with db.tx() as cur:
+        owner = db.val(cur, "select owner_id from meetings where id = %s", meeting_id)
+        if u["role"] == "sdr" and owner not in (None, u["id"]):
+            raise HTTPException(403, "This meeting belongs to another SDR.")
+        try:
+            with cur.connection.transaction():
+                pipeline.reschedule_meeting(cur, meeting_id, body.starts_at, u["id"])
+        except ValueError as exc:
+            raise bad_request(exc) from exc
+    return {"ok": True}
+
+
 @app.get("/api/meetings/{meeting_id}")
 def meeting(meeting_id: int, u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
@@ -955,6 +1025,12 @@ def add_suppression(body: Suppression, u: dict = Depends(writer)) -> dict:
         raise HTTPException(403, "Blocking a whole company is for a manager or GTM.")
     with db.tx() as cur:
         value = body.value.strip().lower()
+        if u["role"] == "sdr" and body.kind in ("person", "email", "phone"):
+            # An SDR puts a person on Do not contact from the person sheet; it must be someone at an account they work.
+            acct = db.val(cur, """select account_id from people where (%s = 'person' and id::text = %s)
+                                  or (%s = 'email' and email = %s) or (%s = 'phone' and phone = %s) limit 1""",
+                          body.kind, value, body.kind, value, body.kind, body.value.strip())
+            _sdr_owns(cur, u, acct)
         db.run(cur, "insert into suppressions (kind, value, reason, source) values (%s,%s,%s,%s)",
                body.kind, value, body.reason, f"person:{u['id']}")
         if body.kind in ("person", "email", "domain", "account"):

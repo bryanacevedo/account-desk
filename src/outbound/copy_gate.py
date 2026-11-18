@@ -6,6 +6,7 @@ model labelled as courtesy.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 BANNED = [
@@ -266,11 +267,12 @@ PRODUCT_CLAIMS = re.compile(r"\b(integr\w*|connector\w*|native\w*|soc ?2|iso ?27
                             r"we work with|trabajamos con)\b", re.I)
 
 
-def check_suggestion(body: str, their_text: str) -> list[dict]:
+def check_suggestion(body: str, their_text: str, facts: Iterable[str] = ()) -> list[dict]:
     """Code-checkable invention in a suggested reply: placeholders, numbers and product facts the prospect did not
-    bring up. A meeting time is not a number for this purpose."""
+    bring up. A meeting time is not a number for this purpose. A product fact or number that one of the desk's own
+    product facts (kept by RevOps, decision 115) says is not an invention."""
     f: list[dict] = []
-    theirs = their_text.lower()
+    theirs = (their_text + " " + " ".join(facts)).lower()
     if re.search(r"[\[\]{}<>]", body):
         f.append({"code": "placeholder", "message": "It has a placeholder or bracket; it must be ready to send."})
     nums = [m.group(0) for m in SUGGEST_NUMBER.finditer(DATE_WORDS.sub("", TIME_WORDS.sub("", body))) if m.group(0).strip("$€£% ") not in theirs]

@@ -82,3 +82,28 @@ def job_span(kind: str, trace_parent: str | None):
         return
     with cm:
         yield
+
+
+@contextmanager
+def linked_span(name: str, trace_parent: str | None):
+    """Run a block inside a span `name` that carries an OpenTelemetry span LINK to the stored `traceparent`, not a parent:
+    a CRM push or a send's CRM check is one piece of work caused by a person's earlier request, and one such call can
+    stand for several requests, so the two traces are joined by a link. With no stored traceparent (the request was not
+    traced, or tracing is off) it is an ordinary span, and with tracing off it does nothing."""
+    if not _on:
+        yield
+        return
+    try:
+        from opentelemetry import trace
+        from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+        links = []
+        if trace_parent:
+            ctx = trace.get_current_span(TraceContextTextMapPropagator().extract({"traceparent": trace_parent})).get_span_context()
+            if ctx.is_valid:
+                links.append(trace.Link(ctx))
+        cm = trace.get_tracer("crm").start_as_current_span(name, links=links, kind=trace.SpanKind.CLIENT)
+    except Exception:
+        yield
+        return
+    with cm:
+        yield

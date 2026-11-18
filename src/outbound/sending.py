@@ -9,11 +9,12 @@ from datetime import timedelta
 
 import psycopg
 
-from . import adapters, alerts, db, gate, jobs, outreach, timeutil
+from . import adapters, alerts, crmq, db, gate, jobs, outreach, timeutil
 from .config import CONFIG
 from .db import J
 
 log = logging.getLogger("outbound.sending")
+BOUNCE_FLOOR = 50   # sends in 14 days before a mailbox's bounce rate is judged (warn at 1.5%, pause at 2%)
 WATCH_SIZE = 20
 
 
@@ -83,7 +84,7 @@ def send_one(cur, payload: dict) -> None:
     # The CRM is asked once, before a person's first touch; if it cannot answer the message waits (never sent on a guess).
     # With no CRM beside the desk this is a no-op and the desk's own suppression list, in the gate above, decides.
     from . import pipeline
-    verdict = pipeline.crm_first_touch(cur, person["id"], "email")
+    verdict = pipeline.crm_first_touch(cur, person["id"], "email", trace_parent=m.get("trace_parent"))
     if verdict == "wait":
         later(now + timedelta(hours=1), "the CRM has not said whether this person may be contacted")
         return
@@ -206,10 +207,8 @@ def record_result(cur, message_id: int, outcome: str, provider_id: str | None, e
                ap["account_id"], e["person_id"], ap["id"], message_id, f"msg:{message_id}")
         db.run(cur, """insert into play_step_watch (template_key, sends) values (%s, 1)
                        on conflict (template_key) do update set sends = play_step_watch.sends + 1""", m["template_key"])
-        db.run(cur, """insert into crm_outbox (kind, payload, idempotency_key) values ('activity', %s, %s)
-                       on conflict do nothing""",
-               J({"type": "email_sent", "person_id": e["person_id"], "message_id": message_id, "subject": m["subject"]}),
-               f"activity:email:{message_id}")
+        crmq.enqueue(cur, "activity", {"type": "email_sent", "person_id": e["person_id"], "message_id": message_id,
+                                       "subject": m["subject"]}, f"activity:email:{message_id}")
         outreach.advance(cur, e["id"])
     elif outcome == "unknown":
         db.run(cur, "update messages set status = 'send_unknown' where id = %s", message_id)
@@ -295,7 +294,7 @@ def mailbox_health(cur, payload: dict) -> None:
                count(*) filter (where d.event = 'bounced_hard') as bounced
              from mailboxes mb left join deliveries d on d.mailbox_id = mb.id and d.at > app_now() - interval '14 days'
              group by mb.id"""):
-        if r["sent"] < 50 or r["status"] != "active":
+        if r["sent"] < BOUNCE_FLOOR or r["status"] != "active":
             continue
         rate = r["bounced"] / r["sent"]
         if rate >= 0.02:

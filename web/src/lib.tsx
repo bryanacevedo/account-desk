@@ -107,7 +107,7 @@ export function ago(iso: string | null | undefined): string {
   if (s < 3600) return say(Math.max(1, Math.round(s / 60)), "minute");
   if (s < 86400) return say(Math.round(s / 3600), "hour");
   if (s < 86400 * 14) return say(Math.round(s / 86400), "day");
-  return day(iso);
+  return dayYear(iso);
 }
 export function ahead(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -160,6 +160,26 @@ export function day(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+/** A date with its year, for one far enough back that "13 Aug" could be any year's. */
+export function dayYear(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return `${day(iso)} ${new Date(iso).getFullYear()}`;
+}
+/** The time zone the times on this screen are in: the browser's, named. */
+export function zoneName(iso?: string | null): string {
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(iso ? new Date(iso) : new Date())
+      .find((p) => p.type === "timeZoneName")?.value || "";
+  } catch { return ""; }
+}
+export function localZone(): string {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; }
+}
+/** dayTime with its zone named: for a meeting or a clock, where the hour is what people act on. */
+export function dayTimeZ(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return `${dayTime(iso)} ${zoneName(iso)}`.trim();
 }
 export function dayTime(iso: string | null | undefined): string {
   if (!iso) return "";

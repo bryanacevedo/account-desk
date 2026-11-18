@@ -228,6 +228,8 @@ class CrmCampaignMember:
     account_domain: str | None
     updated_at: object = None
     change_id: str = ""
+    event_starts_on: str | None = None   # the campaign's own dates (YYYY-MM-DD), when the CRM holds them
+    event_ends_on: str | None = None
 
 
 class Crm(Protocol):

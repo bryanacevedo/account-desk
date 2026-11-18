@@ -410,10 +410,11 @@ def test_the_banner_has_three_true_branches():
     assert "Every vendor and signal here is simulated." in demo  # a local sample desk
 
 
-def test_the_do_not_contact_page_says_an_sdr_can_add():
+def test_the_do_not_contact_page_says_where_an_sdr_adds():
+    # Decision 111: an SDR adds a person from the person's page, not in Settings (a page an SDR cannot open).
     desk = web("pages/Desk.tsx")
     assert "To add or lift an entry, ask a manager" not in desk
-    assert "ask a manager" in desk and "An SDR can add a person" in desk
+    assert "open their page and use Do not contact there" in desk and "in Settings" not in desk
 
 
 # ---------------------------------------------------------------- integrated week 2: unread replies, email-only list

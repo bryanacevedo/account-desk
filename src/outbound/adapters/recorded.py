@@ -108,6 +108,14 @@ class RecordedCrm:
         self._crm = CrmDeskCrm("http://recorded", "recorded", client=self._client)
         paths = {s.get("path", "").split("?")[0] for s in steps}
         self._offered = {name for name, p in OPTIONAL.items() if p in paths}
+        # Outbox kinds that came after the journal was recorded are finished with a note rather than asked of a CRM whose
+        # next recorded step is another call; a journal that holds the call offers the kind.
+        bodies = [s.get("body") or {} for s in steps if isinstance(s.get("body"), dict)]
+        self.accepts_kinds = {"contact", "meeting_outcome"} | {
+            k for k, there in (("task_close", "/tasks/close" in paths),
+                               ("reply_in", any(b.get("direction") == "in" for b in bodies)),
+                               ("meeting_note", any(b.get("type") == "note" for b in bodies))) if there}
+        self._crm.bulk_contacts = "/contacts/batch" in paths
 
     @classmethod
     def from_journal(cls, path=None) -> RecordedCrm:

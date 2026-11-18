@@ -2,7 +2,7 @@ import { Hint } from "../demo";
 import { CalendarCheck, ChatCircleText, EnvelopeSimple, LinkedinLogo, PencilSimpleLine, Phone } from "@phosphor-icons/react";
 import { useState } from "react";
 import { Avatar, Logo } from "../marks";
-import { Empty, Failed, Loading, Section, Seg, Status, ahead, dayTime, late, navigate, usePath, useData, withParam } from "../lib";
+import { Empty, Failed, Loading, Section, Seg, Status, ahead, dayTime, dayTimeZ, late, navigate, usePath, useData, withParam } from "../lib";
 import { GOOD_STOPS, openSheet, stepLabel, stopWord } from "../sheets";
 
 const STAGES: [string, string, string[]][] = [
@@ -126,7 +126,13 @@ function Next({ p, mine }: { p: any; mine: boolean }) {
     const word = { booked: "Meeting", held: "Meeting held", no_show: "No show", cancelled: "Meeting cancelled" }[p.meeting.status as string] || "Meeting";
     return <button className="link-row cell-main" onClick={() => openSheet("meeting", p.meeting.id)}>
       <span className="t"><CalendarCheck size={14} style={{ verticalAlign: -2 }} aria-hidden="true" /> {word}</span>
-      <span className="s">{dayTime(p.meeting.starts_at)}</span></button>;
+      <span className="s">{dayTimeZ(p.meeting.starts_at)}</span></button>;
+  }
+  // An answer written in the desk leaves "Waiting on you" the moment it is queued, and comes back if the send fails.
+  if (p.state === "engaged" && p.answer_queued_id && !p.reply_id) {
+    return <button className="link-row cell-main" onClick={() => openSheet("reply", p.answer_queued_id)}>
+      <span className="t"><ChatCircleText size={14} style={{ verticalAlign: -2 }} aria-hidden="true" /> Answer queued</span>
+      <span className="s">Goes out from the SDR&rsquo;s mailbox</span></button>;
   }
   if (p.state === "engaged" && p.reply_id) {
     return <button className="link-row cell-main" onClick={() => openSheet("reply", p.reply_id)}>

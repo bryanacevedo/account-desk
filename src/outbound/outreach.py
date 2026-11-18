@@ -20,6 +20,7 @@ from . import (
     signals,
     sim_llm,  # noqa: F401  registers the stand-in model tasks
     spend,
+    telemetry,
     timeutil,
 )
 from .config import CONFIG
@@ -729,6 +730,9 @@ def approve(cur, message_id: int, *, user_id: int, subject: str | None = None, b
     if m["status"] == "failed_gate" and body is None:
         raise ValueError("This draft failed the checks. Rewrite it before approving.")
     e = db.one(cur, "select person_id, account_play_id, id from enrollments where id = %s", m["enrollment_id"])
+    from . import replies
+    if replies.unread_reply(cur, e["person_id"]):
+        raise ValueError(replies.READ_FIRST + ".")          # decision 108
     blocking = [r for r in gate.person_reasons(cur, e["person_id"], "email", account_play_id=e["account_play_id"],
                                                enrollment_id=e["id"]) if r.permanent]
     if blocking:
@@ -809,8 +813,11 @@ def _edit_checks(m: dict, cur=None) -> list[str]:
 
 
 def _approve(cur, m: dict, *, user_id: int | None, mode: str) -> None:
+    # The traceparent of the approving request is kept on the message (NULL when tracing is off or nobody's request
+    # approved it), so the send's CRM check, hours later in a worker, is linked to the approval (decision 107).
     db.run(cur, """update messages set status = 'approved', approved_hash = body_hash, approved_by = %s,
-                   approval_mode = %s, approved_at = app_now() where id = %s""", user_id, mode, m["id"])
+                   approval_mode = %s, approved_at = app_now(), trace_parent = %s where id = %s""",
+           user_id, mode, telemetry.current_traceparent(), m["id"])
     e = db.one(cur, "select * from enrollments where id = %s", m["enrollment_id"])
     if e["state"] == "pending":
         activate(cur, e["id"])

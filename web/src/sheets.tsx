@@ -8,7 +8,7 @@ import { PlayEditor, PlayPreview } from "./PlayEditor";
 import { ElsewhereAccount, ElsewherePerson, keptBy, useIntegration } from "./elsewhere";
 import { Sample } from "./demo";
 import {
-  Bar, Empty, Seg, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTime, late, money, n0, navigate, pct,
+  Bar, Empty, Seg, Failed, Fig, Loading, Section, Status, ago, ahead, cap, day, dayTimeZ, late, localZone, money, n0, navigate, pct,
   safeUrl, SourceLink, toast, useBusy, useData, useNowIso, withParam, type Glyph,
 } from "./lib";
 
@@ -206,6 +206,10 @@ export function PersonSheet({ id }: { id: number }) {
           {p.linkedin_url ? <LinkedInLog personId={p.id} canAccept={!tool && data.touches.some((x: any) => x.kind === "linkedin_connect") && !data.touches.some((x: any) => x.kind === "linkedin_accepted")} onDone={reload} /> : null}
         </div>
       </Section>
+      {data.read_first && data.waiting.length ? (
+        <div className="notice"><span style={{ flex: 1 }}>They replied; read it first</span>
+          <button className="btn line sm" onClick={() => openSheet("reply", data.read_first)}>Open the reply</button></div>
+      ) : null}
       {data.waiting.length ? (
         <Section title="Waiting">
           <div className="ledger">
@@ -241,6 +245,7 @@ export function PersonSheet({ id }: { id: number }) {
         ) : <Empty title="Not in a play" />}
       </Section>
       <OutsideContact personId={p.id} onDone={reload} />
+      {data.suppressed.length ? null : <DoNotContactBox personId={p.id} name={p.full_name} onDone={reload} />}
       <Section title="History">
         {history.length ? (
           <ul className="timeline">
@@ -251,7 +256,7 @@ export function PersonSheet({ id }: { id: number }) {
                 {h.kind === "meeting" ? (
                   <button className="cell-main link-row" onClick={() => openSheet("meeting", h.m.id)}>
                     <span className="t">{MEETING[h.m.status] || cap(h.m.status)}{h.m.source === "inbound" ? ", they asked for it" : ""}</span>
-                    <span className="s">{dayTime(h.m.starts_at)}{h.m.play ? `, ${h.m.play}` : ""}</span>
+                    <span className="s">{dayTimeZ(h.m.starts_at)}{h.m.play ? `, ${h.m.play}` : ""}</span>
                   </button>
                 ) : h.kind === "touch" ? (
                   h.t.message_id ? (
@@ -293,6 +298,7 @@ export function TaskSheet({ id }: { id: number }) {
   const over = t.max_chars && body.length > t.max_chars;
   const failures: any[] = t.draft_status === "failed_gate" && text === null ? (t.gate?.failures || []) : [];
   const open = t.status === "open";
+  const held = open && !!t.read_first;   // decision 108: they replied, so their reply is read before anything else
   const done = (outcome: string) => run(async () => {
     await api(`/api/tasks/${id}/done`, { method: "POST", body: { outcome, text: linkedin && outcome === "sent" ? body : null, note: callNote.trim() || null } });
     closeSheet();
@@ -300,7 +306,7 @@ export function TaskSheet({ id }: { id: number }) {
   const copy = () => { navigator.clipboard?.writeText(body).then(() => toast("Copied."), () => toast("Select the text and copy it.")); };
   return (
     <Frame crumb={linkedin ? "LinkedIn" : t.kind === "call" ? "Call" : "Task"}
-      foot={open ? (
+      foot={open && !held ? (
         <div className="actions" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
           <button className="btn quiet sm" disabled={busy} onClick={() => done("skipped")}>Skip</button>
           {Object.entries(t.outcomes as Record<string, string>).map(([k, l], i) => (
@@ -316,6 +322,10 @@ export function TaskSheet({ id }: { id: number }) {
         </div>
       </div>
       {!open ? <div className="notice"><Status kind={t.status === "done" ? "ok" : "off"}>{t.note || cap(t.status)}</Status></div> : null}
+      {held ? (
+        <div className="notice"><span style={{ flex: 1 }}>They replied; read it first</span>
+          <button className="btn line sm" onClick={() => openSheet("reply", t.read_first)}>Open the reply</button></div>
+      ) : null}
       {linkedin ? (
         <Section title={t.kind === "linkedin_connect" ? "Connection note" : "Message"}
           right={safeUrl(t.linkedin_url) ? <a className="btn quiet sm" href={safeUrl(t.linkedin_url)} target="_blank" rel="noreferrer noopener">Open profile <ArrowSquareOut size={12} /></a> : null}>
@@ -472,7 +482,7 @@ function LogMeeting({ accountId, people, onDone }: { accountId: number; people: 
             <option value="">Someone at the company</option>
             {people.filter((p: any) => p.status === "active").map((p: any) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
           </select></label>
-        <label className="field"><span>When</span><input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></label>
+        <label className="field"><span>When, your time ({localZone()})</span><input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></label>
       </div>
       <div className="actions" style={{ justifyContent: "flex-end" }}>
       <button className="btn quiet sm" onClick={() => setOpen(false)}>Cancel</button>
@@ -580,6 +590,9 @@ export function MeetingSheet({ id }: { id: number }) {
   const [notes, setNotes] = useState("");
   const [learn, setLearn] = useState(false); // off until the person ticks it: notes are saved either way
   const [busy, run] = useBusy();
+  const [moving, setMoving] = useState(false);     // decision 112: a booked meeting can be moved or cancelled before it starts
+  const [when, setWhen] = useState("");
+  const [cancelling, setCancelling] = useState(false);
   if (error) return <Frame crumb="Meeting"><Failed error={error} retry={reload} /></Frame>;
   if (!m) return <Frame crumb="Meeting"><Loading rows={6} /></Frame>;
   const save = (status: string) => run(async () => {
@@ -587,6 +600,11 @@ export function MeetingSheet({ id }: { id: number }) {
     setNotes("");
   }, status === "booked" ? "Notes saved." : status === "held" ? "Saved." : status === "no_show" ? "Saved. A task to rebook is on Today." : "Cancelled.");
   const open = m.status === "booked" && new Date(m.starts_at).getTime() <= useNowIso();
+  const upcoming = m.status === "booked" && !open;
+  const move = () => run(async () => {
+    await api(`/api/meetings/${id}/reschedule`, { method: "POST", body: { starts_at: new Date(when).toISOString() } });
+    setMoving(false); setWhen("");
+  }, "Moved. The CRM is told.");
   // What the desk added: learnings that are not already the notes' own words, shown above.
   const said = m.notes.map((n: any) => n.text).join(" ");
   const added = m.learnings.filter((l: any) => !said.includes(l.text));
@@ -597,6 +615,26 @@ export function MeetingSheet({ id }: { id: number }) {
         <button className="btn line sm" disabled={busy} onClick={() => save("no_show")}>They did not show</button>
         <button className="btn sm" disabled={busy} onClick={() => save("held")}>It happened</button>
       </div>
+    ) : upcoming ? (
+      moving ? (
+        <div className="actions" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <label className="small mute" htmlFor="move-to">New time, your time ({localZone()})</label>
+          <input id="move-to" className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} style={{ width: 220 }} />
+          <button className="btn quiet sm" onClick={() => setMoving(false)}>Keep it</button>
+          <button className="btn sm" disabled={busy || !when} onClick={move}>Move it</button>
+        </div>
+      ) : cancelling ? (
+        <div className="actions" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <span className="small mute" style={{ flex: 1 }}>Cancel this meeting?</span>
+          <button className="btn quiet sm" onClick={() => setCancelling(false)}>Keep it</button>
+          <button className="btn ink sm" disabled={busy} onClick={() => save("cancelled").then(() => setCancelling(false))}>Cancel it</button>
+        </div>
+      ) : (
+        <div className="actions" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <button className="btn quiet sm" onClick={() => setCancelling(true)}>Cancel the meeting</button>
+          <button className="btn line sm" onClick={() => setMoving(true)}>Change the time</button>
+        </div>
+      )
     ) : null}>
       <div className="who">
         <Avatar name={m.full_name || m.company} photo={m.photo_url} size={44} />
@@ -606,7 +644,7 @@ export function MeetingSheet({ id }: { id: number }) {
         </div>
       </div>
       <div className="figs">
-        <Fig value={dayTime(m.starts_at)} label="When" sm />
+        <Fig value={dayTimeZ(m.starts_at)} label="When" sm />
         <Fig value={<Status kind={m.status === "held" ? "ok" : m.status === "booked" ? "go" : "off"}>{MEETING[m.status] || cap(m.status)}</Status>} label="Status" sm />
         <Fig value={m.source === "inbound" ? "They asked" : m.play ? <button className="fig-link" onClick={() => openSheet("play", m.play_id)}>{m.play}</button> : "Booked by hand"} label="Came from" sm />
       </div>
@@ -685,6 +723,54 @@ function OutsideContact({ personId, onDone }: { personId: number; onDone: () => 
         <button className="btn line sm" disabled={busy} onClick={() => log("they_emailed")}>They emailed me directly</button>
         <button className="btn line sm" disabled={busy} onClick={() => log("i_emailed")}>I emailed them myself</button>
       </div>
+    </Section>
+  );
+}
+
+/** Decision 108. People who replied, whose calls, LinkedIn steps or drafts are held back until their reply is read. */
+export function ReadFirst({ rows, title }: { rows: any[]; title: string }) {
+  if (!rows.length) return null;
+  return (
+    <Section title={title}>
+      <div className="ledger">
+        {rows.map((r: any) => (
+          <button key={r.reply_id} className="row" style={{ gridTemplateColumns: "28px minmax(0,1fr) auto" }} onClick={() => openSheet("reply", r.reply_id)}>
+            <Avatar name={r.full_name} photo={r.photo_url} />
+            <div className="cell-main"><span className="t">{r.full_name}</span><span className="s">{r.company}</span></div>
+            <span className="mute small">They replied; read it first</span>
+          </button>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+/** Decision 111. Anyone may put a person on Do not contact, with a reason: their sequences stop, their open tasks close, and
+ *  the send guard refuses them from then on. Lifting it stays with a manager. */
+function DoNotContactBox({ personId, name, onDone }: { personId: number; name: string; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [busy, run] = useBusy();
+  return (
+    <Section title="Do not contact">
+      {open ? (
+        <div style={{ display: "grid", gap: 8 }}>
+          <input className="input" value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} placeholder="Why, in a few words"
+            aria-label={`Why ${name} should not be contacted`} autoFocus />
+          <div className="actions" style={{ justifyContent: "flex-end" }}>
+            <button className="btn quiet sm" onClick={() => { setOpen(false); setReason(""); }}>Cancel</button>
+            <button className="btn ink sm" disabled={busy || reason.trim().length < 3} onClick={() => run(async () => {
+              await api("/api/suppressions", { method: "POST", body: { kind: "person", value: String(personId), reason: reason.trim() } });
+              setOpen(false); setReason(""); onDone();
+            }, "Added to Do not contact. Their sequences stop and their open tasks close.")}>Add {name}</button>
+          </div>
+        </div>
+      ) : (
+        <div className="actions" style={{ justifyContent: "space-between" }}>
+          <span className="small mute">A manager lifts an entry.</span>
+          <button className="btn line sm" onClick={() => setOpen(true)}>Do not contact</button>
+        </div>
+      )}
     </Section>
   );
 }
@@ -864,11 +950,14 @@ function OwnerAndTier({ d }: { d: any }) {
   const rows: [string, ReactNode][] = [];
   if (a.owner) rows.push(["Account owner", <>{a.owner}{a.owner_note?.role ? `, ${a.owner_note.role}` : ""}<span className="mute small"> {a.owner_note?.source?.replace(/^Account owner, /, "")}</span></>]);
   else rows.push(["Account owner", <span className="mute">None yet. The desk gives the account to an SDR when it proposes a play.</span>]);
+  // Decision 113: another desk holds a different owner, and the sheet says who and where this desk's came from.
+  if (a.owner_differs) rows.push([a.owner_differs.crm_desk === "CRM Desk" ? "In CRM Desk" : "In the CRM", <>{a.owner_differs.crm_owner}<span className="mute small"> {a.owner_differs.here ? `Here it is ${a.owner_differs.here}, ${(a.owner_differs.here_source || "").replace(/^Account owner, /, "").replace(/^Given this play by the desk/, "given this play by the desk")}.` : "Here there is no owner."}</span></>]);
   if (cur?.owner) rows.push(["SDR on the play", <>{cur.owner}{cur.owner_role ? `, ${ROLE_WORD[cur.owner_role]}` : ""}<span className="mute small"> {cur.owner === a.owner ? "same person as the account owner" : "chosen by the desk: fewest open plays"}</span></>]);
-  const own = a.fit_tier ? `Tier ${a.fit_tier}${a.fit_icp_version ? `, from this desk's profile version ${a.fit_icp_version}` : ""}` : null;
+  // This desk's own profile ids are not Market Desk's version numbers, so they are never shown as "version N" (decision 113).
+  const own = a.fit_tier ? `Tier ${a.fit_tier}, this desk's own score` : null;
   const plan = a.crm_tier ? `Tier ${a.crm_tier}${a.crm_icp_version ? `, from the account plan's profile version ${a.crm_icp_version}` : ""}${a.crm_read_at ? `, read ${ago(a.crm_read_at)}` : ""}` : null;
   if (kept && plan) rows.push(["Tier", <>{plan}{own && a.fit_tier !== a.crm_tier ? <span className="mute small"> This desk's own score says {own.toLowerCase()}; the account plan decides.</span> : null}</>]);
-  else if (own) rows.push(["Tier", <>{own}{plan && a.crm_tier !== a.fit_tier ? <span className="mute small"> The account plan says {plan.toLowerCase()}.</span> : null}</>]);
+  else if (own) rows.push(["Tier", <>{own}{plan && a.crm_tier !== a.fit_tier ? <span className="mute small"> The account plan says {plan.toLowerCase()}.</span> : null}{kept && !plan ? <span className="mute small"> Market Desk&rsquo;s tier has not arrived yet.</span> : null}</>]);
   return (
     <Section title="Who owns it, and what the tier is based on">
       <div className="ledger">
@@ -1069,7 +1158,7 @@ function AccountOutreach({ d }: { d: any }) {
           <div className="ledger">
             {d.meetings.map((m: any) => (
               <button key={m.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }} onClick={() => openSheet("meeting", m.id)}>
-                <div className="cell-main"><span className="t">{m.full_name || "Meeting"}</span><span className="s">{dayTime(m.starts_at)}</span></div>
+                <div className="cell-main"><span className="t">{m.full_name || "Meeting"}</span><span className="s">{dayTimeZ(m.starts_at)}</span></div>
                 <Status kind={m.status === "held" ? "ok" : m.status === "booked" ? "go" : "off"}>{({ held: "Meeting held", booked: "Booked", no_show: "No show", cancelled: "Cancelled" } as Record<string, string>)[m.status] || cap(m.status)}</Status>
               </button>
             ))}
@@ -1085,7 +1174,7 @@ function AccountOutreach({ d }: { d: any }) {
 function sentenceKind(k: string) { return k === "claim" ? "claim" : ""; }
 
 // After a decision, the next email waiting for this person opens; with none left, the panel closes.
-async function nextEmail(done: number) {
+async function nextEmail(done: number): Promise<string> {
   const t = await api<any>("/api/today");
   const next = (t.approvals || []).find((m: any) => m.id !== done);
   const u = new URL(window.location.href);
@@ -1093,9 +1182,10 @@ async function nextEmail(done: number) {
     u.searchParams.set("sheet", `message:${next.id}`);
     u.searchParams.delete("from");
     navigate(u.pathname + "?" + u.searchParams.toString(), true);
-  } else {
-    closeSheet();
+    return `${next.full_name}, ${next.company}`;
   }
+  closeSheet();
+  return "";
 }
 
 /** An email waiting for a person: one editable page with the facts, the checks and every change in the margin. */
@@ -1112,6 +1202,8 @@ function Approving({ m, id, reload }: { m: any; id: number; reload: () => void }
   const [busy, run] = useBusy();
   const area = useRef<HTMLTextAreaElement>(null);
   const seq = useRef(0);
+  // Decision 113: after Approve or Reject the next email opens under the same keys, so Cmd+Enter waits a second.
+  const armedAt = useRef(Date.now() + 1000);
   const now = useNowIso();
   const failures: any[] = m.gate?.failures || [];
   const body = footer ? `${text}\n\n${footer}` : text;
@@ -1138,18 +1230,19 @@ function Approving({ m, id, reload }: { m: any; id: number; reload: () => void }
   const lg = ledger(check.problems);
   const [lo, hi] = check.limit;
   const wordsBad = check.words < lo || check.words > hi;
-  const canApprove = !busy && !mustEdit && (!dirty || !check.problems.length);
-  const approve = () => run(async () => {
-    await api(`/api/messages/${id}/approve`, { method: "POST", body: dirty ? { subject, body } : {} });
-    await nextEmail(id);
-  }, "Approved. It goes out in their send window.");
-  const reject = () => run(async () => {
-    await api(`/api/messages/${id}/reject`, { method: "POST", body: { reason } });
-    await nextEmail(id);
-  }, "Rejected.");
+  const canApprove = !busy && !mustEdit && !m.read_first && (!dirty || !check.problems.length);
+  // The message after the decision names the next person, so a quick second Cmd+Enter is not approving a stranger.
+  const decide = async (call: () => Promise<unknown>, said: string) => {
+    const out: { next: string | null } = { next: null };
+    await run(async () => { await call(); out.next = await nextEmail(id); });
+    if (out.next !== null) toast(out.next ? `${said} Next: ${out.next}.` : said);
+  };
+  const approve = () => decide(() => api(`/api/messages/${id}/approve`, { method: "POST", body: dirty ? { subject, body } : {} }),
+    "Approved. It goes out in their send window.");
+  const reject = () => decide(() => api(`/api/messages/${id}/reject`, { method: "POST", body: { reason } }), "Rejected.");
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canApprove && !rejecting) { e.preventDefault(); approve(); }
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canApprove && !rejecting && Date.now() >= armedAt.current) { e.preventDefault(); approve(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1179,6 +1272,10 @@ function Approving({ m, id, reload }: { m: any; id: number; reload: () => void }
             <Section title="Why it needs a rewrite">
               <ul className="facts">{failures.map((f: any, i: number) => <li key={i}><Status kind="stop">{""}</Status><span>{f.message}</span></li>)}</ul>
             </Section>
+          ) : null}
+          {m.read_first ? (
+            <div className="notice"><span style={{ flex: 1 }}>They replied; read it first</span>
+              <button className="btn line sm" onClick={() => openSheet("reply", m.read_first)}>Open the reply</button></div>
           ) : null}
           <div className="small mute">Click the text to edit. Every change is checked.</div>
           <input className="mg-subject" value={subject} onChange={(e) => setSubject(e.target.value)} aria-label="Subject" placeholder="Subject" />
@@ -1385,6 +1482,7 @@ function Composer({ r, id }: { r: any; id: number }) {
             onKeyDown={(e) => { if (e.key === "Enter" && ins.trim().length > 1 && !busy) { e.preventDefault(); refine(); } }} />
           <button className="btn line" disabled={busy || ins.trim().length < 2 || !!inFlight || studio.refines_left < 1} onClick={refine}>Refine</button>
         </div>
+        {studio.product_facts?.length ? <div className="small mute">May state: {studio.product_facts.join(" ")}</div> : null}
         {problems.length ? <ul className="facts">{problems.map((p, i) => <li key={i}><Status kind="stop">{""}</Status><span className="bad">{p}</span></li>)}</ul>
           : text.trim() ? <div className="small mute">Copy checks pass</div> : null}
         {last?.status === "failed" || last?.status === "cancelled" ? <div className="small bad">{last.error || "It did not go out."}</div> : null}
@@ -1403,6 +1501,7 @@ export function ReplySheet({ id }: { id: number }) {
   const [label, setLabel] = useState("");
   const [booking, setBooking] = useState(false);
   const [when, setWhen] = useState("");
+  const [relabel, setRelabel] = useState(false);
   if (error) return <Frame crumb="Reply"><Failed error={error} retry={reload} /></Frame>;
   if (!r) return <Frame crumb="Reply"><Loading rows={8} /></Frame>;
   const l = labelOf(r.label);
@@ -1413,14 +1512,15 @@ export function ReplySheet({ id }: { id: number }) {
     <>
       <select className="select" style={{ width: 220 }} value={label} onChange={(e) => setLabel(e.target.value)} aria-label="What the reply means">
         <option value="">What does it mean?</option>
-        {Object.entries(LABEL).map(([k, v]) => <option key={k} value={k}>{v[1]}</option>)}
+        {Object.entries(LABEL).filter(([k]) => k !== r.label || r.needs_review).map(([k, v]) => <option key={k} value={k}>{v[1]}</option>)}
       </select>
-      <button className="btn" disabled={busy || !label} onClick={() => act({ outcome: "labelled", label }, "Labelled. The desk acts on it now.")}>Save</button>
+      <button className="btn" disabled={busy || !label} onClick={() => act({ outcome: "labelled", label }, "Labelled. The desk acts on it now.").then(() => setRelabel(false))}>Save</button>
     </>
   );
   const outcomes = booking ? (
     <>
-      <input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} aria-label="When the meeting is" style={{ width: 220 }} />
+      <label className="small mute" htmlFor="book-at">When, your time ({localZone()})</label>
+      <input id="book-at" className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} style={{ width: 220 }} />
       <button className="btn quiet" onClick={() => setBooking(false)}>Cancel</button>
       <button className="btn" disabled={busy || !when} onClick={() => act({ outcome: "meeting_booked", meeting_at: new Date(when).toISOString() }, "Meeting booked. The rest of the sequence stops.")}>Book it</button>
     </>
@@ -1432,7 +1532,8 @@ export function ReplySheet({ id }: { id: number }) {
   );
   // A reply the desk flagged offers the label only. One it has not read yet offers the label and everything else.
   const foot = open ? (
-    r.needs_review ? picker : !r.label ? <>{booking ? null : picker}{outcomes}</> : outcomes
+    r.needs_review ? picker : !r.label ? <>{booking ? null : picker}{outcomes}</>
+      : relabel ? <>{picker}<button className="btn quiet" onClick={() => setRelabel(false)}>Cancel</button></> : outcomes
   ) : undefined;
   return (
     <Frame kind="reply" crumb={<>{r.company || r.from_addr}</>} foot={foot}>
@@ -1444,11 +1545,14 @@ export function ReplySheet({ id }: { id: number }) {
         </div>
       </div>
       <div className="figs">
-        <Fig value={<Status kind={l[0]}>{l[1]}</Status>} label="What it says" sm />
+        <Fig value={<Status kind={l[0]}>{l[1]}</Status>} label={r.classified_by === "person" ? "What it says, set by a person" : "What it says"} sm />
         <Fig value={ago(r.received_at)} label="Received" sm />
         {r.hot && open && r.sla_due_at ? <Fig value={ahead(r.sla_due_at)} label="Answer by" sm /> : null}
-        {r.handled_at ? <Fig value={r.meeting_id ? <button className="link" onClick={() => openSheet("meeting", r.meeting_id)}>{cap(r.outcome || "handled")}</button> : cap(r.outcome || "handled")} label="Outcome" sm /> : null}
+        {r.handled_at ? <Fig value={r.meeting_id ? <button className="link" onClick={() => openSheet("meeting", r.meeting_id)}>{cap(r.outcome || "handled")}{r.meeting ? `, ${dayTimeZ(r.meeting.starts_at)}` : ""}</button> : cap(r.outcome || "handled")} label="Outcome" sm /> : null}
       </div>
+      {open && r.can_relabel && r.label && !r.needs_review && !relabel ? (
+        <div className="actions"><button className="btn quiet sm" onClick={() => setRelabel(true)}>Change what it says</button></div>
+      ) : null}
       {r.needs_review ? <div className="why" style={{ background: "var(--well)" }}><span className="lbl" style={{ color: "var(--ink-2)" }}>Needs a person</span><div>{r.review_reason}. Nothing has been done with it yet.</div></div> : null}
       <div className="quote">{r.cleaned}</div>
       {r.same_person === false ? <div className="small mute">Written by someone other than the person we emailed.</div> : null}
@@ -1463,6 +1567,14 @@ export function ReplySheet({ id }: { id: number }) {
       {open && r.studio && r.studio.can_send ? <Composer key={id} r={r} id={id} /> : null}
       {open && r.studio && !r.studio.can_send && r.studio.no_send && r.studio.no_send.code !== "needs_review" ? (
         <Section title="What the desk did"><div className="quote ours">{r.studio.no_send.message}</div></Section>
+      ) : null}
+      {!open && r.studio?.sends?.some((x: any) => x.status === "sent") ? (
+        <Section title="Your answer">
+          {r.studio.sends.filter((x: any) => x.status === "sent").slice(0, 1).map((x: any) => (
+            <div key={x.id} className="quote ours"><b>{x.subject}</b>{"\n\n"}{(x.body || "").split("\n\n--\n")[0]}
+              <div className="small mute">Sent {dayTimeZ(x.sent_at || x.created_at)}</div></div>
+          ))}
+        </Section>
       ) : null}
       {open && !r.studio && ex.suggested ? (
         <Section title="A reply you could send"><div className="quote ours">{ex.suggested}</div></Section>

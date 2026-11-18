@@ -261,6 +261,18 @@ def propose_again(cur, ap_id: int, *, user_id: int) -> int:
     return new
 
 
+def skip_lapsed(cur, ap_id: int, *, user_id: int, reason: str) -> None:
+    """A person dismisses a lapsed proposal with a reason (decision 113): it leaves Today's lapsed list. The account stays
+    on the hold the lapse set, until its date; nothing else changes."""
+    ap = db.one(cur, "select * from account_plays where id = %s for update", ap_id)
+    if ap is None or ap["state"] != "expired" or ap["close_reason"] != "expired":
+        raise ValueError("Only a proposal that lapsed can be skipped this way")
+    if len(reason.strip()) < 3:
+        raise ValueError("Say why in a few words")
+    db.run(cur, "update account_plays set close_reason = 'lapsed_skipped' where id = %s", ap_id)
+    audit.log(cur, "person", "lapsed_skipped", "account_play", ap_id, {"reason": reason.strip()}, actor_id=user_id)
+
+
 @jobs.handler("expire_proposals")
 def expire_proposals(cur, payload: dict) -> None:
     ttl = int(db.val(cur, "select value from settings where key = 'proposal_ttl_days'") or 5)

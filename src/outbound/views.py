@@ -2,11 +2,15 @@
 (managers and GTM); a rep's read never carries it."""
 from __future__ import annotations
 
-from . import adapters, alerts, db, monitors, outreach, region_rules, spend, stats, suggestions
+from . import adapters, alerts, db, monitors, outreach, region_rules, sending, spend, stats, suggestions
 from . import plays as plays_mod
 from .jobs import request_progress
 
 OPEN = ("proposed", "accepted", "researching", "approving", "active", "engaged", "meeting")
+# A person with a reply nobody has read yet (no label, or flagged for a person) and not handled. {person} is the column
+# holding the person's id. Their open calls, LinkedIn steps and drafts are held back with "They replied; read it first".
+UNREAD_REPLY = """exists (select 1 from replies ur where ur.person_id = {person} and ur.handled_at is null
+                          and (ur.label is null or ur.needs_review))"""
 
 
 def _iso(rows: list[dict]) -> list[dict]:
@@ -30,7 +34,8 @@ def today(cur, user: dict) -> dict:
                a.id as account_id, p.name as play
         from messages m join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
         join people pe on pe.id = e.person_id join accounts a on a.id = ap.account_id join plays p on p.id = ap.play_id
-        where m.status in ('awaiting_approval', 'failed_gate') and m.channel = 'email' and {mine} order by m.created_at limit 60""", *args)
+        where m.status in ('awaiting_approval', 'failed_gate') and m.channel = 'email' and {mine}
+          and not {UNREAD_REPLY.format(person='e.person_id')} order by m.created_at limit 60""", *args)
     hot = db.all(cur, """
         select r.id, r.received_at, r.label, r.cleaned, r.sla_due_at, pe.full_name, pe.photo_url, pe.title, a.name as company,
                a.id as account_id
@@ -39,13 +44,14 @@ def today(cur, user: dict) -> dict:
                         and t.kind in ('reply', 'review_reply') and (t.owner_id = %s or %s))
         order by r.sla_due_at nulls last, r.received_at limit 40""",
         uid, user["role"] != "sdr")
-    tasks = db.all(cur, """
+    tasks = db.all(cur, f"""
         select t.id, t.kind, t.title, t.due_at, t.note, pe.id as person_id, pe.full_name, pe.photo_url, pe.title as person_title,
                pe.phone, pe.linkedin_url, a.name as company, a.id as account_id, t.message_id, m.body as draft,
                m.status as draft_status, m.gate -> 'failures' as draft_failures
         from tasks t left join people pe on pe.id = t.person_id left join messages m on m.id = t.message_id
         left join account_plays ap on ap.id = t.account_play_id left join accounts a on a.id = coalesce(ap.account_id, pe.account_id)
         where t.status = 'open' and t.kind not in ('reply', 'review_reply') and t.owner_id = %s and t.due_at <= app_now() + interval '1 day'
+          and not {UNREAD_REPLY.format(person='t.person_id')}
         order by t.due_at limit 50""", uid)
     meetings = db.all(cur, """
         select m.id, m.starts_at, m.status, a.name as company, a.id as account_id, pe.full_name, pe.photo_url
@@ -68,8 +74,27 @@ def today(cur, user: dict) -> dict:
     for r in expired:
         r["why"] = plays_mod.propose_again_blockers(cur, r["account_id"], r)
         r["can_propose_again"] = not r["why"]
+    # Decision 108: a person who just replied keeps no call, LinkedIn step or draft to approve in the lists above until
+    # their reply is read; each is named here instead, once, with how much is held back.
+    read_first = db.all(cur, f"""
+        select r.id as reply_id, r.received_at, r.cleaned, pe.id as person_id, pe.full_name, pe.photo_url, a.name as company, a.id as account_id,
+               (select count(*) from tasks t where t.person_id = r.person_id and t.status = 'open'
+                  and t.kind not in ('reply', 'review_reply') and t.owner_id = %s) as tasks_held,
+               (select count(*) from messages m join enrollments e on e.id = m.enrollment_id
+                  join account_plays ap on ap.id = e.account_play_id where e.person_id = r.person_id and m.channel = 'email'
+                  and m.status in ('awaiting_approval', 'failed_gate') and {mine}) as drafts_held
+        from replies r join people pe on pe.id = r.person_id left join accounts a on a.id = r.account_id
+        where r.handled_at is null and (r.label is null or r.needs_review)
+          and r.id = (select max(x.id) from replies x where x.person_id = r.person_id and x.handled_at is null
+                      and (x.label is null or x.needs_review))
+          and ((select count(*) from tasks t where t.person_id = r.person_id and t.status = 'open'
+                  and t.kind not in ('reply', 'review_reply') and t.owner_id = %s) > 0
+               or exists (select 1 from messages m join enrollments e on e.id = m.enrollment_id
+                  join account_plays ap on ap.id = e.account_play_id where e.person_id = r.person_id and m.channel = 'email'
+                  and m.status in ('awaiting_approval', 'failed_gate') and {mine}))
+        order by r.received_at limit 40""", uid, *args, uid, *args)
     return {"proposals": proposals, "expired": expired, "approvals": approvals, "replies": hot, "tasks": tasks,
-            "meetings": meetings, "now": db.val(cur, "select app_now()")}
+            "read_first": read_first, "meetings": meetings, "now": db.val(cur, "select app_now()")}
 
 
 def _ttl(key: str, default: int) -> str:
@@ -103,6 +128,21 @@ def owner_note(*, owner_role: str | None, account_owner: bool, crm_owner_email: 
 
 
 # ---------------------------------------------------------------- accounts
+
+def owner_differs(cur, a: dict, integrated: set[str]) -> dict | None:
+    """When the CRM holds another owner for this account than this desk does (decision 113): who the CRM names, which
+    desk that is, and where this desk's owner came from. None when they agree, or the CRM has said nothing. Two desks can
+    answer different questions (the CRM's owner is an AE, this desk's is the SDR), so this says so and decides nothing."""
+    email = (a.get("crm_owner_email") or "").strip().lower()
+    if not email:
+        return None
+    from .pipeline import desk_user
+    theirs = desk_user(cur, email)
+    if theirs is not None and theirs["id"] == a.get("owner_id"):
+        return None
+    return {"crm_owner": theirs["name"] if theirs else email, "crm_desk": "CRM Desk" if "crm_desk" in integrated else "The CRM",
+            "here": a.get("owner"), "here_source": (a.get("owner_note") or {}).get("source")}
+
 
 def accounts(cur, *, q: str | None, view: str, owner: int | None, limit: int = 100, offset: int = 0) -> list[dict]:
     where = ["a.fit_tier in ('A','B')"] if view != "all" else ["true"]
@@ -166,6 +206,7 @@ def account(cur, account_id: int, *, money: bool) -> dict | None:
     integrated = integration.integrated_with()
     a["owner_note"] = owner_note(owner_role=a.pop("owner_role_raw"), account_owner=bool(a["owner_id"]) and a["owner"] is not None,
                                  crm_owner_email=a.get("crm_owner_email"), lifecycle=a.get("lifecycle"), integrated=integrated)
+    a["owner_differs"] = owner_differs(cur, a, integrated)
     score = db.one(cur, "select * from account_scores where account_id = %s", account_id)
     labels = {r["key"]: r for r in db.all(cur, "select key, label, because, weight, half_life_days from signal_types")}
     sigs = db.all(cur, """select s.id, s.type_key, s.observed_at, s.strength, s.evidence, s.source, p.full_name
@@ -251,7 +292,11 @@ def in_flight(cur, user: dict, *, mine: bool) -> dict:
                a.fit_tier, pl.id as play_id, pl.name as play, pl.sequence, sc.priority,
                (select max(at) from touches t where t.account_play_id = ap.id) as last_touch,
                (select r.id from replies r where r.account_id = a.id and r.handled_at is null
+                 and not exists (select 1 from reply_sends rs where rs.reply_id = r.id and rs.status in ('queued', 'sending'))
                  order by r.received_at desc limit 1) as reply_id,
+               (select r.id from replies r where r.account_id = a.id and r.handled_at is null
+                 and exists (select 1 from reply_sends rs where rs.reply_id = r.id and rs.status in ('queued', 'sending'))
+                 order by r.received_at desc limit 1) as answer_queued_id,
                (select json_build_object('id', m.id, 'starts_at', m.starts_at, 'status', m.status, 'person_id', m.person_id)
                  from meetings m where m.account_play_id = ap.id
                  order by (m.status = 'booked') desc, m.starts_at desc limit 1) as meeting,
@@ -317,6 +362,8 @@ def task(cur, task_id: int) -> dict | None:
                                  where e.account_play_id = %s and e.person_id = %s and m.status = 'sent'
                                  order by m.sent_at""", t["account_play_id"], t["person_id"]) if t["account_play_id"] else []
     t["max_chars"] = note_limit(cur) if t["kind"] == "linkedin_connect" else None
+    from . import replies
+    t["read_first"] = replies.unread_reply(cur, t["person_id"]) if t["kind"] not in ("reply", "review_reply") else None
     if t["kind"] == "call":
         from .gate import call_window
         t["call_hours"] = "{} to {}".format(*call_window(cur))
@@ -404,8 +451,9 @@ def person(cur, person_id: int) -> dict | None:
                              from messages m join enrollments e on e.id = m.enrollment_id
                              where e.person_id = %s and m.channel = 'email' and m.status in ('awaiting_approval', 'failed_gate')
                              order by at""", person_id, person_id)
+    from . import replies
     return {"person": p, "enrollments": enrollments, "touches": touches, "replies": reps, "meetings": meetings,
-            "signals": sigs, "suppressed": blocked, "waiting": waiting}
+            "signals": sigs, "suppressed": blocked, "waiting": waiting, "read_first": replies.unread_reply(cur, person_id)}
 
 
 # ---------------------------------------------------------------- signals
@@ -602,6 +650,8 @@ def message(cur, message_id: int) -> dict | None:
     ids = (m["citations"] or {}).get("ids", [])
     m["facts"] = db.all(cur, "select id, kind, text, source_url, observed_at from facts where id = any(%s)", ids) if ids else []
     slot = outreach.message_slot(cur, message_id) if m["status"] in ("awaiting_approval", "failed_gate") else None
+    from . import replies
+    m["read_first"] = replies.unread_reply(cur, m["person_id"]) if m["status"] in ("awaiting_approval", "failed_gate") else None
     m["next_slot"] = slot["at"] if slot else None
     m["slot_label"] = {k: v for k, v in slot.items() if k != "at"} if slot else None
     if m["channel"] == "email" and m["status"] in ("awaiting_approval", "failed_gate"):
@@ -632,8 +682,12 @@ def reply(cur, reply_id: int) -> dict | None:
                        left join messages m on m.id = r.message_id where r.id = %s""", reply_id)
     if r:
         r["extracted"] = {k: v for k, v in (r["extracted"] or {}).items() if not k.startswith("_")}
-        r["meeting_id"] = db.val(cur, """select id from meetings where account_id = %s and booked_at >= %s
-                                         order by booked_at limit 1""", r["account_id"], r["received_at"]) if r["account_id"] else None
+        # The meeting this reply led to: its id, and when it is, so the closed reply still says when.
+        r["meeting"] = db.one(cur, """select id, starts_at, status from meetings where account_id = %s and booked_at >= %s
+                                      order by booked_at limit 1""", r["account_id"], r["received_at"]) if r["account_id"] else None
+        r["meeting_id"] = r["meeting"]["id"] if r["meeting"] else None
+        from . import replies
+        r["can_relabel"] = replies.can_relabel(r)
         r["colleagues_waiting"] = db.val(cur, """select count(*) from enrollments e join account_plays ap on ap.id = e.account_play_id
                                                  where ap.account_id = %s and e.state = 'paused' and e.pause_reason = 'account_reply'
                                                  and e.person_id is distinct from %s""", r["account_id"], r["person_id"]) if r["account_id"] else 0
@@ -678,7 +732,19 @@ def deliverability(cur) -> dict:
 
 # ---------------------------------------------------------------- results
 
-def results(cur, *, money: bool) -> dict:
+def my_results(cur, user_id: int) -> dict:
+    """The signed-in person's own numbers (decision 113): their plays down the same funnel, the hot replies they answered
+    and how fast, and the meetings they own that an outbound play booked."""
+    f = db.one(cur, "select " + FUNNEL + " from account_plays ap where ap.owner_id = %s", user_id)
+    ans = db.one(cur, """select count(*) as answered,
+                                percentile_cont(0.5) within group (order by extract(epoch from (handled_at - received_at)) / 3600) as median_hours
+                         from replies where hot and handled_by = %s and handled_at is not null""", user_id)
+    booked = db.val(cur, """select count(*) from meetings where owner_id = %s and account_play_id is not null
+                            and source <> 'inbound' and status <> 'cancelled'""", user_id)
+    return {"funnel": f, "answered": ans["answered"], "median_hours": ans["median_hours"], "meetings": booked}
+
+
+def results(cur, *, money: bool, user_id: int | None = None) -> dict:
     f = db.one(cur, "select " + FUNNEL + " from account_plays ap")
     opps = db.one(cur, """select count(*) filter (where attribution = 'sourced') as sourced,
                                  count(*) filter (where attribution = 'influenced') as influenced""" +
@@ -719,6 +785,8 @@ def results(cur, *, money: bool) -> dict:
     out = {"funnel": f, "lift": meeting_lift, "deal_lift": deal_lift,
            "opportunities": opps, "sla": sla, "labels": labels, "signals": signal_performance(cur), "learnings": learn,
            "channels": channels}
+    if user_id is not None:
+        out["mine"] = my_results(cur, user_id)
     if money:
         spend = db.all(cur, """select vendor, unit, sum(qty) as qty, sum(cost_cents) as cost_cents from ledger
                                where at >= date_trunc('month', app_now()) group by vendor, unit order by vendor""")
@@ -812,7 +880,7 @@ def my_mailbox(cur, user_id: int) -> dict:
     return {"mailboxes": [{k: m.get(k) for k in keep} for m in boxes],
             "domains": [{k: x.get(k) for k in ("domain", "spf", "dkim", "dmarc", "dmarc_aligned", "dmarc_policy", "blocklisted",
                                                   "spam_rate", "age_days", "checked_at")} for x in d["domains"] if x["domain"] in domains],
-            "thresholds": d["placement"]}
+            "thresholds": d["placement"], "bounce_check_from": sending.BOUNCE_FLOOR}
 
 
 def do_not_contact(cur) -> list[dict]:
@@ -836,8 +904,9 @@ def badge_counts(cur, user: dict) -> dict:
                   join tasks t on t.reply_id = r.id and t.status = 'open'
                   and t.kind in ('reply', 'review_reply') where (t.owner_id = %s or %s)), 40)
              + least((select count(*) from account_plays where state = 'proposed' and (owner_id = %s or %s)), 40)
-             + least((select count(*) from tasks where status = 'open' and owner_id = %s and kind not in ('reply', 'review_reply')
-                  and due_at <= app_now() + interval '1 day'), 50)""", uid, not sdr, uid, not sdr, uid)
+             + least((select count(*) from tasks t where t.status = 'open' and t.owner_id = %s and t.kind not in ('reply', 'review_reply')
+                  and t.due_at <= app_now() + interval '1 day'
+                  and not """ + UNREAD_REPLY.format(person="t.person_id") + """), 50)""", uid, not sdr, uid, not sdr, uid)
     mine = """coalesce((select ap.owner_id from account_plays ap where ap.account_id = r.account_id
                         order by ap.proposed_at desc limit 1), (select owner_id from accounts where id = r.account_id)) = %s"""
     replies_n = db.val(cur, "select count(*) from replies r where (r.needs_review or r.label is null) and r.handled_at is null"

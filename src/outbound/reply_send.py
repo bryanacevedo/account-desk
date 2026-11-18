@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from . import adapters, audit, db, jobs, outreach, replies
+from . import adapters, audit, crmq, db, jobs, outreach, replies
 from .config import CONFIG
 
 log = logging.getLogger("outbound.reply_send")
@@ -40,11 +40,13 @@ class Refusal:
 def refusal(cur, r: dict) -> Refusal | None:
     """Why this reply may not be answered from the desk, or None. Asked when the page loads, again on Send, and again
     by the job, so a reply that is labelled late as an unsubscribe is refused at the last step."""
-    label = r["label"] or "other"
+    if r["label"] is None:
+        return Refusal("unread", "The desk has not read this reply yet. Label it first.")
+    label = r["label"]
     if label in NO_SEND:
         return Refusal("label", NO_SEND[label])
     if replies.OPT_OUT.search(r["cleaned"] or "") or (r["needs_review"] and replies.OPT_OUT.search(r["review_reason"] or "")):
-        return Refusal("asked_to_stop", "They may have asked us to stop. Read it and label it; nothing is sent meanwhile.")
+        return Refusal("asked_to_stop", "They may have asked us to stop. Label it first; nothing is sent meanwhile.")
     if r["needs_review"]:
         return Refusal("needs_review", "The desk is not sure what this reply means. Label it first.")
     if not r["person_id"]:
@@ -112,7 +114,7 @@ def queue(cur, r: dict, user: dict, text: str) -> dict:
     why = refusal(cur, r)
     if why:
         raise ValueError(why.message)
-    found = check_suggestion(text, r["cleaned"])
+    found = check_suggestion(text, r["cleaned"], replies.product_facts(cur))
     if found:
         raise ValueError(found[0]["message"])
     if not text.strip():
@@ -201,10 +203,8 @@ def record_sent(cur, rs: dict, provider_id: str | None) -> None:
         db.run(cur, """insert into touches (account_id, person_id, channel, direction, kind, at, source, dedup_key)
                        values (%s,%s,'email','out','reply_sent',app_now(),'desk',%s) on conflict do nothing""",
                r["account_id"], rs["person_id"], f"reply_send:{rs['id']}")
-    db.run(cur, """insert into crm_outbox (kind, payload, idempotency_key) values ('activity', %s, %s)
-                   on conflict do nothing""",
-           db.J({"type": "email_sent", "person_id": rs["person_id"], "reply_send_id": rs["id"], "subject": rs["subject"]}),
-           f"activity:reply:{rs['id']}")
+    crmq.enqueue(cur, "activity", {"type": "email_sent", "person_id": rs["person_id"], "reply_send_id": rs["id"],
+                                   "subject": rs["subject"]}, f"activity:reply:{rs['id']}")
     replies.handle(cur, r["id"], user_id=rs["user_id"], outcome="answered")
     audit.log(cur, "person", "reply_sent", "reply", r["id"], {"reply_send_id": rs["id"]}, actor_id=rs["user_id"])
 
@@ -249,14 +249,16 @@ def refine(cur, r: dict, instruction: str, current: str) -> dict:
     first = r.get("first_name")
     failures: list[str] = []
     body, found = current, []
+    facts = replies.product_facts(cur)
     from . import llm
     for attempt in (1, 2):
         out = llm.run(cur, "refine_reply", {"label": r["label"], "cleaned": r["cleaned"], "first_name": first,
                                             "instruction": instruction, "current": current,
+                                            **({"product_facts": facts} if facts else {}),
                                             **({"attempt": attempt, "failures": failures} if failures else {})},
                       account_id=r["account_id"])
         body = out["body"]
-        found = check_suggestion(body, r["cleaned"])
+        found = check_suggestion(body, r["cleaned"], facts)
         if not found:
             break
         failures = [x["message"] for x in found]
@@ -270,5 +272,6 @@ def view(cur, r: dict, user: dict) -> dict:
     sends = db.all(cur, "select id, status, subject, body, error, sent_at, created_at from reply_sends where reply_id = %s order by id desc",
                    r["id"])
     return {"can_send": why is None, "no_send": {"code": why.code, "message": why.message} if why else None,
-            "from_mailbox": mailbox["address"] if mailbox else None, "refines_left": refines_left(cur, r["id"]), "sends": sends}
+            "from_mailbox": mailbox["address"] if mailbox else None, "refines_left": refines_left(cur, r["id"]), "sends": sends,
+            "product_facts": replies.product_facts(cur)}
 

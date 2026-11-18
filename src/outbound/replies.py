@@ -6,7 +6,7 @@ import logging
 import re
 from datetime import datetime, timedelta
 
-from . import alerts, audit, db, jobs, llm, outreach, plays, sending, signals, timeutil
+from . import alerts, audit, crmq, db, jobs, llm, outreach, plays, sending, signals, timeutil
 from .db import J
 
 log = logging.getLogger("outbound.replies")
@@ -172,16 +172,24 @@ def ingest(cur, *, from_addr: str, subject: str | None, raw: str, received_at: d
     return rid
 
 
+def product_facts(cur) -> list[str]:
+    """What RevOps says is true about the product (Settings, decision 115): the only product statements a reply may make."""
+    v = db.val(cur, "select value from settings where key = 'product_facts'")
+    return [x for x in v if isinstance(x, str) and x.strip()] if isinstance(v, list) else []
+
+
 def suggest(cur, label: str, cleaned: str, first_name: str | None, account_id: int | None = None) -> str | None:
     """A reply the SDR could send, or None. The model writes it; code checks it for invented numbers, product facts
     and placeholders; one rewrite with the failures named; then nothing rather than an invention."""
     from .copy_gate import check_suggestion
+    facts = product_facts(cur)
     failures: list[str] = []
     for attempt in (1, 2):
         out = llm.run(cur, "suggest_reply", {"label": label, "cleaned": cleaned, "first_name": first_name,
+                                            **({"product_facts": facts} if facts else {}),
                                             **({"attempt": attempt, "failures": failures} if failures else {})},
                       account_id=account_id)
-        found = check_suggestion(out["body"], cleaned)
+        found = check_suggestion(out["body"], cleaned, facts)
         if not found:
             return out["body"]
         failures = [x["message"] for x in found]
@@ -348,8 +356,7 @@ def act(cur, r: dict) -> None:
             from .privacy import suppress_other_channels
             suppress_other_channels(cur, pid, reason="Unsubscribed by reply", source="reply")
             _stop_person(cur, pid, "unsubscribed")
-        db.run(cur, """insert into crm_outbox (kind, payload, idempotency_key) values ('opt_out', %s, %s)
-                       on conflict do nothing""", J({"email": email, "person_id": pid}), f"optout:{r['id']}")
+        crmq.enqueue(cur, "opt_out", {"email": email, "person_id": pid}, f"optout:{r['id']}")
         db.run(cur, "update replies set handled_at = app_now(), outcome = 'suppressed' where id = %s", r["id"])
         if aid:
             _resume_others(cur, aid, pid)
@@ -375,8 +382,8 @@ def act(cur, r: dict) -> None:
             alerts.raise_alert(cur, kind="hot_reply", severity="urgent", channel=chan, target_user=owner,
                                object_kind="reply", object_id=r["id"], title=f"{acct['name']} replied",
                                body=r["cleaned"][:400], dedup_key=f"hot:{r['id']}")
-        db.run(cur, """insert into crm_outbox (kind, payload, idempotency_key) values ('task', %s, %s) on conflict do nothing""",
-               J({"type": "hot_reply", "reply_id": r["id"], "person_id": pid, "owner": owner}), f"task:reply:{r['id']}")
+        crmq.enqueue(cur, "task", {"type": "hot_reply", "reply_id": r["id"], "person_id": pid, "owner": owner},
+                     f"task:reply:{r['id']}")
         jobs.enqueue(cur, "resume_after_positive", {"account_id": aid, "person_id": pid},
                      run_at=timeutil.add_business_days(r["received_at"], 3), dedupe_key=f"rap:{r['id']}")
         return
@@ -468,21 +475,80 @@ def resume_after_positive(cur, payload: dict) -> None:
         _resume_others(cur, payload["account_id"], payload.get("person_id"))
 
 
+READ_FIRST = "They replied; read it first"
+# A label a person may not change away from: each one already did something that is not undone by relabelling (a person
+# on Do not contact, an address marked invalid, someone marked as having left). A manager lifts a Do not contact by hand.
+KEPT_LABELS = {"unsubscribe", "bounce", "left_company"}
+
+
+def unread_reply(cur, person_id: int | None) -> int | None:
+    """The newest reply from this person that nobody has read yet: no label, or flagged for a person, and not handled.
+    While one exists their open call and LinkedIn tasks and approvable drafts are held back (decision 108)."""
+    if not person_id:
+        return None
+    return db.val(cur, """select id from replies where person_id = %s and handled_at is null
+                          and (label is null or needs_review) order by received_at desc limit 1""", person_id)
+
+
+def relabel_refusal(r: dict, label: str | None) -> str | None:
+    """Why a person may not give this reply that label, or None. An unread or flagged reply takes any label; a labelled one
+    that is still open takes another; one that is closed, or whose label already acted for good, keeps it."""
+    if not label or (label == r["label"] and not r["needs_review"]):
+        return None
+    if r["label"] is not None and not r["needs_review"] and r["handled_at"] is not None:
+        return "This reply is closed. Its label stays."
+    if r["label"] in KEPT_LABELS and not r["needs_review"]:
+        return "This label already acted for good. A manager lifts Do not contact from the list."
+    return None
+
+
+def can_relabel(r: dict) -> bool:
+    """Whether the sheet offers a person another label for this reply: it is open, and its label has not acted for good."""
+    return r["handled_at"] is None and not (r["label"] in KEPT_LABELS and not r["needs_review"])
+
+
+def _tell_crm_answered(cur, r: dict, outcome: str) -> None:
+    """A person answered the reply or booked the meeting: the CRM gets what they wrote as an inbound email, and its
+    "Hot reply" task for this reply is closed (decision 109). Both are outbox rows, so a CRM that is down is retried."""
+    if not r["person_id"]:
+        return
+    crmq.enqueue(cur, "reply_in", {"reply_id": r["id"], "person_id": r["person_id"]}, f"reply_in:{r['id']}")
+    if db.val(cur, "select exists (select 1 from crm_outbox where idempotency_key = %s)", f"task:reply:{r['id']}"):
+        crmq.enqueue(cur, "task_close", {"reply_id": r["id"], "person_id": r["person_id"], "outcome": "done",
+                                         "note": "Meeting booked" if outcome == "meeting_booked" else "Answered"},
+                     f"task_close:{r['id']}")
+
+
 def handle(cur, reply_id: int, *, user_id: int, outcome: str, label: str | None = None) -> None:
-    """A person answered the reply, or labelled one the desk was unsure about."""
+    """A person answered the reply, or labelled one the desk was unsure about, has not read yet, or read differently."""
     r = db.one(cur, "select * from replies where id = %s for update", reply_id)
     if label and (label != r["label"] or r["needs_review"]):
+        old = r["label"]
+        if old is not None and old != label:
+            # A person's label wins over the desk's: what the old label opened is closed, and the change is audited.
+            db.run(cur, "update tasks set status = 'skipped', done_at = app_now(), note = 'Closed: relabelled' "
+                        "where reply_id = %s and kind = 'reply' and status = 'open'", reply_id)
+            alerts.resolve(cur, ["hot_reply", "sla_missed"], object_kind="reply", object_id=reply_id)
+            if old in HOT and label not in HOT and db.val(cur, "select exists (select 1 from crm_outbox where idempotency_key = %s)",
+                                                          f"task:reply:{reply_id}"):
+                crmq.enqueue(cur, "task_close", {"reply_id": reply_id, "person_id": r["person_id"], "outcome": "cancelled",
+                                                 "note": "Relabelled by the SDR"}, f"task_close:{reply_id}")
+            audit.log(cur, "person", "reply_relabelled", "reply", reply_id, {"from": old, "to": label}, actor_id=user_id)
         db.run(cur, "update replies set label = %s, classified_by = 'person', needs_review = false, hot = %s, "
                     "handled_at = null where id = %s", label, label in HOT, reply_id)
         r = db.one(cur, "select * from replies where id = %s", reply_id)
-        db.run(cur, "update tasks set status = 'done', done_at = app_now() where reply_id = %s and kind = 'review_reply'",
-               reply_id)
         act(cur, r)
+        db.run(cur, "update tasks set status = 'done', done_at = app_now() where reply_id = %s and kind = 'review_reply' "
+                    "and status = 'open'", reply_id)
+    if outcome == "labelled" and (label or r["label"]) in HOT:
+        return                  # a hot reply stays open: labelling it is not answering it
     db.run(cur, "update replies set handled_by = %s, handled_at = coalesce(handled_at, app_now()), outcome = %s "
                 "where id = %s", user_id, outcome, reply_id)
     db.run(cur, "update tasks set status = 'done', done_at = app_now() where reply_id = %s and kind = 'reply' "
                 "and status = 'open'", reply_id)
     alerts.resolve(cur, ["hot_reply", "sla_missed"], object_kind="reply", object_id=reply_id)
+    if outcome in ("answered", "meeting_booked"):
+        _tell_crm_answered(cur, db.one(cur, "select * from replies where id = %s", reply_id), outcome)
     audit.log(cur, "person", "reply_handled", "reply", reply_id, {"outcome": outcome}, actor_id=user_id)
 
 

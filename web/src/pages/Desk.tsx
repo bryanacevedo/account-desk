@@ -113,7 +113,7 @@ export function MyMailbox() {
   return (
     <div className="page">
       <div className="head"><div><h1>My mailbox</h1><p className="sub">Read only: a manager changes mailboxes</p></div></div>
-      <Hint>The mailbox your emails go out from, and the domain it sits on. If it is paused or still warming up, your approved emails wait and none is lost. Spam rate comes from the mailbox provider and should stay under 0.3%.</Hint>
+      <Hint>The mailbox your emails go out from, and the domain it sits on. If it is paused or still warming up, your approved emails wait and none is lost. Spam rate comes from the mailbox provider and should stay under 0.3%. A reply to someone goes out from the mailbox that sent them the thread, so you may see more than one address. A mailbox&rsquo;s bounce rate is judged once it has sent {data.bounce_check_from} emails in 14 days; before that it is shown, not acted on.</Hint>
       {data.mailboxes.length ? data.mailboxes.map((m: any) => {
         const d = data.domains.find((x: any) => x.domain === m.domain);
         const auth = d && d.spf && d.dkim && d.dmarc && d.dmarc_aligned;
@@ -139,7 +139,7 @@ export function MyMailbox() {
   );
 }
 
-/** Decision 6. The do-not-contact list for everyone, read only. An SDR can add a person, an email or a phone number in Settings; lifting an entry, or blocking a whole company, is for a manager or GTM. */
+/** Decision 6. The do-not-contact list for everyone, read only here. An SDR adds a person from the person's page (decision 111); lifting an entry, or blocking a whole company, is for a manager or GTM. */
 export function DoNotContact() {
   const { data, error, reload } = useData<any>("/api/do-not-contact");
   if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
@@ -147,7 +147,7 @@ export function DoNotContact() {
   return (
     <div className="page">
       <div className="head"><div><h1>Do not contact</h1><p className="sub">{data.entries.length} {data.entries.length === 1 ? "entry" : "entries"}, read only</p></div></div>
-      <Hint>Check here before you promise anything to someone. The desk never emails, calls or messages anyone on this list, and an email to them is refused before it is sent. To lift an entry, or to block a whole company, ask a manager.</Hint>
+      <Hint>Check here before you promise anything to someone. The desk never emails, calls or messages anyone on this list, and an email to them is refused before it is sent. To add a person, open their page and use Do not contact there. To lift an entry, or to block a whole company, ask a manager.</Hint>
       {data.entries.length ? (
         <div className="ledger">
           <div className="row head" style={{ gridTemplateColumns: "100px minmax(0,1fr) minmax(0,1fr) 70px" }}><span>Kind</span><span>Who</span><span>Why</span><span className="num">Added</span></div>
@@ -253,6 +253,19 @@ export function Results() {
     <div className="page">
       <div className="head"><div><h1>Results</h1></div></div>
       <Hint>Opportunities sourced: deals opened at an account within 90 days after a meeting that one of our plays booked. Opportunities influenced are deals opened where a play was running but no play meeting came first. They are different from the meeting counts below, which count meetings, not deals.</Hint>
+      {data.mine && (data.mine.funnel.proposed > 0 || data.mine.answered > 0) ? (
+        <Section title="Yours">
+          <div className="figs">
+            <Fig value={data.mine.funnel.proposed} label="Plays proposed to you" sm />
+            <Fig value={data.mine.funnel.contacted} label="Contacted" sm />
+            <Fig value={data.mine.funnel.replied} label="Replied" sm />
+            <Fig value={data.mine.funnel.positive} label="Positive replies" sm />
+            <Fig value={data.mine.meetings} label="Meetings booked from your plays" sm />
+            <Fig value={data.mine.answered} label="Positive replies you answered" sm />
+            <Fig value={data.mine.median_hours ? `${data.mine.median_hours.toFixed(1)} h` : "None yet"} label="Your typical time to answer" sm />
+          </div>
+        </Section>
+      ) : null}
       <div className="figs">
         <Fig value={data.opportunities.sourced} label="Opportunities sourced" />
         {me?.money ? <Fig value={money(data.opportunities.sourced_cents)} label="Pipeline sourced" /> : null}
@@ -596,6 +609,33 @@ function ImportBox({ peopleOnly }: { peopleOnly?: boolean }) {
   );
 }
 
+/** Decision 115. What is true about the product, in plain sentences RevOps keeps. A reply may state a product fact only
+ *  when one of these says it; anything else is still confirmed later. */
+function ProductFacts({ canEdit }: { canEdit: boolean }) {
+  const { data, error, reload } = useData<any>("/api/product-facts");
+  const [text, setText] = useState<string | null>(null);
+  const [busy, run] = useBusy();
+  if (error) return <Section title="Product facts"><Failed error={error} retry={reload} /></Section>;
+  if (!data) return null;
+  return (
+    <Section title="Product facts">
+      {canEdit ? (
+        <>
+          <textarea className="input" rows={6} value={text ?? data.facts.join("\n")} onChange={(e) => setText(e.target.value)}
+            aria-label="Product facts, one per line" placeholder="One plain sentence per line, for example: Setup takes four weeks." />
+          <div className="actions" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+            <button className="btn sm" disabled={busy || text === null} onClick={() => run(async () => {
+              await api("/api/product-facts", { method: "PUT", body: { facts: (text ?? "").split("\n").map((x) => x.trim()).filter(Boolean) } });
+              setText(null); reload();
+            }, "Saved. Replies may state these.")}>Save</button>
+          </div>
+        </>
+      ) : data.facts.length ? <ul className="facts">{data.facts.map((f: string, i: number) => <li key={i}><span>{f}</span></li>)}</ul>
+        : <Empty title="None yet" />}
+    </Section>
+  );
+}
+
 export function Settings() {
   const { data, error, reload } = useData<any>("/api/settings");
   const me = useData<any>("/api/me").data;
@@ -606,6 +646,7 @@ export function Settings() {
   return (
     <div className="page">
       <div className="head"><div><h1>Settings</h1></div></div>
+      <ProductFacts canEdit={me?.user.role === "gtm" || me?.user.role === "manager"} />
       <Section title="Signals and their weight">
         <div className="ledger">
           <div className="row head" style={{ gridTemplateColumns: W_COLS }}><span>Signal</span><span className="num">Priority points</span><span className="num">Counts half after, days</span><span>On</span></div>
