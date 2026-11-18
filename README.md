@@ -11,9 +11,9 @@
 ![python](https://img.shields.io/badge/python-3.13-2B47C9)
 [![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial-5E6A62)](LICENSE.md)
 
-[Live demo](https://account-desk-x4ko.onrender.com) · [Film (2:01)](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4) · [Docs](docs/SPEC.md) · [Decisions](docs/DECISIONS.md)
+[Live demo](https://account-desk-demo.pages.dev) · [Film (2:01)](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4) · [Docs](docs/SPEC.md) · [Decisions](docs/DECISIONS.md)
 
-<sub>The public demo is shared by every visitor and is deployed by hand, so it can be behind the code here. Admin actions (kill switch, users, erasure, publishing the ideal customer profile, CSV imports, country email rules, acknowledging alerts) and sending a reply are blocked there, and "Move a day ahead" moves at most 24 hours at a time.</sub>
+<sub>The public demo is a read-only static snapshot of the sample company, rebuilt by GitHub Actions when a push to `main` changes the web app or the snapshot scripts; nothing is saved there. On a server install with `PUBLIC_DEMO=1`, admin actions (kill switch, users, erasure, publishing the ideal customer profile, CSV imports, country email rules, acknowledging alerts) and sending a reply are blocked there, and "Move a day ahead" moves at most 24 hours at a time.</sub>
 
 <img src="docs/img/today.png" alt="An SDR's Today page in the demo: plays proposed to them, emails to approve, calls and LinkedIn steps" width="900">
 
@@ -36,7 +36,7 @@ It is built for a team that would rather write to 40 companies at the right mome
 
 **[Watch the walkthrough (2:01)](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4)**: one account, Ridgeway Software, from a new VP Finance on 13 October to two deals, then the held-back test that says it is too early to tell. It was filmed on the demo as it stood on 11 November 2026, and every figure in it was read from that database. The demo is rebuilt from its simulation on each deploy, so the live accounts have moved on since.
 
-In the [live demo](https://account-desk-x4ko.onrender.com), pick who you are acting as in the sidebar (an SDR, the sales manager, or GTM engineering). The company, its accounts, people and vendors are invented. If it has been idle, Render takes up to a minute to wake it.
+In the [live demo](https://account-desk-demo.pages.dev), pick who you are acting as in the sidebar (an SDR, the sales manager, or GTM engineering). The company, its accounts, people and vendors are invented.
 
 ## How it works
 
@@ -217,7 +217,7 @@ Set `LINKEDIN_TOOL_TOKEN` to a long random string, then in HeyReach add a webhoo
 
 ### Choosing the CRM
 
-`CRM` picks the desk's CRM. Unset, nothing changes: the demo keeps its simulated CRM, and live mode keeps a CRM that refuses. `CRM=crmdesk` makes [CRM Desk](https://crm-desk-sevh.onrender.com) the CRM through `src/outbound/adapters/crmdesk.py`: the CRM outbox writes emails, SDR steps, meetings, tasks and opt-outs there, and the desk reads deals and account owners from its change feeds. It needs `CRM_DESK_URL` and `CRM_DESK_KEY`. Every call fails closed: a timeout, a refused connection, a 429 or a 5xx leaves the outbox row queued to try again, up to five tries, after which it is marked dead and raises an alert. `CRM=salesforce` is refused with an error, because there is no Salesforce adapter yet, and so is any value the desk does not know (`default` means the same as unset). The contract tests (`tests/test_crm_contract.py`) run on both CRMs where they apply; the CRM Desk half needs a running CRM Desk named by `CRM_DESK_URL`, `CRM_DESK_KEY` and `CRM_DESK_ADMIN_KEY`, and is skipped without them. The public CRM Desk demo refuses API keys, so it needs your own install.
+`CRM` picks the desk's CRM. Unset, nothing changes: the demo keeps its simulated CRM, and live mode keeps a CRM that refuses. `CRM=crmdesk` makes [CRM Desk](https://crm-desk-demo.pages.dev) the CRM through `src/outbound/adapters/crmdesk.py`: the CRM outbox writes emails, SDR steps, meetings, tasks and opt-outs there, and the desk reads deals and account owners from its change feeds. It needs `CRM_DESK_URL` and `CRM_DESK_KEY`. Every call fails closed: a timeout, a refused connection, a 429 or a 5xx leaves the outbox row queued to try again, up to five tries, after which it is marked dead and raises an alert. `CRM=salesforce` is refused with an error, because there is no Salesforce adapter yet, and so is any value the desk does not know (`default` means the same as unset). The contract tests (`tests/test_crm_contract.py`) run on both CRMs where they apply; the CRM Desk half needs a running CRM Desk named by `CRM_DESK_URL`, `CRM_DESK_KEY` and `CRM_DESK_ADMIN_KEY`, and is skipped without them. The public CRM Desk demo refuses API keys, so it needs your own install.
 
 ### At production size
 
@@ -274,7 +274,7 @@ Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/cata
 
 ## Deploy
 
-`render.yaml` describes the hosted demo: one Docker service on Render's free plan with Postgres inside the container and the simulation built into the image (`scripts/docker-build-demo.sh`), so a start or a wake from sleep only boots Postgres. The image builds the shared world by default (`WORLD=world`, its 91 days); `--build-arg DEMO_WORLD=legacy` builds the desk's own 90-day generator instead. The build fails if the coverage gate finds a scenario missing. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). On Render's own builder the image took about 17 minutes to build (2026-11-12, a build of the desk's own generator). Deploys are manual: auto-deploy is off on the service (`render.yaml` does not say so), so a push to `main` deploys nothing and the live demo can be behind the code here.
+`render.yaml` describes a server install of the demo (the public demo is the static snapshot above): one Docker service on Render's free plan with Postgres inside the container and the simulation built into the image (`scripts/docker-build-demo.sh`), so a start or a wake from sleep only boots Postgres. The image builds the shared world by default (`WORLD=world`, its 91 days); `--build-arg DEMO_WORLD=legacy` builds the desk's own 90-day generator instead. The build fails if the coverage gate finds a scenario missing. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). On Render's own builder the image took about 17 minutes to build (2026-11-12, a build of the desk's own generator). Deploys are manual: auto-deploy is off on the service (`render.yaml` does not say so), so a push to `main` deploys nothing there.
 
 `make snapshot` builds the demo as static files in `.snapshot/`: the web app plus every response it reads from the built demo database, for each person the demo can act as, with every change refused. How it is built, deployed to Cloudflare Pages and rolled back: `docs/RUNBOOK.md`.
 
@@ -314,10 +314,10 @@ Account Desk runs on its own: with no `CRM` and no `INTEGRATED_WITH` set, it kee
 
 | Project | What it does | Links |
 |---|---|---|
-| Account Desk (this repository) | Signal-based, account-based outbound with a person on the send decision | [Live demo](https://account-desk-x4ko.onrender.com) · [Film](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4) |
-| Events Desk | For someone who runs events all year: seat requests and approvals, attendee lists turned into the companies and people worth meeting, with checked emails, handed back as a sheet for sales | [Code](https://github.com/bryanacevedo/events-desk) · [Live demo](https://events-desk.onrender.com) · [Film](https://bryanacevedo.github.io/project-videos/video/events-desk.mp4) |
-| Market Desk | Decides who a B2B team sells to from its own deals, sizes that market and splits it into territories | [Code](https://github.com/bryanacevedo/market-desk) · [Live demo](https://market-desk-3kou.onrender.com) · [Film](https://bryanacevedo.github.io/project-videos/video/market-desk.mp4) |
-| CRM Desk | A CRM for teams of one to fifty with Salesforce's data model and a simpler experience; Account Desk and Events Desk can use it as their CRM | [Live demo](https://crm-desk-sevh.onrender.com) · [Film](https://bryanacevedo.github.io/project-videos/video/crm-desk.mp4) (code private) |
+| Account Desk (this repository) | Signal-based, account-based outbound with a person on the send decision | [Live demo](https://account-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4) |
+| Events Desk | For someone who runs events all year: seat requests and approvals, attendee lists turned into the companies and people worth meeting, with checked emails, handed back as a sheet for sales | [Code](https://github.com/bryanacevedo/events-desk) · [Live demo](https://events-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/events-desk.mp4) |
+| Market Desk | Decides who a B2B team sells to from its own deals, sizes that market and splits it into territories | [Code](https://github.com/bryanacevedo/market-desk) · [Live demo](https://market-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/market-desk.mp4) |
+| CRM Desk | A CRM for teams of one to fifty with Salesforce's data model and a simpler experience; Account Desk and Events Desk can use it as their CRM | [Live demo](https://crm-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/crm-desk.mp4) (code private) |
 
 All four films: https://bryanacevedo.github.io/project-videos/
 
