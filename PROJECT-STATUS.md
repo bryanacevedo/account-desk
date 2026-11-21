@@ -1,6 +1,6 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-21. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 115. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-21. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 116. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Where it stands
 
