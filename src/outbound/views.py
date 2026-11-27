@@ -2,7 +2,7 @@
 (managers and GTM); a rep's read never carries it."""
 from __future__ import annotations
 
-from . import adapters, alerts, budget, db, monitors, outreach, region_rules, sending, spend, stats, suggestions
+from . import adapters, alerts, budget, db, monitors, outreach, region_rules, sending, spend, standing, stats, suggestions
 from . import plays as plays_mod
 from .jobs import request_progress
 
@@ -690,6 +690,8 @@ def message(cur, message_id: int) -> dict | None:
     m["facts"] = db.all(cur, "select id, kind, text, source_url, observed_at from facts where id = any(%s)", ids) if ids else []
     # BL-170: who approved it, whether it came in a batch, and whether it can still be taken back (it has not gone out).
     m["approver"] = db.val(cur, "select name from users where id = %s", m["approved_by"]) if m.get("approved_by") else None
+    m["standing"] = db.one(cur, """select s.id, s.reason, s.ends_on, s.signed_at, s.signed_by_person, u.name as owner from standing_approvals s
+                                   join users u on u.id = s.owner_id where s.id = %s""", m["standing_approval_id"]) if m.get("standing_approval_id") else None
     m["batch_size"] = db.val(cur, "select approved from approval_batches where id = %s", m["approval_batch_id"]) if m.get("approval_batch_id") else None
     m["can_take_back"] = m["channel"] == "email" and m["status"] in ("approved", "scheduled") and m["approval_mode"] == "person"
     m["taken_back_by_name"] = db.val(cur, "select name from users where id = %s", m["taken_back_by"]) if m.get("taken_back_by") else None
@@ -906,6 +908,7 @@ def settings(cur) -> dict:
             "icp": db.one(cur, "select * from icp_versions order by published_at desc limit 1"),
             "personas": db.all(cur, "select * from personas"),
             "suggestion_rule": suggestions.RULE,
+            "standing": standing.listing(cur),
             "proposal_budget": {"team": (team := budget.team(cur)), "message": budget.capacity_message(team),
                                 "changes": budget.changes(cur), "cap_max": budget.CAP_MAX},
             **{("regions" if k == "regions" else "region_changes"): v for k, v in region_rules.listing(cur).items()},

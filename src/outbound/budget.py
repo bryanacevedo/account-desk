@@ -153,7 +153,7 @@ def capacity_message(rows: list[dict]) -> str | None:
     who = full[0]["name"] if len(full) == 1 else f"{len(full)} SDRs"
     verb = "is" if len(full) == 1 else "are"
     return (f"{who} {verb} at the weekly limit and {n} account{'s' if n != 1 else ''} {'is' if n == 1 else 'are'} waiting, highest priority "
-            f"first. Add a person, or raise the limit.")
+            f"first. Add a person, sign a standing approval for follow-ups, or raise the limit.")
 
 
 def changes(cur, limit: int = 20) -> list[dict]:

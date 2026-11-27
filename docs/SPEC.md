@@ -196,7 +196,7 @@ Each play has an autonomy stage:
 | supervised | Drafts; approves follow-ups that passed the gate. | Approves every step 1, and a 1-in-5 sample of the rest. |
 | autonomous | Sends anything that passed the gate, for fit tier B only. | Approves every tier A message. |
 
-Promotion is proposed by the desk and approved by a manager, only when the play's last 50 approved drafts had an approve-without-edit rate of at least 90%, no complaint, bounce rate under 2%, and positive reply rate at or above the play's floor. Demotion is automatic on a complaint, a bounce rate over 3% in a day, or an edit rate over 30% in the last 20.
+Promotion is proposed by the desk and approved by a manager, only when the play's last 50 approved drafts had an approve-without-edit rate of at least 90%, no complaint, bounce rate under 2%, and positive reply rate at or above the play's floor. A Supervised play sends follow-ups without a person only under a standing approval a manager signed (decision 121). Demotion is automatic on a complaint, a bounce rate over 3% of the last 200 sends (50 at least), or an edit rate over 30% in the last 20.
 
 An approval stores `approved_hash = sha256(subject + body)`. Sending refuses any message whose current hash differs.
 

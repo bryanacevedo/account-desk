@@ -1422,6 +1422,11 @@ export function MessageSheet({ id }: { id: number }) {
         <Fig value={<Status kind={MSG[m.status][0]}>{MSG[m.status][1]}</Status>} label="Status" sm />
         <Fig value={m.play} label="Play" sm />
       </div>
+      {m.approval_mode === "auto_supervised" ? (
+        <p className="capacity-note">{m.standing
+          ? `Approved by the desk under a standing approval ${m.standing.signed_by_person ? `signed by ${m.standing.owner}` : `carried over (${m.standing.owner} is named, nobody signed it)`} on ${day(m.standing.signed_at)}, valid to ${day(`${m.standing.ends_on}T12:00:00`)}: ${m.standing.reason}`
+          : "Approved by the Supervised stage before standing approvals existed; no named owner."}</p>
+      ) : null}
       {failures.length ? (
         <Section title="Why it needs a rewrite">
           <ul className="facts">{failures.map((f: any, i: number) => <li key={i}><Status kind="stop">{""}</Status><span>{f.message}</span></li>)}</ul>

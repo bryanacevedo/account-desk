@@ -222,7 +222,7 @@ def sdr_edit(body: str) -> str:
 def manager_reviews_autonomy(cur, at: datetime) -> None:
     """Monday mornings the manager looks at each live play's checks and approves the next stage when the desk says it
     is earned: the same rule the Plays page applies to a person's click (a manager, one stage, every check passed)."""
-    from .. import audit, views
+    from .. import audit, standing, views
     manager = db.one(cur, "select id from users where role = 'manager' and active order by id limit 1")
     if manager is None:
         return
@@ -237,6 +237,9 @@ def manager_reviews_autonomy(cur, at: datetime) -> None:
                p["id"], p["autonomy"], check["next"], reason, manager["id"])
         audit.log(cur, "person", "play_changed", "play", p["id"], {"autonomy": check["next"], "reason": reason},
                   actor_id=manager["id"])
+        # The history was built before the country rule existed, so its policy is the carried-over kind (decision 121); a
+        # final step of the build re-signs it under the real rule.
+        standing.on_stage_change(cur, p["id"], p["autonomy"], check["next"], by=manager["id"], reason=reason, carried_over=True)
 
 
 # What GTM and the manager do with new suggestions, on Tuesdays (a planted routine, README):

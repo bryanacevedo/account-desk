@@ -22,6 +22,7 @@ from . import (
     signals,
     sim_llm,  # noqa: F401  registers the stand-in model tasks
     spend,
+    standing,
     telemetry,
     timeutil,
 )
@@ -712,14 +713,23 @@ def autonomous_enabled(cur) -> bool:
 
 
 def maybe_auto_approve(cur, message_id: int) -> bool:
-    m = db.one(cur, """select m.*, pl.autonomy, a.fit_tier from messages m join enrollments e on e.id = m.enrollment_id
+    m = db.one(cur, """select m.*, pl.autonomy, pl.id as play_id, a.fit_tier from messages m join enrollments e on e.id = m.enrollment_id
                        join account_plays ap on ap.id = e.account_play_id join plays pl on pl.id = ap.play_id
                        join accounts a on a.id = ap.account_id where m.id = %s""", message_id)
     if m["status"] != "awaiting_approval":
         return False
     mode = None
-    if m["autonomy"] == "supervised" and m["step_index"] > 0 and not _sample(message_id):
-        mode = "auto_supervised"
+    standing_id = None
+    if m["autonomy"] == "supervised":
+        # BL-171: only under a standing approval a manager signed, and only for what it covers; the rest waits for a person.
+        pol = standing.in_force(cur, m["play_id"])
+        ctx = standing.message_context(cur, message_id) if pol else None
+        if pol and standing.covered(cur, pol, ctx) is None:
+            standing_id = pol["id"]
+            if _sample(message_id):
+                db.run(cur, "update messages set standing_approval_id = %s where id = %s", standing_id, message_id)   # a sampled draft: a person decides
+            else:
+                mode = "auto_supervised"
     elif m["autonomy"] == "autonomous" and m["fit_tier"] == "B" and autonomous_enabled(cur):
         mode = "auto_autonomous"
     if mode is None:
@@ -728,6 +738,8 @@ def maybe_auto_approve(cur, message_id: int) -> bool:
     if replies.unread_reply(cur, db.val(cur, "select person_id from enrollments where id = %s", m["enrollment_id"])):
         return False                # decision 108 holds for the automatic path too: a person reads their reply first
     _approve(cur, m, user_id=None, mode=mode)
+    if standing_id is not None:
+        db.run(cur, "update messages set standing_approval_id = %s where id = %s", standing_id, message_id)
     return True
 
 

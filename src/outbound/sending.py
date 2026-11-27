@@ -9,7 +9,7 @@ from datetime import timedelta
 
 import psycopg
 
-from . import adapters, alerts, crmq, db, gate, jobs, outreach, timeutil
+from . import adapters, alerts, crmq, db, gate, jobs, outreach, standing, timeutil
 from .config import CONFIG
 from .db import J
 
@@ -51,6 +51,8 @@ def send_one(cur, payload: dict) -> None:
     m = db.one(cur, "select * from messages where id = %s for update skip locked", payload["message_id"])
     if m is None or m["status"] != "scheduled":
         return
+    if standing.refuse_at_send(cur, m["id"]):
+        return          # its standing approval is gone: the email is back with a person (BL-171)
     ap = db.one(cur, "select ap.*, pl.key as play_key from account_plays ap join plays pl on pl.id = ap.play_id "
                      "where ap.id = %s", e["account_play_id"])
     person = db.one(cur, "select * from people where id = %s", e["person_id"])

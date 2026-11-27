@@ -10,7 +10,7 @@ PERIODIC = {  # kind: minutes
     "send_due": 10, "due_steps": 15, "expire_proposals": 60, "close_stale_plays": 360, "rescore_all": 1440,
     "sla_check": 30, "crm_push": 10, "mailbox_health": 360, "telemetry": 1440, "monitors": 360, "crm_sync": 360,
     "watch_reset": 1440, "sweep_sending": 15, "autonomy_watch": 360, "placement_tests": 10080, "dns_check": 1440,
-    "enrichment_refresh": 1440, "check_patterns": 1440, "retention_purge": 1440, "release_proposals": 15,
+    "enrichment_refresh": 1440, "check_patterns": 1440, "retention_purge": 1440, "release_proposals": 15, "standing_approvals_watch": 1440,
 }
 
 
@@ -32,6 +32,8 @@ def tick(cur) -> int:
         due["ingest:" + s["key"]] = s["cadence_minutes"]
     if not db.val(cur, "select exists (select 1 from users where weekly_proposal_cap is not null)"):
         due.pop("release_proposals", None)       # no weekly limit anywhere: nothing to release, and no job is queued
+    if not db.val(cur, "select exists (select 1 from standing_approvals where revoked_at is null)"):
+        due.pop("standing_approvals_watch", None)
     for kind, minutes in due.items():
         last = state.get("sched:" + kind)
         if last is not None and db.val(cur, "select %s::timestamptz + %s > app_now()", last, timedelta(minutes=minutes)):

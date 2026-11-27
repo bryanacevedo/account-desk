@@ -19,7 +19,7 @@ KIND_SCOPE: dict[str, str] = {
     "monitors_stale": "health", "theme_failed": "health", "suggestion_dropped": "health", "budget": "health",
     "budget_wait": "health", "play_budget": "health", "job_dead": "health", "crm_dead": "health",
     "crm_check_waiting": "health", "owner_not_on_desk": "health", "owner_changed": "health",
-    "research_failed": "health", "demoted": "health",
+    "research_failed": "health", "demoted": "health", "standing_approval": "health",
 }
 
 # A condition that lasts until something ends it: the code that ends it resolves the alert, so it needs no age cutoff.

@@ -6,7 +6,7 @@ import hashlib
 import logging
 from datetime import timedelta
 
-from . import audit, budget, db, gate, jobs, timeutil
+from . import audit, budget, db, gate, jobs, standing, timeutil
 from .db import J
 
 log = logging.getLogger("outbound.plays")
@@ -450,6 +450,8 @@ def autonomy_watch(cur, payload: dict) -> None:
             db.run(cur, "update plays set autonomy = %s where id = %s", to, p["id"])
             db.run(cur, "insert into play_stage_changes (play_id, from_stage, to_stage, reason) values (%s,%s,%s,%s)",
                    p["id"], p["autonomy"], to, why)
+            kind = "complaint" if why.startswith("A spam") else "bounces" if why.startswith("Bounce") else "editing"
+            standing.on_stage_change(cur, p["id"], p["autonomy"], to, by=None, reason=why, end_kind=kind)
             alerts.raise_alert(cur, kind="demoted", severity="warn", channel="#outbound-ops",
                                title=f"{p['name']} moved back a stage: {STAGE_WORDS[to]}", body=why,
                                object_kind="play", object_id=p["id"],

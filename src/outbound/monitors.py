@@ -55,7 +55,7 @@ MONITORS: dict[str, dict] = {
                                   and r.started_at > app_now() - interval '14 days' and r.fetched > 0)"""},
     "slow_first_touch": {
         "title": "Accepted accounts not contacted within the play's time limit",
-        "advice": "Add a person, or lower the weekly proposal limit so fewer accounts are proposed than the team can approve.",
+        "advice": "Add a person, sign a standing approval for follow-ups, or lower the weekly proposal limit so fewer accounts are proposed than the team can approve.",
         "sql": """select ap.id from account_plays ap join plays p on p.id = ap.play_id join signals s on s.id = ap.trigger_signal_id
                   where ap.arm = 'treated' and ap.state in ('accepted','researching','approving')
                   and s.ingested_at < app_now() - (p.latency_hours * 1.5 || ' hours')::interval

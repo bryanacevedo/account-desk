@@ -527,6 +527,70 @@ function ProposalBudget({ data, canEdit, onDone }: { data: any; canEdit: boolean
   );
 }
 
+/** BL-171: the standing approvals that let the desk approve a Supervised play's follow-ups, and the Autonomous stage switch. */
+function StandingApprovals({ data, canEdit, onDone }: { data: any; canEdit: boolean; onDone: () => void }) {
+  const [busy, run] = useBusy();
+  const [play, setPlay] = useState("");
+  const [tiers, setTiers] = useState<string[]>(["B"]);
+  const [ends, setEnds] = useState("");
+  const [why, setWhy] = useState("");
+  const [stageWhy, setStageWhy] = useState("");
+  const live = data.policies.filter((p: any) => p.in_force);
+  const past = data.policies.filter((p: any) => !p.in_force);
+  const kindWord: Record<string, string> = { person: "Revoked", complaint: "Ended: a spam complaint", bounces: "Ended: bounces", editing: "Ended: heavy editing",
+    play_changed: "Ended: the play changed", replaced: "Replaced", expired: "Expired" };
+  const sign = () => run(async () => {
+    await api("/api/standing-approvals", { method: "POST", body: { play_id: Number(play), tiers, ends_on: ends, reason: why } });
+    setPlay(""); setEnds(""); setWhy(""); onDone();
+  }, "Signed. The desk may approve that play's follow-ups until the date.");
+  return (
+    <Section title="Standing approvals">
+      <p className="old-note" style={{ paddingTop: 0 }}>A play at the Supervised stage sends its follow-up emails without a person only while a manager has signed a standing approval for it: a name, a reason and an end date (90 days at most). It never covers first emails, replies, calls, LinkedIn steps, a draft that failed a check, or a person in a country that needs consent or a recorded basis. A person still checks 1 in 5. It ends on its date, when the play is edited, paused or changes stage, and when a manager revokes it; emails queued under it then go back to a person.</p>
+      {data.plays_without.length ? <p className="capacity-note" role="status">{data.plays_without.map((p: any) => p.name).join(", ")}: no standing approval, so a person approves every follow-up.</p> : null}
+      {live.length ? (
+        <div className="ledger">
+          {live.map((p: any) => (
+            <div key={p.id} className="row" style={{ gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1.6fr) auto", minHeight: 52, height: "auto" }}>
+              <div className="cell-main"><span className="t">{p.play}</span><span className="s wrap">{p.signed_by_person ? `Signed by ${p.owner}` : `Carried over, not signed. ${p.owner} is named; sign again to confirm`} {day(p.signed_at)}, to {day(`${p.ends_on}T12:00:00`)}. Tier {p.tiers.join(" and ")}.</span></div>
+              <div className="cell-main"><span className="t wrap" style={{ fontWeight: 450 }}>{p.reason}</span><span className="s wrap">{p.auto_approved} approved by the desk, {p.sampled} checked by a person</span></div>
+              {canEdit ? <span className="actions" style={{ justifyContent: "flex-end" }}><button className="btn line sm" disabled={busy} aria-label={`Revoke the standing approval for ${p.play}`}
+                onClick={() => run(async () => { await api(`/api/standing-approvals/${p.id}/revoke`, { method: "POST", body: {} }); onDone(); }, "Revoked. Emails queued under it are back with a person.")}>Revoke</button></span> : <span />}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {canEdit && data.plays_supervised.length ? (
+        <div className="actions" style={{ flexWrap: "wrap", marginTop: 12 }}>
+          <select className="select" style={{ width: 200 }} value={play} onChange={(e) => setPlay(e.target.value)} aria-label="Play">
+            <option value="">Play</option>{data.plays_supervised.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          {["A", "B"].map((t) => <label key={t} className="small"><input type="checkbox" checked={tiers.includes(t)} onChange={() => setTiers((x) => x.includes(t) ? x.filter((y) => y !== t) : [...x, t])} /> Tier {t}</label>)}
+          <input className="input" type="date" style={{ width: 150 }} value={ends} onChange={(e) => setEnds(e.target.value)} aria-label="Ends on" />
+          <input className="input" style={{ flex: 1, minWidth: 200 }} placeholder="Why, in a sentence" value={why} onChange={(e) => setWhy(e.target.value)} aria-label="Reason" />
+          <button className="btn sm" disabled={busy || !play || !tiers.length || !ends || why.trim().length < 10} onClick={sign}>Sign</button>
+        </div>
+      ) : null}
+      {past.length ? (
+        <details className="budget-history"><summary>Ended</summary>
+          <div className="ledger">{past.slice(0, 8).map((p: any) => (
+            <div key={p.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1.6fr) 70px", minHeight: 36 }}>
+              <span className="clip">{p.play}, {p.owner}</span><span className="mute clip">{kindWord[p.revoke_kind] || "Ended"}{p.revoke_reason ? `: ${p.revoke_reason}` : ""}</span><span className="num mute small">{day(p.revoked_at)}</span>
+            </div>))}</div>
+        </details>
+      ) : null}
+      <h3 className="mg-h" style={{ marginTop: 18 }}>Autonomous stage</h3>
+      <p className="old-note" style={{ paddingTop: 0 }}>{data.autonomous.on ? "On: a play at the fourth stage sends tier B emails with no person on the send." : "Off: tier B emails at a fourth-stage play wait for a person."}
+        {data.autonomous.by ? ` Last changed by ${data.autonomous.by}${data.autonomous.at ? `, ${day(data.autonomous.at)}` : ""}${data.autonomous.reason ? `: ${data.autonomous.reason}` : ""}.` : " Never changed by a person: this is the desk's starting setting."}</p>
+      {canEdit ? (
+        <div className="actions" style={{ flexWrap: "wrap" }}>
+          <input className="input" style={{ flex: 1, minWidth: 200 }} placeholder="Why, in a sentence" value={stageWhy} onChange={(e) => setStageWhy(e.target.value)} aria-label="Reason for the Autonomous stage" />
+          <button className="btn line sm" disabled={busy || stageWhy.trim().length < 10} onClick={() => run(async () => { await api("/api/settings/autonomous-stage", { method: "POST", body: { on: !data.autonomous.on, reason: stageWhy } }); setStageWhy(""); onDone(); }, data.autonomous.on ? "Turned off." : "Turned on.")}>{data.autonomous.on ? "Turn off" : "Turn on"}</button>
+        </div>
+      ) : null}
+    </Section>
+  );
+}
+
 function Team() {
   const { data, reload } = useData<any>("/api/admin");
   const [busy, run] = useBusy();
@@ -727,6 +791,7 @@ export function Settings() {
           </dl>
         </Section>
       </div>
+      {data.standing ? <StandingApprovals data={data.standing} canEdit={me?.user.role === "manager" && !me?.public_demo} onDone={reload} /> : null}
       {data.proposal_budget ? <ProposalBudget data={data.proposal_budget} canEdit={(me?.user.role === "manager" || me?.user.role === "gtm") && !me?.public_demo} onDone={reload} /> : null}
       <CountriesSection regions={data.regions} changes={data.region_changes} canEdit={(me?.user.role === "manager" || me?.user.role === "gtm") && !me?.public_demo} onDone={reload} />
       {me?.user.role === "manager" ? <Team /> : null}

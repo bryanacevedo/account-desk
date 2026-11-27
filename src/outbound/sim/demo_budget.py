@@ -12,11 +12,27 @@ DEFAULT_CAP = 14
 PLANTED = 4
 
 
+def resign_standing(cur) -> int:
+    """The simulated history's promotions signed carried-over standing approvals (decision 121). The finished demo shows the
+    real rule in force: each is signed again by the same manager, with its carried-over predecessor kept in the history."""
+    from .. import standing
+    n = 0
+    for pol in db.all(cur, """select s.* from standing_approvals s join plays p on p.id = s.play_id
+                              where s.revoked_at is null and s.regions = 'carried_over' and p.status = 'live' and p.autonomy = 'supervised'
+                              order by s.id"""):
+        standing.sign(cur, pol["play_id"], owner_id=pol["owner_id"], tiers=pol["tiers"], steps=pol["steps"],
+                      reason="Signed again after the country rule was added: the same play and tiers, and follow-ups to a "
+                             "country that needs consent or a recorded basis now go to a person.")
+        n += 1
+    return n
+
+
 def seed(cur) -> dict:
+    resigned = resign_standing(cur)
     manager = db.val(cur, "select id from users where role = 'manager' and active order by id limit 1")
     sdrs = [r["id"] for r in db.all(cur, "select id from users where role = 'sdr' and active order by id")]
     if manager is None or not sdrs:
-        return {"limits": 0, "waiting": 0}
+        return {"limits": 0, "waiting": 0, "standing_resigned": resigned}
     for sid in sdrs:
         budget.set_cap(cur, sid, DEFAULT_CAP, "Starting limit: about what an SDR approved in a busy week of this sample", by=manager)
     used = {sid: budget.usage(cur, sid)["used"] for sid in sdrs}
@@ -26,7 +42,7 @@ def seed(cur) -> dict:
     play = db.one(cur, "select * from plays where status = 'live' order by urgent, id limit 1")
     source = db.val(cur, "select key from signal_sources where enabled order by key limit 1")
     if play is None or source is None:
-        return {"limits": len(sdrs), "waiting": 0}
+        return {"limits": len(sdrs), "waiting": 0, "standing_resigned": resigned}
     sig_type = play["trigger"]["any_of"][0]
     from ..signals import ingest
     made = 0
@@ -45,7 +61,7 @@ def seed(cur) -> dict:
         plays.match(cur, row["id"])
         if db.val(cur, "select exists (select 1 from proposal_waits where account_id = %s)", row["id"]):
             made += 1
-    return {"limits": len(sdrs), "held": busiest, "waiting": made}
+    return {"limits": len(sdrs), "held": busiest, "waiting": made, "standing_resigned": resigned}
 
 
 __all__ = ["seed", "J"]

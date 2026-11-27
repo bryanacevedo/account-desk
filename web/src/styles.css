@@ -910,3 +910,5 @@ a.cite:hover { color: var(--ink); }
 .batch-body.is-open { white-space: pre-wrap; display: block; -webkit-line-clamp: unset; color: inherit; }
 .batch-result { align-items: flex-start; margin-bottom: 12px; }
 @media (max-width: 640px) { .batch-head { grid-template-columns: minmax(0, 1fr) auto; } .batch-head .btn { justify-self: end; } }
+
+.cell-main .wrap { white-space: normal; overflow: visible; text-overflow: clip; }

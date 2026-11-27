@@ -75,7 +75,7 @@ flowchart LR
   RS -.->|SDRs and GTM adjust weights and plays| SC
 ```
 
-Python 3.13, FastAPI and Postgres 18 with plain SQL in numbered migrations (0001 to 0046). A job queue in Postgres claimed with `FOR UPDATE SKIP LOCKED`. React and Vite for the web app, served by the API. Model calls go through one function with structured outputs, record and replay, and a deterministic stand-in for the demo. The full behaviour is in [docs/SPEC.md](docs/SPEC.md) (section 22 holds every review decision and wins where they differ); decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).
+Python 3.13, FastAPI and Postgres 18 with plain SQL in numbered migrations (0001 to 0047). A job queue in Postgres claimed with `FOR UPDATE SKIP LOCKED`. React and Vite for the web app, served by the API. Model calls go through one function with structured outputs, record and replay, and a deterministic stand-in for the demo. The full behaviour is in [docs/SPEC.md](docs/SPEC.md) (section 22 holds every review decision and wins where they differ); decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Autonomy is earned per play
 
@@ -85,8 +85,10 @@ Each play sits at one of four stages, named the same way everywhere in the app:
 |---|---|
 | Research | SDR writes everything |
 | Draft | SDR approves every email |
-| Supervised | SDR approves first emails and checks a sample of the rest |
+| Supervised | SDR approves first emails; follow-ups go without a person only under a standing approval a manager signed, and a person checks 1 in 5 |
 | Autonomous | Desk sends to tier B, SDR approves tier A |
+
+A **standing approval** is what lets a Supervised play's follow-up emails go without a person: a manager's name, a reason, the play version signed and an end date (90 days at most), shown in Settings and on each email it approved, revocable in one click. It never covers first emails, replies, calls, LinkedIn steps, a draft that failed a check, an unread reply, or a person whose country (or whose company's HQ country) needs consent or a recorded basis. It ends on its date, when the play is edited, paused or changes stage, and on a revoke; emails queued under it then return to a person. A play promoted to Supervised gets one signed by the promoting manager. Not covered by it: the Autonomous stage, still a manager's setting with a reason, now switched in Settings.
 
 The fourth stage sends tier B messages with no person on the send, so it is off on a new desk until a manager turns it on, with a reason (`POST /api/settings/autonomous-stage`, audited). The sample company has it on. A desk set up before this setting existed has it on until someone turns it off. Turning it off does not demote a play already at the fourth stage; its tier B messages simply wait for a person.
 

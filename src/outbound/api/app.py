@@ -49,6 +49,7 @@ from .. import (  # noqa: F401
     sdr_steps,
     sending,
     signals,
+    standing,
     suggestions,
     themes,
     vendors,
@@ -689,6 +690,7 @@ def settings_page(u: dict = Depends(current_user)) -> dict:
         out = views.settings(cur)
     if u["role"] == "sdr":
         out.pop("proposal_budget", None)   # the team's limits are for people who manage the team
+        out.pop("standing", None)
     return out
 
 
@@ -1440,6 +1442,8 @@ def change_play(play_id: int, body: PlayChange, u: dict = Depends(writer)) -> di
                 raise HTTPException(422, "The person who wrote a play cannot launch it.")
             if body.status == "live" and p["status"] == "draft" and not (body.monthly_cap or p["monthly_cap"]):
                 raise HTTPException(422, "Set the play's monthly cap from its cost card before launching it.")
+            if body.status != "live":
+                standing.end_for_play(cur, play_id, kind="play_changed", reason=f"The play was set to {body.status}")
             db.run(cur, """update plays set status = %s,
                            launched_by = case when %s = 'live' then coalesce(launched_by, %s) else launched_by end,
                            launched_at = case when %s = 'live' then coalesce(launched_at, app_now()) else launched_at end
@@ -1461,6 +1465,12 @@ def change_play(play_id: int, body: PlayChange, u: dict = Depends(writer)) -> di
             db.run(cur, "update plays set autonomy = %s where id = %s", body.autonomy, play_id)
             db.run(cur, "insert into play_stage_changes (play_id, from_stage, to_stage, reason, decided_by) "
                         "values (%s,%s,%s,%s,%s)", play_id, p["autonomy"], body.autonomy, body.reason, u["id"])
+            # BL-171: leaving Supervised ends its standing approvals; a manager's promotion into it signs one in the same step.
+            try:
+                standing.on_stage_change(cur, play_id, p["autonomy"], body.autonomy, by=u["id"] if u["role"] == "manager" else None,
+                                         reason=body.reason or "Stage changed", end_kind="play_changed")
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
         audit.log(cur, "person", "play_changed", "play", play_id, body.model_dump(mode="json"), actor_id=u["id"])
     return {"ok": True}
 
@@ -1544,6 +1554,7 @@ def edit_play(play_id: int, body: play_editor.PlayIn, u: dict = Depends(writer))
                        where id = %s""", body.name, body.hypothesis, db.J(body.trigger.model_dump()), body.personas,
                    body.max_people, db.J([s.model_dump() for s in body.sequence]), body.angle, body.holdout_pct,
                    body.urgent, body.latency_hours, play_id)
+        standing.end_for_play(cur, play_id, kind="play_changed", reason="The play was edited, so its new words need a new standing approval")
         audit.log(cur, "person", "play_edited", "play", play_id, {"version": p["version"] + 1, "before": {
             k: p[k] for k in ("name", "trigger", "personas", "max_people", "sequence", "holdout_pct")}}, actor_id=u["id"])
     return {"ok": True}
@@ -1622,6 +1633,43 @@ def autonomous_stage(body: AutonomousStage, u: dict = Depends(writer)) -> dict:
                db.J(body.on), u["id"])
         audit.log(cur, "person", "autonomous_stage_on" if body.on else "autonomous_stage_off", "settings", None,
                   {"reason": body.reason}, actor_id=u["id"])
+    return {"ok": True}
+
+
+class SignStanding(BaseModel):
+    play_id: int
+    tiers: list[Literal["A", "B"]] = Field(default_factory=lambda: ["B"], min_length=1)
+    steps: list[int] | None = None
+    ends_on: date
+    reason: str = Field(min_length=10, max_length=500)
+
+
+@app.post("/api/standing-approvals")
+def sign_standing(body: SignStanding, u: dict = Depends(writer)) -> dict:
+    """BL-171: a manager signs a standing approval: this play's follow-up emails may go without a person until the date."""
+    not_in_public_demo()
+    need(u, "manager")
+    with db.tx() as cur:
+        try:
+            sid = standing.sign(cur, body.play_id, owner_id=u["id"], reason=body.reason, tiers=body.tiers, steps=body.steps,
+                                ends_on=body.ends_on)
+        except ValueError as exc:
+            raise bad_request(exc) from exc
+    return {"ok": True, "id": sid}
+
+
+class RevokeStanding(BaseModel):
+    reason: str = Field("", max_length=300)
+
+
+@app.post("/api/standing-approvals/{sid}/revoke")
+def revoke_standing(sid: int, body: RevokeStanding, u: dict = Depends(writer)) -> dict:
+    """One click: any manager ends a standing approval now; what was queued under it goes back to a person."""
+    not_in_public_demo()
+    need(u, "manager")
+    with db.tx() as cur:
+        if not standing.end(cur, sid, kind="person", reason=body.reason.strip() or f"Revoked by {u['name']}", by=u["id"]):
+            raise HTTPException(409, "That standing approval is already over.")
     return {"ok": True}
 
 
