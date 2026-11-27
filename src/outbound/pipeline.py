@@ -1,6 +1,8 @@
 """Meetings, opportunities, CRM write-back through the outbox, and Slack delivery of alerts."""
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -25,14 +27,16 @@ log = logging.getLogger("outbound.pipeline")
 
 
 def book_meeting(cur, *, account_id: int, person_id: int | None, starts_at: datetime, source: str,
-                 owner_id: int | None = None, external_id: str | None = None) -> int:
+                 owner_id: int | None = None, external_id: str | None = None, sdr_note: str | None = None,
+                 sdr_note_by: int | None = None) -> int:
     ap = db.one(cur, """select * from account_plays where account_id = %s and state in
                         ('active','engaged','meeting','approving') order by proposed_at desc limit 1""", account_id)
+    note = (sdr_note or "").strip() or None
     mid = db.val(cur, """insert into meetings (account_play_id, account_id, person_id, owner_id, booked_at, starts_at,
-                                               status, source, external_id)
-                         values (%s,%s,%s,%s,app_now(),%s,'booked',%s,%s) on conflict (external_id) do nothing returning id""",
+                                               status, source, external_id, sdr_note, sdr_note_by)
+                         values (%s,%s,%s,%s,app_now(),%s,'booked',%s,%s,%s,%s) on conflict (external_id) do nothing returning id""",
                  ap["id"] if ap else None, account_id, person_id, owner_id or (ap["owner_id"] if ap else None), starts_at,
-                 source, external_id)
+                 source, external_id, note, sdr_note_by if note else None)
     if mid is None:
         return db.val(cur, "select id from meetings where external_id = %s", external_id)
     if ap and ap["state"] != "meeting":
@@ -151,7 +155,51 @@ def attribute(cur, opp_id: int) -> str:
            att, src.get("play_id"), src.get("account_play_id"), src.get("meeting_id"), opp_id)
     if att != o["attribution"]:
         audit.log(cur, "desk", "attributed", "opportunity", opp_id, {"from": o["attribution"], "to": att})
+    if att != "none":
+        queue_deal_context(cur, opp_id)
     return att
+
+
+def deal_context(cur, opp_id: int) -> dict:
+    """What the account executive reads at the handoff, from what this desk knows about the deal: the play that reached the
+    account, the signal that started it and the SDR's own note on the meeting that made the deal (BL-111). A part the desk does
+    not know is left out, never made up: an inbound demo request has no SDR note, and the CRM then asks the person."""
+    o = db.one(cur, "select crm_id, account_play_id, attribution_meeting_id from opportunities where id = %s", opp_id)
+    if o is None or not o["crm_id"] or not o["account_play_id"]:
+        return {}
+    ap = db.one(cur, """select pl.name, pl.hypothesis, s.observed_at, s.evidence, st.label
+                        from account_plays ap join plays pl on pl.id = ap.play_id join signals s on s.id = ap.trigger_signal_id
+                        join signal_types st on st.key = s.type_key where ap.id = %s""", o["account_play_id"])
+    out: dict = {}
+    if ap:
+        hyp = " ".join((ap["hypothesis"] or "").split())
+        out["handoff_play"] = (f"{ap['name']}: {hyp}" if hyp else ap["name"])[:500]
+        summary = " ".join(str((ap["evidence"] or {}).get("summary") or "").split())
+        out["handoff_signal"] = (f"{ap['label']}, seen {ap['observed_at'].day} {ap['observed_at']:%b}" + (f": {summary}" if summary else ""))[:500]
+    if o["attribution_meeting_id"]:
+        note = db.val(cur, "select sdr_note from meetings where id = %s", o["attribution_meeting_id"])
+        if note and note.strip():
+            out["handoff_note"] = note.strip()[:4000]
+    return out
+
+
+def queue_deal_context(cur, opp_id: int) -> bool:
+    """Queue the CRM write that carries `deal_context` to the deal. Only a CRM that takes the kind receives it (CRM Desk); the
+    key holds a hash of the words, so the same words are sent once and a new note is sent again."""
+    ctx = deal_context(cur, opp_id)
+    crm_id = db.val(cur, "select crm_id from opportunities where id = %s", opp_id)
+    if not ctx or not crm_id:
+        return False
+    digest = hashlib.sha1(json.dumps(ctx, sort_keys=True).encode()).hexdigest()[:12]
+    return crmq.enqueue(cur, "deal_context", {"opportunity_id": opp_id, "crm_id": crm_id, **ctx}, f"deal_context:{crm_id}:{digest}")
+
+
+def set_sdr_note(cur, meeting_id: int, note: str | None, user_id: int) -> None:
+    """The SDR writes or changes their note on a meeting; deals that meeting made carry the new words to the CRM."""
+    note = (note or "").strip() or None
+    db.run(cur, "update meetings set sdr_note = %s, sdr_note_by = %s where id = %s", note, user_id if note else None, meeting_id)
+    for oid in db.all(cur, "select id from opportunities where attribution_meeting_id = %s", meeting_id):
+        queue_deal_context(cur, oid["id"])
 
 
 def upsert_deal(cur, d, *, account_id: int | None = None) -> int | None:
@@ -217,7 +265,7 @@ def opportunity_closed(cur, crm_id: str, won: bool, closed_at: datetime, loss_re
 
 # Kinds added after the three-method CRM contract. A CRM that does not know them is not an error: the row is finished
 # with a note, so a stub or a Salesforce-shaped adapter that only has today's kinds runs the whole flow.
-OPTIONAL_KINDS = ("contact", "meeting_outcome", "task_close", "reply_in", "meeting_note")
+OPTIONAL_KINDS = ("contact", "meeting_outcome", "task_close", "reply_in", "meeting_note", "deal_context")
 
 
 def _push(cur, crm, item: dict) -> str:

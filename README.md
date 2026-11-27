@@ -75,7 +75,7 @@ flowchart LR
   RS -.->|SDRs and GTM adjust weights and plays| SC
 ```
 
-Python 3.13, FastAPI and Postgres 18 with plain SQL in numbered migrations (0001 to 0043). A job queue in Postgres claimed with `FOR UPDATE SKIP LOCKED`. React and Vite for the web app, served by the API. Model calls go through one function with structured outputs, record and replay, and a deterministic stand-in for the demo. The full behaviour is in [docs/SPEC.md](docs/SPEC.md) (section 22 holds every review decision and wins where they differ); decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).
+Python 3.13, FastAPI and Postgres 18 with plain SQL in numbered migrations (0001 to 0044). A job queue in Postgres claimed with `FOR UPDATE SKIP LOCKED`. React and Vite for the web app, served by the API. Model calls go through one function with structured outputs, record and replay, and a deterministic stand-in for the demo. The full behaviour is in [docs/SPEC.md](docs/SPEC.md) (section 22 holds every review decision and wins where they differ); decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Autonomy is earned per play
 

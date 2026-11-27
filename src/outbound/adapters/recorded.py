@@ -114,7 +114,9 @@ class RecordedCrm:
         self.accepts_kinds = {"contact", "meeting_outcome"} | {
             k for k, there in (("task_close", "/tasks/close" in paths),
                                ("reply_in", any(b.get("direction") == "in" for b in bodies)),
-                               ("meeting_note", any(b.get("type") == "note" for b in bodies))) if there}
+                               ("meeting_note", any(b.get("type") == "note" for b in bodies)),
+                               ("deal_context", any(str(s.get("path", "")).startswith("/opportunities/") and "handoff_play" in (s.get("body") or {})
+                                                    for s in steps))) if there}
         self._crm.bulk_contacts = "/contacts/batch" in paths
 
     @classmethod

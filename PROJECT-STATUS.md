@@ -1,6 +1,10 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-27. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 117. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). 2026-11-27: the public demo is the static snapshot at https://account-desk-demo.pages.dev, which the README links; the Render service is the older full demo. The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-27. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 118. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). 2026-11-27: the public demo is the static snapshot at https://account-desk-demo.pages.dev, which the README links; the Render service is the older full demo. The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+
+## The handoff carries the play, the signal and the SDR's note (2026-11-27, Backlog bl_111, BL-111, branch `bl111/account`)
+
+CRM Desk now refuses an SDR's handoff of a deal that lacks the play, the signal or the SDR's note. This desk fills what it knows (DECISIONS 118, migration 0044): the SDR writes a note for the account executive when logging a meeting or later on the meeting sheet; when a deal is attributed, one `deal_context` CRM write carries the play, the signal and the note, only what is known, once per change. Only CRM Desk takes the kind, so the replayed journals and the demo are unchanged. Tests: `tests/test_handoff_context.py`. The runbook now says a push to `main` that touches the web app deploys the public demo (the Cloudflare secrets are set).
 
 ## Where it stands
 

@@ -949,6 +949,24 @@ def meeting_reschedule(meeting_id: int, body: MeetingMove, u: dict = Depends(wri
     return {"ok": True}
 
 
+class SdrNote(BaseModel):
+    note: str | None = Field(None, max_length=4000)
+
+
+@app.put("/api/meetings/{meeting_id}/sdr-note")
+def meeting_sdr_note(meeting_id: int, body: SdrNote, u: dict = Depends(writer)) -> dict:
+    """The SDR's own note on a meeting, for the account executive. It goes to the deal the meeting made as the handoff's SDR
+    note; the desk never writes it for them. Empty clears it."""
+    with db.tx() as cur:
+        owner = db.val(cur, "select owner_id from meetings where id = %s", meeting_id)
+        if db.val(cur, "select 1 from meetings where id = %s", meeting_id) is None:
+            raise HTTPException(404, "No such meeting.")
+        if u["role"] == "sdr" and owner not in (None, u["id"]):
+            raise HTTPException(403, "This meeting belongs to another SDR.")
+        pipeline.set_sdr_note(cur, meeting_id, body.note, u["id"])
+    return {"ok": True}
+
+
 @app.get("/api/meetings/{meeting_id}")
 def meeting(meeting_id: int, u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
@@ -1078,6 +1096,7 @@ def _sdr_owns(cur, u: dict, account_id: int | None) -> None:
 class LogMeeting(BaseModel):
     person_id: int | None = None
     starts_at: datetime
+    note: str | None = Field(None, max_length=4000)   # the SDR's own note for the account executive (BL-111)
 
 
 @app.post("/api/accounts/{account_id}/meetings")
@@ -1088,7 +1107,7 @@ def log_meeting(account_id: int, body: LogMeeting, u: dict = Depends(writer)) ->
         if body.person_id and db.val(cur, "select account_id from people where id = %s", body.person_id) != account_id:
             raise HTTPException(422, "That person is not at this account.")
         mid = pipeline.book_meeting(cur, account_id=account_id, person_id=body.person_id, starts_at=body.starts_at,
-                                    source="sdr", owner_id=u["id"])
+                                    source="sdr", owner_id=u["id"], sdr_note=body.note, sdr_note_by=u["id"])
     return {"ok": True, "meeting_id": mid}
 
 

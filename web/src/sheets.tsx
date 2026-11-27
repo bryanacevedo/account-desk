@@ -472,6 +472,7 @@ function LogMeeting({ accountId, people, onDone }: { accountId: number; people: 
   const [open, setOpen] = useState(false);
   const [who, setWho] = useState("");
   const [when, setWhen] = useState("");
+  const [note, setNote] = useState("");
   const [busy, run] = useBusy();
   if (!open) return <button className="btn quiet sm" onClick={() => setOpen(true)}>Log a meeting</button>;
   return (
@@ -484,11 +485,13 @@ function LogMeeting({ accountId, people, onDone }: { accountId: number; people: 
           </select></label>
         <label className="field"><span>When, your time ({localZone()})</span><input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></label>
       </div>
+      <label className="field"><span>Your note for the account executive</span>
+        <textarea className="input" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="What you learned that they should know before the first call. Goes to the deal in the CRM; you write it, the desk does not." /></label>
       <div className="actions" style={{ justifyContent: "flex-end" }}>
       <button className="btn quiet sm" onClick={() => setOpen(false)}>Cancel</button>
       <button className="btn sm" disabled={busy || !when} onClick={() => run(async () => {
-        await api(`/api/accounts/${accountId}/meetings`, { method: "POST", body: { person_id: who ? Number(who) : null, starts_at: new Date(when).toISOString() } });
-        setOpen(false); onDone();
+        await api(`/api/accounts/${accountId}/meetings`, { method: "POST", body: { person_id: who ? Number(who) : null, starts_at: new Date(when).toISOString(), note: note.trim() || null } });
+        setOpen(false); setNote(""); onDone();
       }, "Meeting logged. The play's sequences stop.")}>Log it</button>
       </div>
     </Section>
@@ -593,6 +596,7 @@ export function MeetingSheet({ id }: { id: number }) {
   const [moving, setMoving] = useState(false);     // decision 112: a booked meeting can be moved or cancelled before it starts
   const [when, setWhen] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  const [sdrNote, setSdrNote] = useState<string | null>(null);   // null: not being edited
   if (error) return <Frame crumb="Meeting"><Failed error={error} retry={reload} /></Frame>;
   if (!m) return <Frame crumb="Meeting"><Loading rows={6} /></Frame>;
   const save = (status: string) => run(async () => {
@@ -648,6 +652,17 @@ export function MeetingSheet({ id }: { id: number }) {
         <Fig value={<Status kind={m.status === "held" ? "ok" : m.status === "booked" ? "go" : "off"}>{MEETING[m.status] || cap(m.status)}</Status>} label="Status" sm />
         <Fig value={m.source === "inbound" ? "They asked" : m.play ? <button className="fig-link" onClick={() => openSheet("play", m.play_id)}>{m.play}</button> : "Booked by hand"} label="Came from" sm />
       </div>
+      <Section title="Your note for the account executive">
+        <textarea className="input" rows={3} value={sdrNote ?? m.sdr_note ?? ""} onChange={(e) => setSdrNote(e.target.value)} aria-label="Your note for the account executive"
+          placeholder="What you learned that they should know before the first call. It goes to the deal in the CRM with the play and the signal." />
+        <div className="actions" style={{ justifyContent: "space-between", marginTop: 8 }}>
+          <span className="small mute">{m.sdr_note ? "The CRM gets this when the deal exists." : "Without it the CRM asks you for one before you hand the deal over."}</span>
+          <button className="btn line sm" disabled={busy || sdrNote === null || (sdrNote ?? "").trim() === (m.sdr_note ?? "")} onClick={() => run(async () => {
+            await api(`/api/meetings/${id}/sdr-note`, { method: "PUT", body: { note: (sdrNote ?? "").trim() || null } });
+            setSdrNote(null);
+          }, "Saved. It goes to the deal.")}>Save note</button>
+        </div>
+      </Section>
       <Section title="Call notes">
         {m.notes.length ? (
           <div className="ledger">

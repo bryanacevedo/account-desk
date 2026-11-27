@@ -84,6 +84,8 @@ class CrmDeskCrm:
         if pid and person is None:
             return "refused:erased"          # Account Desk deletes an erased person's row; nothing is written about them
         email = (person or {}).get("email") or payload.get("email")
+        if kind == "deal_context":
+            return self._deal_context(payload)
         if kind == "meeting_outcome":
             return self._meeting_outcome(cur, payload, idempotency_key)
         if kind == "task_close":
@@ -194,6 +196,15 @@ class CrmDeskCrm:
                 r = self._call("PUT", f"/contacts/by-email/{p['email']}", json=body, headers=headers)
         if r.status_code == 409 and r.json().get("code") == "erased":
             return "refused:erased"
+        return self._ok(r)["id"]
+
+    def _deal_context(self, payload: dict) -> str:
+        """The play, the signal and the SDR's note for the deal's handoff (BL-111). CRM Desk keeps a person's words and refuses
+        a value another desk owns; neither is an error here, so a refusal in the answer is read and passed over."""
+        body = {k: payload[k] for k in ("handoff_play", "handoff_signal", "handoff_note") if payload.get(k)}
+        r = self._call("PATCH", f"/opportunities/{payload['crm_id']}", json=body)
+        if r.status_code == 404:
+            return "skipped:no_such_deal"           # the CRM no longer holds the deal (deleted or merged): nothing to carry
         return self._ok(r)["id"]
 
     def _task_close(self, cur, payload: dict, idempotency_key: str) -> str:
