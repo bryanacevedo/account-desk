@@ -73,7 +73,13 @@ def test_the_same_words_are_queued_once_and_a_new_note_is_queued_again(cur, scen
     assert db.val(cur, "select sdr_note_by from meetings where id = %s", mid) == scene["user"]
     pipeline.set_sdr_note(cur, mid, "   ", scene["user"])      # clearing removes the note; nothing is sent for the blank
     assert db.val(cur, "select sdr_note from meetings where id = %s", mid) is None
-    assert len(_outbox(cur, "opp_4")) == 3 and "handoff_note" not in _outbox(cur, "opp_4")[2]["payload"]
+    rows = _outbox(cur, "opp_4")
+    assert len(rows) == 3 and rows[2]["payload"]["handoff_note"] is None      # cleared: the CRM is told to drop this desk's copy
+    # Back to the first words: that is a change from the last write, so it is sent again.
+    pipeline.set_sdr_note(cur, mid, "Warm. Her CFO asked for a demo before budget closes.", scene["user"])
+    rows = _outbox(cur, "opp_4")
+    assert len(rows) == 4 and rows[3]["payload"]["handoff_note"].startswith("Warm.")
+    assert len({r["idempotency_key"] for r in rows}) == 4
 
 
 def test_the_crm_adapter_sends_only_what_is_known_and_a_missing_deal_is_finished(cur, scene):
@@ -83,9 +89,12 @@ def test_the_crm_adapter_sends_only_what_is_known_and_a_missing_deal_is_finished
         calls.append((request.method, request.url.path, json.loads(request.content)))
         return httpx.Response(200, json={"id": "opp_1", "refused": []}) if "gone" not in request.url.path else httpx.Response(404, json={"error": "no"})
     crm = crmdesk.CrmDeskCrm("http://crm.test", "k", client=httpx.Client(base_url="http://crm.test", transport=httpx.MockTransport(handler)))
-    assert crm.push(cur, "deal_context", {"crm_id": "opp_1", "handoff_play": "P: h", "handoff_signal": "S", "handoff_note": None}, "k1") == "opp_1"
+    assert crm.push(cur, "deal_context", {"crm_id": "opp_1", "handoff_play": "P: h", "handoff_signal": "S"}, "k1") == "opp_1"
     assert calls == [("PATCH", "/api/v1/opportunities/opp_1", {"handoff_play": "P: h", "handoff_signal": "S"})]
     assert crm.push(cur, "deal_context", {"crm_id": "gone", "handoff_play": "P"}, "k2") == "skipped:no_such_deal"
+    calls.clear()
+    crm.push(cur, "deal_context", {"crm_id": "opp_1", "handoff_play": "P", "handoff_note": None}, "k3")
+    assert calls[0][2] == {"handoff_play": "P", "handoff_note": None}
 
 
 def test_a_crm_that_does_not_take_the_kind_gets_nothing_and_the_row_is_finished(cur):

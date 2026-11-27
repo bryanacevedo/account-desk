@@ -184,14 +184,23 @@ def deal_context(cur, opp_id: int) -> dict:
 
 
 def queue_deal_context(cur, opp_id: int) -> bool:
-    """Queue the CRM write that carries `deal_context` to the deal. Only a CRM that takes the kind receives it (CRM Desk); the
-    key holds a hash of the words, so the same words are sent once and a new note is sent again."""
+    """Queue the CRM write that carries `deal_context` to the deal. Only a CRM that takes the kind receives it (CRM Desk). The
+    same words as the last write are not sent again; words that changed, including a return to an earlier text, are sent as a new
+    write. A note the SDR cleared is sent as empty, so the CRM drops what this desk wrote (it keeps a person's own entry)."""
     ctx = deal_context(cur, opp_id)
     crm_id = db.val(cur, "select crm_id from opportunities where id = %s", opp_id)
     if not ctx or not crm_id:
         return False
+    last = db.one(cur, """select payload from crm_outbox where kind = 'deal_context' and payload->>'crm_id' = %s
+                          order by id desc limit 1""", crm_id)
+    if last and "handoff_note" in last["payload"] and last["payload"]["handoff_note"] and "handoff_note" not in ctx:
+        ctx["handoff_note"] = None                      # it was sent once and the SDR has since cleared it
     digest = hashlib.sha1(json.dumps(ctx, sort_keys=True).encode()).hexdigest()[:12]
-    return crmq.enqueue(cur, "deal_context", {"opportunity_id": opp_id, "crm_id": crm_id, **ctx}, f"deal_context:{crm_id}:{digest}")
+    if last and last["payload"].get("digest") == digest:
+        return False
+    n = db.val(cur, "select count(*) from crm_outbox where kind = 'deal_context' and payload->>'crm_id' = %s", crm_id)
+    return crmq.enqueue(cur, "deal_context", {"opportunity_id": opp_id, "crm_id": crm_id, "digest": digest, **ctx},
+                        f"deal_context:{crm_id}:{n + 1}")
 
 
 def set_sdr_note(cur, meeting_id: int, note: str | None, user_id: int) -> None:

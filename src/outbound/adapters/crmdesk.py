@@ -201,7 +201,8 @@ class CrmDeskCrm:
     def _deal_context(self, payload: dict) -> str:
         """The play, the signal and the SDR's note for the deal's handoff (BL-111). CRM Desk keeps a person's words and refuses
         a value another desk owns; neither is an error here, so a refusal in the answer is read and passed over."""
-        body = {k: payload[k] for k in ("handoff_play", "handoff_signal", "handoff_note") if payload.get(k)}
+        # A part the desk does not know is absent; a note the SDR cleared is present and empty, so the CRM drops this desk's copy.
+        body = {k: payload[k] for k in ("handoff_play", "handoff_signal", "handoff_note") if k in payload and (payload[k] or k == "handoff_note")}
         r = self._call("PATCH", f"/opportunities/{payload['crm_id']}", json=body)
         if r.status_code == 404:
             return "skipped:no_such_deal"           # the CRM no longer holds the deal (deleted or merged): nothing to carry
