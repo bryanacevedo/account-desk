@@ -627,6 +627,11 @@ def promotion_check(cur, play: dict) -> dict:
         {"label": "Complaint data for every sending domain", "value": "Known" if not unknown else f"{unknown} unknown",
          "ok": unknown == 0},
     ]
+    if STAGES[idx + 1] == "autonomous":
+        # The stage sends with no person on the send, so a manager turns it on for the desk first (BL-126).
+        from . import outreach
+        on = outreach.autonomous_enabled(cur)
+        checks.append({"label": "Autonomous stage turned on by a manager", "value": "On" if on else "Off", "ok": on})
     if idx == 0:
         # At the first stage the SDR writes everything, so there are no desk drafts to judge: the move to drafts the
         # SDR approves is a manager's call, held back only by complaints or sending domains with unknown spam data.

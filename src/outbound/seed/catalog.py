@@ -32,6 +32,9 @@ SETTINGS = {
     "call_window": ["09:00", "18:00"],
     # A prospect with no reply and no activity for this many months is deleted; their opt-outs stay, hashed.
     "retention_months": 12,
+    # The fourth stage sends tier B messages with no person on the send. A new desk starts with it off (BL-126): a manager
+    # turns it on, with a reason, in /api/settings/autonomous-stage. A desk with no such row keeps the old behaviour.
+    "autonomous_stage": False,
 }
 
 USERS = [

@@ -2,7 +2,7 @@
 
 **Written:** 2026-11-11. **Status:** this is the original spec, kept for its reasoning. The product was renamed Account Desk and v1 is built. Where this document differs from the code, the code and the README win; section 22 holds the review decisions, and docs/DECISIONS.md the later ones.
 
-Account Desk runs signal-based, account-based outbound from one place. It watches for moments when a company that fits your ideal customer profile (ICP) shows it may need you, decides which accounts are worth working this week and why, maps the people who buy there, drafts outreach grounded in what actually happened at that company, has a person approve it, sends it through healthy inboxes at a pace a human would, and handles every reply, meeting and outcome through to pipeline. It measures which signals turn into meetings and which do not, and feeds that back into the score.
+Account Desk is a GTM plays system: a signal arrives, the desk picks the play, a person approves. It runs signal-based, account-based outbound from one place. It watches for moments when a company that fits your ideal customer profile (ICP) shows it may need you, decides which accounts are worth working this week and why, maps the people who buy there, drafts outreach grounded in what actually happened at that company, has a person approve it, sends it through healthy inboxes at a pace a human would, and handles every reply, meeting and outcome through to pipeline. It measures which signals turn into meetings and which do not, and feeds that back into the score.
 
 It is the opposite of volume outbound. The unit of work is an **account in a play**, never a contact in a list.
 

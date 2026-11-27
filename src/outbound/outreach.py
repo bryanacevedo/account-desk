@@ -704,6 +704,11 @@ def _sample(message_id: int) -> bool:
     return int(hashlib.sha256(f"sample:{message_id}".encode()).hexdigest()[:4], 16) % 5 == 0
 
 
+def autonomous_enabled(cur) -> bool:
+    """Whether a manager has the fourth stage turned on. No row (an older desk) means on, as before BL-126."""
+    return setting(cur, "autonomous_stage", True) is not False
+
+
 def maybe_auto_approve(cur, message_id: int) -> bool:
     m = db.one(cur, """select m.*, pl.autonomy, a.fit_tier from messages m join enrollments e on e.id = m.enrollment_id
                        join account_plays ap on ap.id = e.account_play_id join plays pl on pl.id = ap.play_id
@@ -713,7 +718,7 @@ def maybe_auto_approve(cur, message_id: int) -> bool:
     mode = None
     if m["autonomy"] == "supervised" and m["step_index"] > 0 and not _sample(message_id):
         mode = "auto_supervised"
-    elif m["autonomy"] == "autonomous" and m["fit_tier"] == "B":
+    elif m["autonomy"] == "autonomous" and m["fit_tier"] == "B" and autonomous_enabled(cur):
         mode = "auto_autonomous"
     if mode is None:
         return False

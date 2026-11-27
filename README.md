@@ -4,7 +4,7 @@
 
 # Account Desk
 
-**Signal-based, account-based outbound for a small B2B sales team, with a person on every send until a play earns more.**
+**A GTM plays system for a small B2B sales team: a signal arrives, the desk picks the play, a person approves.**
 
 [![CI](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/bryanacevedo/account-desk/actions/workflows/ci.yml)
 ![tests](https://img.shields.io/badge/tests-on%20Postgres%2018-2B47C9)
@@ -27,6 +27,8 @@
 [How it works](#how-it-works) · [Autonomy](#autonomy-is-earned-per-play) · [What it does](#what-it-does) · [The demo in figures](#the-demo-in-figures) · [The AI, measured](#the-ai-measured) · [Compliance](#compliance) · [Run it](#run-it) · [Settings](#settings-and-environment) · [Deploy](#deploy) · [Not yet proven](#not-yet-proven) · [Portfolio](#portfolio)
 
 </div>
+
+A play is a written hypothesis: a trigger, the people to reach, a sequence and an angle. Each play is measured against accounts the desk deliberately did not contact, so a team learns which plays earn meetings. How much a person reviews depends on the play's stage (see Autonomy): every email at the draft stage, first emails and a sample of follow-ups at the supervised stage.
 
 Account Desk watches for the moments a company that fits your customer profile shows it may need you (a new finance leader, a pricing change, hiring for the team you serve, a past champion joining), decides which accounts are worth working this week and why, finds the people who buy there, drafts outreach grounded in what happened at that company, has an SDR approve it, sends it from healthy inboxes at a human pace, and handles every reply through to a meeting and pipeline. It measures which signals turn into meetings against accounts that were matched but deliberately held back and never contacted.
 
@@ -85,6 +87,8 @@ Each play sits at one of four stages, named the same way everywhere in the app:
 | Draft | SDR approves every email |
 | Supervised | SDR approves first emails and checks a sample of the rest |
 | Autonomous | Desk sends to tier B, SDR approves tier A |
+
+The fourth stage sends tier B messages with no person on the send, so it is off on a new desk until a manager turns it on, with a reason (`POST /api/settings/autonomous-stage`, audited). The sample company has it on. A desk set up before this setting existed has it on until someone turns it off. Turning it off does not demote a play already at the fourth stage; its tier B messages simply wait for a person.
 
 Leaving research needs no complaint and known complaint data for every sending domain with an active mailbox, then the manager's decision. Each later step up needs 50 approvals with 90% unedited, no complaint, bounces under 2%, a positive reply rate at the play's floor, and known complaint data for every sending domain with an active mailbox (data older than 7 days counts as unknown), and a manager approves it. For a play at the supervised or autonomous stage, a spam complaint, hard bounces over 3% of its last 200 sends (once it has at least 50), or SDRs editing more than 6 of its last 20 drafts moves it back down a stage on its own.
 
@@ -270,7 +274,7 @@ Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts 
 | `CRM_DESK_ADMIN_KEY` | For the CRM Desk half of the contract tests only |
 | `DEMO_DATABASE_URL` | For the tests: an already built demo database to read instead of building one (never changed) |
 
-Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/catalog.py`): `retention_months` (12), `call_window` (09:00 to 18:00, weekdays, in the person's own time). Each play also carries `lia_ref` and `lia_review_due`, its legitimate-interest assessment and when it is next reviewed.
+Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/catalog.py`): `retention_months` (12), `call_window` (09:00 to 18:00, weekdays, in the person's own time), `autonomous_stage` (off on a new desk; see Autonomy). Each play also carries `lia_ref` and `lia_review_due`, its legitimate-interest assessment and when it is next reviewed.
 
 ## Deploy
 
@@ -314,7 +318,7 @@ Account Desk runs on its own: with no `CRM` and no `INTEGRATED_WITH` set, it kee
 
 | Project | What it does | Links |
 |---|---|---|
-| Account Desk (this repository) | Signal-based, account-based outbound with a person on the send decision | [Live demo](https://account-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4) |
+| Account Desk (this repository) | A GTM plays system: signal in, play chosen, person approves | [Live demo](https://account-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4) |
 | Events Desk | For someone who runs events all year: seat requests and approvals, attendee lists turned into the companies and people worth meeting, with checked emails, handed back as a sheet for sales | [Code](https://github.com/bryanacevedo/events-desk) · [Live demo](https://events-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/events-desk.mp4) |
 | Market Desk | Decides who a B2B team sells to from its own deals, sizes that market and splits it into territories | [Code](https://github.com/bryanacevedo/market-desk) · [Live demo](https://market-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/market-desk.mp4) |
 | CRM Desk | A CRM for teams of one to fifty with Salesforce's data model and a simpler experience; Account Desk and Events Desk can use it as their CRM | [Live demo](https://crm-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/crm-desk.mp4) (code private) |

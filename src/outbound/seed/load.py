@@ -19,6 +19,7 @@ def _users(world: bool) -> list[tuple]:
 def load_catalog(cur, *, start: datetime) -> dict:
     world = integration.world_mode() == "world"
     settings = dict(C.SETTINGS)
+    settings["autonomous_stage"] = True  # the sample company has it on, so the shown stages and the coverage gate stay as built
     sending_domains = C.SENDING_DOMAINS
     if world:  # the seller's competitors and sending domains are the world's
         from ..sim import world_load

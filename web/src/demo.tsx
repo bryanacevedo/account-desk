@@ -87,7 +87,7 @@ export function Welcome({ firstStep }: { firstStep: { label: string; go: () => v
   );
   return (
     <section className="welcome" aria-label="What this is and where to start">
-      <p className="welcome-value">Account Desk watches a company&rsquo;s accounts for signs they may buy, proposes who to contact and why now, drafts the emails, and waits for a person to approve every one.</p>
+      <p className="welcome-value">Account Desk watches your accounts for signs they may buy, picks the play that fits the moment, drafts it from cited facts, and puts the first email in front of a person to approve.</p>
       <div className="welcome-first">
         {firstStep ? <button className="btn" onClick={firstStep.go}>{firstStep.label}</button> : null}
         <span className="mute small">Takes about a minute. Nothing is sent: every email and vendor here is simulated.</span>
@@ -107,6 +107,7 @@ export function Welcome({ firstStep }: { firstStep: { label: string; go: () => v
           <div>
             <h3>If you are buying</h3>
             <ol>
+              <li>Plays: what the desk does when a signal arrives, and how each one did.</li>
               <li>Signals: what the desk watches, and where from.</li>
               <li>Accounts: who is worth contacting, and why.</li>
               <li>In flight: each person&rsquo;s sequence, with the next step.</li>

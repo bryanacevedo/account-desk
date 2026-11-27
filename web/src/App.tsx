@@ -82,7 +82,7 @@ export function App() {
     <div className="app">
       <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById("main")?.focus(); }}>Skip to content</a>
       <aside className="side">
-        <div className="brand-block"><div className="brand"><Mark />Account Desk</div><div className="tagline">Signal &amp; Account based outbound</div></div>
+        <div className="brand-block"><div className="brand"><Mark />Account Desk</div><div className="tagline">Signal in, play chosen, person approves</div></div>
         {nav}
         <div className="grow" />
         <div className="side-foot">

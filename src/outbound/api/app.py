@@ -1547,6 +1547,25 @@ def kill_switch(body: KillSwitch, u: dict = Depends(writer)) -> dict:
     return {"ok": True}
 
 
+class AutonomousStage(BaseModel):
+    on: bool
+    reason: str = Field(min_length=10, max_length=500)
+
+
+@app.post("/api/settings/autonomous-stage")
+def autonomous_stage(body: AutonomousStage, u: dict = Depends(writer)) -> dict:
+    """A manager turns the fourth stage (the desk sends tier B with no person on the send) on or off for the whole desk."""
+    not_in_public_demo()
+    need(u, "manager")
+    with db.tx() as cur:
+        db.run(cur, "insert into settings (key, value, updated_by) values ('autonomous_stage', %s, %s) "
+                    "on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by, updated_at = now()",
+               db.J(body.on), u["id"])
+        audit.log(cur, "person", "autonomous_stage_on" if body.on else "autonomous_stage_off", "settings", None,
+                  {"reason": body.reason}, actor_id=u["id"])
+    return {"ok": True}
+
+
 class RegionRuleChange(BaseModel):
     rule: Literal["allowed", "basis_required", "consent_required", "blocked"]
     individual_consent: bool

@@ -351,6 +351,7 @@ def public_demo(monkeypatch):
 
 @pytest.mark.parametrize("method,path,body,role", [
     ("post", "/api/kill-switch", {"on": True, "reason": "testing"}, "manager"),
+    ("post", "/api/settings/autonomous-stage", {"on": True, "reason": "testing the setting"}, "manager"),
     ("post", "/api/users", {"name": "New Person", "email": "new@x.example", "role": "sdr"}, "manager"),
     ("patch", "/api/users/1", {"name": "Renamed"}, "manager"),
     ("post", "/api/people/1/erase", None, "gtm"),
@@ -557,3 +558,17 @@ def test_review_reasons_are_plain():
     src = re.sub(r"[\"']\s+[\"']", "", inspect.getsource(replies.classify_job))  # strings split across lines
     assert "The desk is not sure what this reply means" in src
     assert "The reply contains instructions aimed at the desk" in src
+
+
+def test_only_a_manager_turns_the_autonomous_stage_on_or_off_and_it_is_audited(client):
+    """BL-126: the fourth stage is a desk setting; a gtm user is refused, a manager's change is stored with its reason."""
+    body = {"on": False, "reason": "Off until counsel reads the policy"}
+    assert client.post("/api/settings/autonomous-stage", json=body, headers=_user("gtm")).status_code == 403
+    assert client.post("/api/settings/autonomous-stage", json=body, headers=_user("manager")).status_code == 200
+    with db.tx() as cur:
+        assert db.val(cur, "select value from settings where key = 'autonomous_stage'") is False
+        assert db.val(cur, "select count(*) from audit_log where action = 'autonomous_stage_off'") >= 1
+    on = {"on": True, "reason": "Restored for the sample company"}
+    assert client.post("/api/settings/autonomous-stage", json=on, headers=_user("manager")).status_code == 200
+    with db.tx() as cur:
+        assert db.val(cur, "select value from settings where key = 'autonomous_stage'") is True
