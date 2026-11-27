@@ -61,7 +61,7 @@ A fresh reviewer that had not seen the build conversation read docs/SPEC.md and 
 - The Cloudflare Access JWT path against a real Access app (the status doc says it is unrun).
 - Whether the play editor cost card's worst-case figures match real vendor pricing (they come from `spend.RATES`).
 - Whether the full suite passes on the current uncommitted tree. Tests were not run (read-only review); PROJECT-STATUS reports a 79-pass run that predates the current changes.
-- Whether the Render demo matches this tree.
+- Whether the demo matches this tree (the Render demo was deleted on 2026-11-27; the static snapshot is the demo now).
 
 ---
 

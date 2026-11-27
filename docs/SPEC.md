@@ -476,7 +476,7 @@ Credits stay in their vendor's unit and AI spend in dollars; they are never adde
 
 ### 22.17 Hosting, Slack, uploads, login
 
-- Host: Render free web service from the repo's Dockerfile, Postgres inside the container (fresh on each restart, sleeps after 15 idle minutes). Memory target under 400 MB, measured.
+- Host: the public demo is a static snapshot on Cloudflare Pages; the Dockerfile still builds the full demo image (Postgres inside the container, fresh on each restart) for a local or server install. The Render service that once ran it was deleted on 2026-11-27. Memory target under 400 MB, measured.
 - Slack: ops alerts go to `#outbound-ops`. When an account play becomes engaged, the desk creates a channel for that account (`#acct-<domain>`), invites the owner first, and posts the reply there; positive-reply alerts @-mention the owner.
 - The public demo (`PUBLIC_DEMO=1`) takes no uploads and sends nothing outside.
 - `AUTH_MODE` has `demo` (acting-as menu) and `header` (identity from a trusted proxy header such as Cloudflare Access). `LIVE_SEND=1` refuses to start in `demo`.

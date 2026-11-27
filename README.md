@@ -238,7 +238,7 @@ Measured on 2026-11-11 on a laptop (Apple silicon, Postgres 18): 5,000 accounts 
 | `AUTH_MODE` | `demo` (pick who you act as) or `header` (a verified Cloudflare Access token; needs `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD`) |
 | `LIVE_SEND` | Needs `MODE=live` and `AUTH_MODE=header`; never allowed with `PUBLIC_DEMO` |
 | `PUBLIC_DEMO` | A shared public demo: admin writes blocked, moves of at most 24 hours |
-| `FORWARDED_ALLOW_IPS` | Proxies whose `X-Forwarded-For` is believed, comma separated (default `127.0.0.1`; `render.yaml` sets `10.0.0.0/8`). Rate limits key on the nearest forwarded hop that is not one of them |
+| `FORWARDED_ALLOW_IPS` | Proxies whose `X-Forwarded-For` is believed, comma separated (default `127.0.0.1`; the unused `render.yaml` sets `10.0.0.0/8`). Rate limits key on the nearest forwarded hop that is not one of them |
 | `POSTMASTER_CLIENT_ID`, `POSTMASTER_CLIENT_SECRET`, `POSTMASTER_REFRESH_TOKEN` | Google Postmaster Tools; any unset means no Postmaster data, said so |
 | `LINKEDIN_TOOL_TOKEN` | Turns on the HeyReach webhook |
 | `ANTHROPIC_LIVE` | Live Claude instead of the stand-in |
@@ -280,7 +280,7 @@ Desk settings (rows in the `settings` table, seeded from `src/outbound/seed/cata
 
 ## Deploy
 
-`render.yaml` describes a server install of the demo (the public demo is the static snapshot above): one Docker service on Render's free plan with Postgres inside the container and the simulation built into the image (`scripts/docker-build-demo.sh`), so a start or a wake from sleep only boots Postgres. The image builds the shared world by default (`WORLD=world`, its 91 days); `--build-arg DEMO_WORLD=legacy` builds the desk's own 90-day generator instead. The build fails if the coverage gate finds a scenario missing. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). On Render's own builder the image took about 17 minutes to build (2026-11-12, a build of the desk's own generator). Deploys are manual: auto-deploy is off on the service (`render.yaml` does not say so), so a push to `main` deploys nothing there.
+The `Dockerfile` describes a server install of the demo (the public demo is the static snapshot above): one image with Postgres inside the container and the simulation built into it (`scripts/docker-build-demo.sh`), so a start only boots Postgres. The image builds the shared world by default (`WORLD=world`, its 91 days); `--build-arg DEMO_WORLD=legacy` builds the desk's own 90-day generator instead. The build fails if the coverage gate finds a scenario missing. `make docker` builds and runs the same image locally (it uses the Postgres that Debian ships, not a pinned 18). The Render service that once ran this image was deleted on 2026-11-27; `render.yaml` is kept only as an unused reference.
 
 `make snapshot` builds the demo as static files in `.snapshot/`: the web app plus every response it reads from the built demo database, for each person the demo can act as, with every change refused. How it is built, deployed to Cloudflare Pages and rolled back: `docs/RUNBOOK.md`.
 

@@ -23,7 +23,7 @@ COPY --from=web /web/dist ./web/dist
 ARG DEMO_WORLD=world
 ENV WORLD=$DEMO_WORLD
 ENV DATABASE_URL=postgres://postgres@127.0.0.1:5432/outbound PUBLIC_DEMO=1 HOST=0.0.0.0 PORT=8800 \
-    PUBLIC_URL=https://account-desk-x4ko.onrender.com
+    PUBLIC_URL=https://account-desk-demo.leandrive.io
 # The demo database is built here, once, so starting the container takes seconds instead of minutes.
 RUN chmod +x scripts/*.sh && mkdir -p /data && chown postgres /data && NO_WORKER=1 ./scripts/docker-build-demo.sh
 EXPOSE 8800
