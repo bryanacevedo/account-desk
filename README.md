@@ -11,7 +11,7 @@
 ![python](https://img.shields.io/badge/python-3.13-2B47C9)
 [![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial-5E6A62)](LICENSE.md)
 
-[Live demo](https://account-desk-demo.pages.dev) · [Film (2:01)](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4) · [Docs](docs/SPEC.md) · [Decisions](docs/DECISIONS.md)
+[Live demo](https://account-desk-demo.leandrive.io) · [Film (2:01)](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4) · [Docs](docs/SPEC.md) · [Decisions](docs/DECISIONS.md)
 
 <sub>The public demo is a read-only static snapshot of the sample company, rebuilt by GitHub Actions when a push to `main` changes the web app or the snapshot scripts; nothing is saved there. On a server install with `PUBLIC_DEMO=1`, admin actions (kill switch, users, erasure, publishing the ideal customer profile, CSV imports, country email rules, acknowledging alerts) and sending a reply are blocked there, and "Move a day ahead" moves at most 24 hours at a time.</sub>
 
@@ -38,7 +38,7 @@ It is built for a team that would rather write to 40 companies at the right mome
 
 **[Watch the walkthrough (2:01)](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4)**: one account, Ridgeway Software, from a new VP Finance on 13 October to two deals, then the held-back test that says it is too early to tell. It was filmed on the demo as it stood on 11 November 2026, and every figure in it was read from that database. The demo is rebuilt from its simulation on each deploy, so the live accounts have moved on since.
 
-In the [live demo](https://account-desk-demo.pages.dev), pick who you are acting as in the sidebar (an SDR, the sales manager, or GTM engineering). The company, its accounts, people and vendors are invented.
+In the [live demo](https://account-desk-demo.leandrive.io), pick who you are acting as in the sidebar (an SDR, the sales manager, or GTM engineering). The company, its accounts, people and vendors are invented.
 
 ## How it works
 
@@ -221,7 +221,7 @@ Set `LINKEDIN_TOOL_TOKEN` to a long random string, then in HeyReach add a webhoo
 
 ### Choosing the CRM
 
-`CRM` picks the desk's CRM. Unset, nothing changes: the demo keeps its simulated CRM, and live mode keeps a CRM that refuses. `CRM=crmdesk` makes [CRM Desk](https://crm-desk-demo.pages.dev) the CRM through `src/outbound/adapters/crmdesk.py`: the CRM outbox writes emails, SDR steps, meetings, tasks and opt-outs there, plus the text of a reply once a person answers it (an inbound email) and the close of its Hot reply task (`POST /tasks/close`), and the desk reads deals, account owners and event members from its change feeds (contacts in batches, `POST /contacts/batch`). A CRM Desk without those two routes answers 404 or 405 and the desk carries on as before. Each outbox row and approved email keeps the trace of the request behind it when tracing is on (decision 107). It needs `CRM_DESK_URL` and `CRM_DESK_KEY`. Every call fails closed: a timeout, a refused connection, a 429 or a 5xx leaves the outbox row queued to try again, up to five tries, after which it is marked dead and raises an alert. `CRM=salesforce` is refused with an error, because there is no Salesforce adapter yet, and so is any value the desk does not know (`default` means the same as unset). The contract tests (`tests/test_crm_contract.py`) run on both CRMs where they apply; the CRM Desk half needs a running CRM Desk named by `CRM_DESK_URL`, `CRM_DESK_KEY` and `CRM_DESK_ADMIN_KEY`, and is skipped without them. The public CRM Desk demo refuses API keys, so it needs your own install.
+`CRM` picks the desk's CRM. Unset, nothing changes: the demo keeps its simulated CRM, and live mode keeps a CRM that refuses. `CRM=crmdesk` makes [CRM Desk](https://crm-desk-demo.leandrive.io) the CRM through `src/outbound/adapters/crmdesk.py`: the CRM outbox writes emails, SDR steps, meetings, tasks and opt-outs there, plus the text of a reply once a person answers it (an inbound email) and the close of its Hot reply task (`POST /tasks/close`), and the desk reads deals, account owners and event members from its change feeds (contacts in batches, `POST /contacts/batch`). A CRM Desk without those two routes answers 404 or 405 and the desk carries on as before. Each outbox row and approved email keeps the trace of the request behind it when tracing is on (decision 107). It needs `CRM_DESK_URL` and `CRM_DESK_KEY`. Every call fails closed: a timeout, a refused connection, a 429 or a 5xx leaves the outbox row queued to try again, up to five tries, after which it is marked dead and raises an alert. `CRM=salesforce` is refused with an error, because there is no Salesforce adapter yet, and so is any value the desk does not know (`default` means the same as unset). The contract tests (`tests/test_crm_contract.py`) run on both CRMs where they apply; the CRM Desk half needs a running CRM Desk named by `CRM_DESK_URL`, `CRM_DESK_KEY` and `CRM_DESK_ADMIN_KEY`, and is skipped without them. The public CRM Desk demo refuses API keys, so it needs your own install.
 
 ### At production size
 
@@ -318,10 +318,10 @@ Account Desk runs on its own: with no `CRM` and no `INTEGRATED_WITH` set, it kee
 
 | Project | What it does | Links |
 |---|---|---|
-| Account Desk (this repository) | A GTM plays system: signal in, play chosen, person approves | [Live demo](https://account-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4) |
-| Events Desk | For someone who runs events all year: seat requests and approvals, attendee lists turned into the companies and people worth meeting, with checked emails, handed back as a sheet for sales | [Code](https://github.com/bryanacevedo/events-desk) · [Live demo](https://events-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/events-desk.mp4) |
-| Market Desk | Decides who a B2B team sells to from its own deals, sizes that market and splits it into territories | [Code](https://github.com/bryanacevedo/market-desk) · [Live demo](https://market-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/market-desk.mp4) |
-| CRM Desk | A CRM for teams of one to fifty with Salesforce's data model and a simpler experience; Account Desk and Events Desk can use it as their CRM | [Live demo](https://crm-desk-demo.pages.dev) · [Film](https://bryanacevedo.github.io/project-videos/video/crm-desk.mp4) (code private) |
+| Account Desk (this repository) | A GTM plays system: signal in, play chosen, person approves | [Live demo](https://account-desk-demo.leandrive.io) · [Film](https://bryanacevedo.github.io/project-videos/video/account-desk.mp4) |
+| Events Desk | For someone who runs events all year: seat requests and approvals, attendee lists turned into the companies and people worth meeting, with checked emails, handed back as a sheet for sales | [Code](https://github.com/bryanacevedo/events-desk) · [Live demo](https://events-desk-demo.leandrive.io) · [Film](https://bryanacevedo.github.io/project-videos/video/events-desk.mp4) |
+| Market Desk | Decides who a B2B team sells to from its own deals, sizes that market and splits it into territories | [Code](https://github.com/bryanacevedo/market-desk) · [Live demo](https://market-desk-demo.leandrive.io) · [Film](https://bryanacevedo.github.io/project-videos/video/market-desk.mp4) |
+| CRM Desk | A CRM for teams of one to fifty with Salesforce's data model and a simpler experience; Account Desk and Events Desk can use it as their CRM | [Live demo](https://crm-desk-demo.leandrive.io) · [Film](https://bryanacevedo.github.io/project-videos/video/crm-desk.mp4) (code private) |
 
 All four films: https://bryanacevedo.github.io/project-videos/
 
