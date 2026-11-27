@@ -93,7 +93,7 @@ export function Signals() {
   return (
     <div className="page">
       <div className="head"><div><h1>Signals</h1></div></div>
-      <Hint>A signal is something the desk saw at an account that may mean they will buy: a hiring post, a funding round, a visit to the pricing page. A source is where the desk reads signals from.{sample ? " In this sample every source and tool name is invented, so none of them is a real service." : ""}</Hint>
+      <Hint>A signal is something the desk saw at an account that may mean they will buy: a hiring post, a funding round, a visit to the pricing page. A source is where the desk reads signals from.{sample ? " In this sample every signal is invented, and no real service is called." : ""}</Hint>
       <div className="figs">
         <Fig value={n0(week)} label="Signals in the last 7 days" />
         <Fig value={data.sources.filter((s: any) => s.enabled).length} label="Sources" />

@@ -401,7 +401,7 @@ def test_the_sidebar_opens_the_list_the_replies_badge_counts(client, world):
 
 def test_the_banner_has_three_true_branches():
     demo = web("demo.tsx")
-    assert "read-only snapshot taken" in demo and "changes are not saved" in demo  # the static snapshot refuses everything
+    assert "read-only snapshot:" in demo and "changes are not saved" in demo  # the static snapshot refuses everything
     shared = demo.split("          : me.public_demo")[1].split("Every vendor and signal here is simulated")[0]
     for word in ("accept, skip, approve, propose again or move a day ahead", "seen by every visitor",
                  "Sending, imports, people and settings are refused"):

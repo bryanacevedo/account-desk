@@ -280,8 +280,9 @@ def record_delivery_event(cur, message_id: int, event: str, detail: dict | None 
     if event == "complaint":
         db.run(cur, "update mailboxes set status = 'paused', pause_reason = 'Spam complaint received' where id = %s "
                     "and status = 'active'", m["mailbox_id"])
+        box = db.one(cur, "select address from mailboxes where id = %s", m["mailbox_id"])
         alerts.raise_alert(cur, kind="complaint", severity="urgent", channel="#outbound-ops",
-                           title="A mailbox got a spam complaint and is paused", body="The recipient's email provider reported it as spam.",
+                           title=f"{box['address']} got a spam complaint and is paused" if box else "A mailbox got a spam complaint and is paused", body="The recipient's email provider reported it as spam.",
                            object_kind="mailbox", object_id=m["mailbox_id"], dedup_key=f"complaint:{message_id}")
 
 

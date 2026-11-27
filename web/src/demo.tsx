@@ -36,7 +36,7 @@ export function DemoBar({ me }: { me: DemoMe }) {
       <span className="demo-text">
         <b>Sample company, invented data.</b>{" "}
         {snap
-          ? <>This is a read-only snapshot taken {me.snapshot!.taken_on}: changes are not saved. A change you try answers &ldquo;{REFUSAL}&rdquo;</>
+          ? <>This is a read-only snapshot: changes are not saved. A change you try answers &ldquo;{REFUSAL}&rdquo;</>
           : me.public_demo
             ? <>Everyone who visits shares this demo. What you accept, skip, approve, propose again or move a day ahead is seen by every visitor and stays until the demo restarts. Sending, imports, people and settings are refused with &ldquo;{REFUSAL}&rdquo;</>
             : <>Every vendor and signal here is simulated.</>}{" "}
