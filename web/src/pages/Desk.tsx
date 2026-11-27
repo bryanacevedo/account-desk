@@ -391,7 +391,7 @@ export function Ops() {
         <div><h1>Health</h1></div>
         <div className="actions">
           <input className="input" placeholder="Reason" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Reason" style={{ width: 180 }} />
-          <button className={data.kill_switch ? "btn" : "btn ink"} disabled={busy || reason.trim().length < 3}
+          <button className={data.kill_switch ? "btn" : "btn ink"} disabled={busy || reason.trim().length < 3} title={reason.trim().length < 3 ? "Give a reason first" : undefined}
             onClick={() => run(() => api("/api/kill-switch", { method: "POST", body: { on: !data.kill_switch, reason } }), data.kill_switch ? "Sending is back on." : "All sending stopped.").then(() => setReason(""))}>
             {data.kill_switch ? "Turn sending back on" : "Stop all sending"}
           </button>
