@@ -2,7 +2,7 @@
 
 ## Static snapshot of the public demo
 
-The public demo can be served as static files: the web app plus every response it needs, saved from the built demo database. No server, no database, no sign-in. Decided by Bryan on 2026-11-15 (Backlog bl_116); how it works is `docs/DECISIONS.md` 96. It is staged on Cloudflare Pages, project `account-desk-demo`, with noindex, and linked from nowhere until Bryan says so. The Render demo is unchanged and stays the full one.
+The public demo can be served as static files: the web app plus every response it needs, saved from the built demo database. No server, no database, no sign-in. Decided by Bryan on 2026-11-15 (Backlog bl_116); how it works is `docs/DECISIONS.md` 96. It is served on Cloudflare Pages, project `account-desk-demo`, with noindex. 2026-11-27: it is the live demo the README links (since 8dda520, 2026-11-18). The Render demo is unchanged and stays the full one.
 
 ### What the snapshot holds
 
@@ -39,7 +39,7 @@ The bundle: `index.html` with `<meta name="robots" content="noindex,nofollow">` 
 
 ### Deploy
 
-GitHub Actions, `.github/workflows/static-snapshot.yml`: on a push to `main` that touches `web/`, the snapshot script or the workflow, and by hand (Actions, static snapshot, Run workflow). It builds the demo on a throwaway Postgres (15 to 60 minutes), builds the snapshot, keeps it as an artifact for 30 days (`account-desk-snapshot-<commit>`), and deploys to Pages only when the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are set. Without them the run passes and deploys nothing. The repository is public, so its runs cost no Actions minutes.
+GitHub Actions, `.github/workflows/static-snapshot.yml`: on a push to `main` that touches `web/`, the snapshot script or the workflow, and by hand (Actions, static snapshot, Run workflow). It builds the demo on a throwaway Postgres (15 to 60 minutes), builds the snapshot, keeps it as an artifact for 30 days (`account-desk-snapshot-<commit>`), and deploys to Pages only when the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are set. Without them the run passes and deploys nothing. Both are set (2026-11-18), so a qualifying push deploys; the last deploy was run 45962320513 at d1be7b7 on 2026-11-27. 2026-11-27: runs up to then kept no artifact, because `.snapshot` is a hidden folder that `upload-artifact` skipped; the step now sets `include-hidden-files: true`. The repository is public, so its runs cost no Actions minutes.
 
 From a laptop, with the token from Infisical (the Infisical project, prod, root path; never printed):
 
@@ -52,6 +52,6 @@ infisical run --projectId <project id> --env prod --recursive -- sh -c 'env -i P
 Each deploy is kept. Either:
 
 - List the deployments (`npx wrangler@4.156.1 pages deployment list --project-name account-desk-demo`, same environment as above) and roll production back to an earlier one: in the Cloudflare dashboard (Workers and Pages, account-desk-demo, Deployments, the deployment's menu, Rollback to this deployment), or through the API, `POST /accounts/<account>/pages/projects/account-desk-demo/deployments/<deployment id>/rollback` with the token. Tested on 2026-11-17: a rollback to the previous deployment and back again, each serving within seconds.
-- Or download an earlier run's artifact from GitHub Actions and deploy that folder with the command above.
+- Or download an earlier run's artifact from GitHub Actions and deploy that folder with the command above (only runs after 2026-11-27 have one).
 
 To take the snapshot down entirely, delete the Pages project in the dashboard (only on Bryan's word).
