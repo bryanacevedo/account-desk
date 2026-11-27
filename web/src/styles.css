@@ -897,3 +897,16 @@ a.cite:hover { color: var(--ink); }
 .budget-line { padding-top: 0; }
 .budget-history { margin-top: 10px; }
 .budget-history summary { cursor: pointer; color: var(--mute); font-size: 13px; }
+
+.batch-group { margin: 0 0 18px; }
+.batch-head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 6px 0 8px; }
+.batch-row { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
+.batch-row.is-picked { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.batch-pick { display: flex; justify-content: center; padding-top: 3px; }
+.batch-pick input { width: 18px; height: 18px; }
+.batch-who { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.batch-subject { font-weight: 550; margin: 2px 0; }
+.batch-body { margin: 0 0 4px; white-space: normal; color: var(--mute); font-size: 13.5px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.batch-body.is-open { white-space: pre-wrap; display: block; -webkit-line-clamp: unset; color: inherit; }
+.batch-result { align-items: flex-start; margin-bottom: 12px; }
+@media (max-width: 640px) { .batch-head { grid-template-columns: minmax(0, 1fr) auto; } .batch-head .btn { justify-self: end; } }

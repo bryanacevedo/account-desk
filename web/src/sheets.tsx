@@ -1394,6 +1394,14 @@ export function MessageSheet({ id }: { id: number }) {
         <button className="btn" disabled={busy} onClick={approve}>{editing ? "Save and approve" : "Approve"}</button>
       </>
     )
+  ) : m.can_take_back ? (
+    <>
+      <span className="mute small" style={{ flex: 1 }}>
+        Approved by {m.approver || "a person"} {m.approved_at ? day(m.approved_at) : ""}{m.batch_size ? ` together with ${m.batch_size - 1} other${m.batch_size === 2 ? "" : "s"}` : ""}.
+        It has not gone out yet{m.scheduled_for ? `, due ${day(m.scheduled_for)}` : ""}.
+      </span>
+      <button className="btn line" disabled={busy} onClick={() => run(async () => { await api(`/api/messages/${id}/take-back`, { method: "POST" }); reload(); }, "Taken back. It is waiting for approval again.")}>Take back approval</button>
+    </>
   ) : m.status === "send_unknown" ? (
     <>
       <span className="mute small" style={{ flex: 1 }}>The mail provider did not confirm whether it sent. Check the mailbox's sent folder.</span>

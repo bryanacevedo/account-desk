@@ -11,12 +11,85 @@ import { Hint, Sample, isSample } from "../demo";
 
 // ---------------------------------------------------------------- Approvals
 
+/** One group of drafts: the same play and the same email, so they carry the same angle. BL-170. */
+interface Group { key: string; play: string; angle: string; emailNo: number; version: number; rows: any[] }
+
+function groupDrafts(rows: any[]): Group[] {
+  const by = new Map<string, Group>();
+  for (const m of rows) {
+    const g: Group = by.get(m.template_key) ?? { key: m.template_key, play: m.play, angle: m.angle, emailNo: m.email_no ?? m.step_index + 1, version: m.play_version, rows: [] };
+    g.rows.push(m);
+    by.set(m.template_key, g);
+  }
+  // Inside a group the strongest account first, then the oldest draft; groups in the order of their oldest draft.
+  const groups = [...by.values()];
+  groups.forEach((g) => g.rows.sort((a, b) => b.priority - a.priority || +new Date(a.created_at) - +new Date(b.created_at)));
+  return groups.sort((a, b) => Math.min(...a.rows.map((r) => +new Date(r.created_at))) - Math.min(...b.rows.map((r) => +new Date(r.created_at))));
+}
+
+const BATCH_MAX = 25;
+
+function DraftGroup({ g, older, picked, toggle, setMany, onApprove, busy }: {
+  g: Group; older: boolean; picked: Set<number>; toggle: (id: number) => void; setMany: (ids: number[], on: boolean) => void;
+  onApprove: (g: Group, ids: number[]) => void; busy: boolean;
+}) {
+  const [open, setOpen] = useState<Set<number>>(new Set());
+  const ids = g.rows.map((r) => r.id);
+  const mine = ids.filter((id) => picked.has(id));
+  const allOn = mine.length === Math.min(ids.length, BATCH_MAX);
+  return (
+    <section className="batch-group" aria-label={`${g.play}, email ${g.emailNo}`}>
+      <header className="batch-head">
+        <div className="cell-main"><span className="t">{g.play}, email {g.emailNo}{older ? ` (version ${g.version})` : ""}</span><span className="s">{g.angle}</span></div>
+        <span className="num mute small">{g.rows.length} {g.rows.length === 1 ? "draft" : "drafts"}</span>
+        <button className="btn quiet sm" onClick={() => setMany(ids.slice(0, BATCH_MAX), !allOn)}>{allOn ? "Clear" : ids.length > BATCH_MAX ? `Tick the top ${BATCH_MAX}` : "Tick all"}</button>
+        <button className="btn sm" aria-label={`Approve the ticked drafts of ${g.play}, email ${g.emailNo}`} disabled={busy || !mine.length || mine.length > BATCH_MAX} onClick={() => onApprove(g, mine)}>
+          {mine.length ? `Approve ${mine.length}` : "Approve ticked"}</button>
+      </header>
+      <div className="ledger">
+        {g.rows.map((m) => {
+          const long = (m.body || "").split("\n\n--\n")[0];
+          const shown = open.has(m.id);
+          return (
+            <div key={m.id} className={`batch-row${picked.has(m.id) ? " is-picked" : ""}`}>
+              <label className="batch-pick"><input type="checkbox" checked={picked.has(m.id)} onChange={() => toggle(m.id)} aria-label={`Tick ${m.full_name} at ${m.company}`} /></label>
+              <div className="batch-main">
+                <div className="batch-who">
+                  <button className="link-row" onClick={() => openSheet("message", m.id)}>{m.full_name}</button>
+                  <span className="mute small">{m.title}, {m.company} · Tier {m.fit_tier} · Priority {m.priority}{m.country ? ` · ${m.country}` : ""}{m.persona_key ? ` · ${cap(String(m.persona_key).replace(/_/g, " "))}` : ""}</span>
+                </div>
+                <div className="batch-subject">{m.subject}</div>
+                <p className={`batch-body${shown ? " is-open" : ""}`}>{long}</p>
+                <button className="btn quiet sm" aria-expanded={shown} aria-label={`${shown ? "Show less of" : "Show all of"} the email to ${m.full_name}`} onClick={() => setOpen((o) => { const n = new Set(o); n.has(m.id) ? n.delete(m.id) : n.add(m.id); return n; })}>{shown ? "Show less" : "Show all"}</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function Approvals() {
-  const { data, error, reload } = useData<any>("/api/today");
+  const { data, error, reload } = useData<any>("/api/approvals");
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [result, setResult] = useState<{ approved: any[]; skipped: any[] } | null>(null);
+  const [busy, run] = useBusy();
   if (error) return <div className="page"><Failed error={error} retry={reload} /></div>;
   if (!data) return <div className="page"><div className="head"><h1>Approvals</h1></div><Loading /></div>;
   const failed = data.approvals.filter((m: any) => m.status === "failed_gate");
   const ready = data.approvals.filter((m: any) => m.status === "awaiting_approval");
+  const toggle = (id: number) => setPicked((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const setMany = (ids: number[], on: boolean) => setPicked((p) => { const n = new Set(p); ids.forEach((i) => (on ? n.add(i) : n.delete(i))); return n; });
+  const approve = (g: Group, ids: number[]) => {
+    const info = new Map<number, any>(g.rows.map((r) => [r.id, r]));
+    return run(async () => {
+      const out = await api<any>("/api/approvals/batch", { method: "POST", body: { message_ids: ids } });
+      setResult({ approved: out.approved.map((i: number) => info.get(i)), skipped: out.skipped.map((s: any) => ({ ...info.get(s.id), reason: s.reason })) });
+      setPicked((p) => { const n = new Set(p); ids.forEach((i) => n.delete(i)); return n; });
+      reload();
+    }, "Done.");
+  };
   const list = (rows: any[]) => (
     <div className="ledger">
       <div className="row head" style={{ gridTemplateColumns: A_COLS }}><span /><span>To</span><span>Subject</span><span>Play</span><span className="num">Drafted</span></div>
@@ -34,8 +107,22 @@ export function Approvals() {
   return (
     <div className="page">
       <div className="head"><div><h1>Approvals</h1></div></div>
-      <Hint>Every first email waits here until a person approves it. Open one to read the facts it cites, edit it and approve it. Nothing is sent without that click.</Hint>
-      <Section title="Ready to approve">{ready.length ? list(ready) : <Empty title="Nothing waiting">Example: &ldquo;Quick question about your 2027 pricing&rdquo; to a CFO, with the 3 facts it uses.</Empty>}</Section>
+      <Hint>Every first email waits here until a person approves it. Drafts from the same play and the same email are grouped: tick the ones you have read and approve them together. Each is still its own approval, you can take any back until it goes out, and nothing is ticked for you. Open one to edit it. Nothing is sent without a person.</Hint>
+      {result ? (
+        <div className="notice batch-result" role="status">
+          <div style={{ flex: 1 }}>
+            <strong>{result.approved.length} approved{result.skipped.length ? `, ${result.skipped.length} not` : ""}.</strong>
+            {result.approved.map((m: any) => <div key={m.id} className="small"><span>{m.full_name}, {m.company}</span> <button className="btn quiet sm" disabled={busy} onClick={() => run(async () => { await api(`/api/messages/${m.id}/take-back`, { method: "POST" }); setResult((r) => r && { ...r, approved: r.approved.filter((x: any) => x.id !== m.id) }); reload(); }, "Taken back. It is waiting for approval again.")}>Take back</button></div>)}
+            {result.skipped.map((m: any) => <div key={m.id} className="small mute">{m.full_name}, {m.company}: {m.reason}</div>)}
+          </div>
+          <button className="btn quiet sm" onClick={() => setResult(null)}>Close</button>
+        </div>
+      ) : null}
+      {data.total > data.approvals.length ? <p className="old-note">Showing the {data.approvals.length} oldest of {data.total} emails waiting. Approve some and the rest appear.</p> : null}
+      <Section title="Ready to approve">
+        {ready.length ? groupDrafts(ready).map((g, _i, all) => <DraftGroup key={g.key} g={g} older={all.some((x) => x !== g && x.play === g.play && x.emailNo === g.emailNo)} picked={picked} toggle={toggle} setMany={setMany} onApprove={approve} busy={busy} />)
+          : <Empty title="Nothing waiting">Example: &ldquo;Quick question about your 2027 pricing&rdquo; to a CFO, with the 3 facts it uses.</Empty>}
+      </Section>
       {failed.length ? <Section title="Needs a rewrite">{list(failed)}</Section> : null}
       <ReadFirst rows={(data.read_first || []).filter((r: any) => r.drafts_held > 0)} title="They replied" />
     </div>

@@ -1,10 +1,14 @@
 # Account Desk: project status
 
-**Updated:** 2026-11-27. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 119. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). 2026-11-27: the public demo is the static snapshot at https://account-desk-demo.leandrive.io, which the README links; the Render service is the older full demo. The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
+**Updated:** 2026-11-27. **Spec:** `docs/SPEC.md` (sections 1 to 21, 22 with every review decision, which wins where they differ, then 23 to 25). **Decisions:** `docs/DECISIONS.md`, 1 to 120. **Name:** Account Desk since 2026-11-11, renamed from Outbound Desk (Bryan: the tool is purely account-based). Repo renamed to `account-desk` (GitHub redirects the old address); live at https://account-desk-x4ko.onrender.com (plain `account-desk` was taken on Render). 2026-11-27: the public demo is the static snapshot at https://account-desk-demo.leandrive.io, which the README links; the Render service is the older full demo. The local folder is still `~/Developer/outbound-desk` and the Python package is still `outbound`.
 
 ## Weekly proposal budget (2026-11-27, Backlog bl_172, BL-172, branch `ad-approvals/cards`, decision 119, migration 0045)
 
 A manager can cap proposed accounts per SDR per week; none by default, so the world build and every existing desk are unchanged. `src/outbound/budget.py` holds the cap, the wait queue and the release job; `plays.match` queues a capped SDR's match instead of proposing. Settings has the table, Today shows the SDR's meter or the manager's capacity message. Tests: `tests/test_proposal_budget.py`. Part of three cards built in order (BL-172, BL-170 batch review, BL-171 standing approvals) from the BL-126 proposal.
+
+## Batch review of approvals (2026-11-27, Backlog bl_170, BL-170, branch `ad-approvals/cards`, decision 120, migration 0046)
+
+The Approvals page groups waiting emails by play and email; a person ticks drafts and approves them together (`outreach.approve_batch`, `POST /api/approvals/batch`), each its own approval, and can take their approval back before it goes out (`outreach.take_back`). Tests: `tests/test_batch_approval.py`. Second of three cards (BL-172, BL-170, BL-171).
 
 ## The handoff carries the play, the signal and the SDR's note (2026-11-27, Backlog bl_111, BL-111, branch `bl111/account`)
 

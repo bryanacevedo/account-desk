@@ -76,7 +76,34 @@ def today(cur, user: dict) -> dict:
         r["can_propose_again"] = not r["why"]
     # Decision 108: a person who just replied keeps no call, LinkedIn step or draft to approve in the lists above until
     # their reply is read; each is named here instead, once, with how much is held back.
-    read_first = db.all(cur, f"""
+    read_first = _read_first(cur, uid, mine, args)
+    return {"proposals": proposals, "expired": expired, "approvals": approvals, "replies": hot, "tasks": tasks,
+            "budget": proposal_budget(cur, user), "read_first": read_first, "meetings": meetings, "now": db.val(cur, "select app_now()")}
+
+
+def approvals_page(cur, user: dict) -> dict:
+    """BL-170: every email waiting for this person, with its text (Today shows only the oldest 60 and no text). 300 at most,
+    oldest first, so a group can be cut; `total` says how many there are and the page says when it shows fewer."""
+    uid = user["id"]
+    mine = "ap.owner_id = %s" if user["role"] == "sdr" else "true"
+    args = (uid,) if user["role"] == "sdr" else ()
+    where = f"""m.status in ('awaiting_approval', 'failed_gate') and m.channel = 'email' and {mine}
+                and not {UNREAD_REPLY.format(person='e.person_id')}"""
+    rows = db.all(cur, f"""
+        select m.id, m.subject, m.body, m.step_index, email_no(m.enrollment_id, m.step_index) as email_no, m.status, m.created_at,
+               m.template_key, pe.full_name, pe.photo_url, pe.title, pe.country, a.name as company, a.fit_tier,
+               a.id as account_id, p.id as play_id, p.name as play, p.angle, p.version as play_version, e.persona_key, coalesce(sc.priority, 0) as priority
+        from messages m join enrollments e on e.id = m.enrollment_id join account_plays ap on ap.id = e.account_play_id
+        join people pe on pe.id = e.person_id join accounts a on a.id = ap.account_id join plays p on p.id = ap.play_id
+        left join account_scores sc on sc.account_id = a.id
+        where {where} order by m.created_at limit 300""", *args)
+    total = db.val(cur, f"""select count(*) from messages m join enrollments e on e.id = m.enrollment_id
+                            join account_plays ap on ap.id = e.account_play_id where {where}""", *args)
+    return {"approvals": rows, "total": total, "read_first": _read_first(cur, uid, mine, args)}
+
+
+def _read_first(cur, uid: int, mine: str, args: tuple) -> list[dict]:
+    return db.all(cur, f"""
         select r.id as reply_id, r.received_at, r.cleaned, pe.id as person_id, pe.full_name, pe.photo_url, a.name as company, a.id as account_id,
                (select count(*) from tasks t where t.person_id = r.person_id and t.status = 'open'
                   and t.kind not in ('reply', 'review_reply') and t.owner_id = %s) as tasks_held,
@@ -93,8 +120,6 @@ def today(cur, user: dict) -> dict:
                   join account_plays ap on ap.id = e.account_play_id where e.person_id = r.person_id and m.channel = 'email'
                   and m.status in ('awaiting_approval', 'failed_gate') and {mine}))
         order by r.received_at limit 40""", uid, *args, uid, *args)
-    return {"proposals": proposals, "expired": expired, "approvals": approvals, "replies": hot, "tasks": tasks,
-            "budget": proposal_budget(cur, user), "read_first": read_first, "meetings": meetings, "now": db.val(cur, "select app_now()")}
 
 
 def proposal_budget(cur, user: dict) -> dict:
@@ -663,6 +688,11 @@ def message(cur, message_id: int) -> dict | None:
         return None
     ids = (m["citations"] or {}).get("ids", [])
     m["facts"] = db.all(cur, "select id, kind, text, source_url, observed_at from facts where id = any(%s)", ids) if ids else []
+    # BL-170: who approved it, whether it came in a batch, and whether it can still be taken back (it has not gone out).
+    m["approver"] = db.val(cur, "select name from users where id = %s", m["approved_by"]) if m.get("approved_by") else None
+    m["batch_size"] = db.val(cur, "select approved from approval_batches where id = %s", m["approval_batch_id"]) if m.get("approval_batch_id") else None
+    m["can_take_back"] = m["channel"] == "email" and m["status"] in ("approved", "scheduled") and m["approval_mode"] == "person"
+    m["taken_back_by_name"] = db.val(cur, "select name from users where id = %s", m["taken_back_by"]) if m.get("taken_back_by") else None
     slot = outreach.message_slot(cur, message_id) if m["status"] in ("awaiting_approval", "failed_gate") else None
     from . import replies
     m["read_first"] = replies.unread_reply(cur, m["person_id"]) if m["status"] in ("awaiting_approval", "failed_gate") else None

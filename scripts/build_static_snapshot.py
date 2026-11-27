@@ -186,6 +186,7 @@ def crawl(client, db: dict, *, log=print) -> Crawl:
     # Who is acting, and each person's own pages.
     k.get("/api/me", "each")
     k.get("/api/today", "each")
+    k.get("/api/approvals", "each")
     for mine in ("true", "false"):
         k.get(f"/api/in-flight?mine={mine}", "each")
     for view in REPLY_VIEWS:

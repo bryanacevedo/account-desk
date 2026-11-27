@@ -8,6 +8,8 @@ import logging
 import re
 from datetime import timedelta
 
+import psycopg
+
 from . import (
     adapters,
     audit,
@@ -831,6 +833,107 @@ def _approve(cur, m: dict, *, user_id: int | None, mode: str) -> None:
         activate(cur, e["id"])
     else:
         schedule_message(cur, m["id"])
+
+
+BATCH_MAX = 25
+
+
+class BatchRefused(ValueError):
+    """The whole request is refused before any draft is approved; `status` is the HTTP answer for it."""
+    def __init__(self, message: str, status: int = 422):
+        super().__init__(message)
+        self.status = status
+
+
+def approve_batch(cur, message_ids: list[int], *, user_id: int, role: str) -> dict:
+    """BL-170 (decision 120). A person approves several drafts of one play and step at once. Each draft is its own approval:
+    `approve` runs on it unchanged with no edit, in its own savepoint, so every refusal that applies to one draft still
+    applies, and one refusal never stops the others. Only a draft that passed the checks qualifies; a draft that failed them
+    needs its rewrite first. Nothing here runs without a person's request, and `maybe_auto_approve` is not involved."""
+    ids = list(dict.fromkeys(message_ids))
+    if not ids:
+        raise BatchRefused("Tick at least one draft.")
+    if len(ids) > BATCH_MAX:
+        raise BatchRefused(f"Approve at most {BATCH_MAX} drafts at once; tick fewer.")
+    rows = db.all(cur, """select m.id, m.template_key, m.status, m.channel, ap.owner_id, ap.account_id
+                          from messages m join enrollments e on e.id = m.enrollment_id
+                          join account_plays ap on ap.id = e.account_play_id where m.id = any(%s)""", ids)
+    if len(rows) != len(ids):
+        raise BatchRefused("One of those drafts no longer exists.", 404)
+    if any(r["channel"] != "email" for r in rows):
+        raise BatchRefused("Only emails are approved here; a LinkedIn note is approved by sending it.")
+    if role == "sdr" and any(r["owner_id"] != user_id for r in rows):
+        raise BatchRefused("One of those drafts belongs to another SDR's account.", 403)
+    if len({r["template_key"] for r in rows}) != 1:
+        raise BatchRefused("A group is one play and one email; tick drafts from a single group.")
+    key = rows[0]["template_key"]
+    batch = db.val(cur, "insert into approval_batches (template_key, approved_by, requested, approved) values (%s,%s,%s,0) returning id",
+                   key, user_id, len(ids))
+    approved: list[int] = []
+    skipped: list[dict] = []
+    # Accounts in id order: two people approving overlapping groups lock accounts in the same order and cannot deadlock.
+    for r in sorted(rows, key=lambda r: (r["account_id"], r["id"])):
+        if r["status"] != "awaiting_approval":
+            skipped.append({"id": r["id"], "reason": "It needs a rewrite before it can be approved."
+                            if r["status"] == "failed_gate" else f"It is {r['status']}, not waiting for approval."})
+            continue
+        try:
+            with cur.connection.transaction():
+                approve(cur, r["id"], user_id=user_id)
+                db.run(cur, "update messages set approval_batch_id = %s where id = %s", batch, r["id"])
+                audit.log(cur, "person", "approved_in_batch", "message", r["id"], {"batch": batch}, actor_id=user_id)
+            approved.append(r["id"])
+        except (ValueError, psycopg.Error) as exc:     # a lock timeout or deadlock on one draft skips that draft only
+            skipped.append({"id": r["id"], "reason": str(exc).split("\n")[0]})
+    db.run(cur, "update approval_batches set approved = %s, skipped = %s where id = %s", len(approved), J(skipped), batch)
+    audit.log(cur, "person", "batch_approved", "approval_batch", batch,
+              {"template_key": key, "requested": len(ids), "approved": len(approved), "skipped": len(skipped)}, actor_id=user_id)
+    return {"batch": batch, "approved": approved, "skipped": skipped}
+
+
+def take_back(cur, message_id: int, *, user_id: int, role: str) -> dict:
+    """BL-170. A person takes their approval of an email back while it has not gone out: it returns to waiting for approval,
+    the approval's hash, slot and mark are cleared, and when that approval had started the person's sequence (a first email)
+    and nothing of it was sent, the sequence returns to waiting and the play to approving. Locks enrollment then message,
+    the order the send uses, so a send that already claimed the message wins and this refuses."""
+    eid = db.val(cur, "select enrollment_id from messages where id = %s", message_id)
+    if eid is None:
+        raise ValueError("No such email.")
+    e = db.one(cur, "select * from enrollments where id = %s for update", eid)
+    m = db.one(cur, "select * from messages where id = %s for update", message_id)
+    if m["channel"] != "email":
+        raise ValueError("Only an email approval can be taken back.")
+    if m["status"] not in ("approved", "scheduled"):
+        raise ValueError("This email is " + m["status"].replace("_", " ") + ", so its approval cannot be taken back."
+                         if m["status"] != "awaiting_approval" else "This email is not approved.")
+    if m["approval_mode"] != "person":
+        raise ValueError("The desk approved this one under a standing approval; revoke that to stop the rest.")
+    if role == "sdr" and m["approved_by"] != user_id:
+        raise PermissionError("Only the person who approved it, or a manager, can take it back.")
+    db.run(cur, """update messages set status = 'awaiting_approval', approved_hash = null, approved_by = null, approval_mode = null,
+                   approved_at = null, scheduled_for = null, planned_for = null, trace_parent = null,
+                   taken_back_at = app_now(), taken_back_by = %s where id = %s""", user_id, message_id)
+    # An approval of the sequence's first step is what started the person's sequence; taking it back puts the sequence back to
+    # waiting, with a fresh lapse clock (a pending sequence nobody approves lapses, `due_steps`). Only for step 0: a later
+    # step just returns to waiting, and a sequence that opens with a call or LinkedIn step is left as it is.
+    first = m["step_index"] == 0 and e["state"] == "active" and not db.val(
+        cur, "select exists (select 1 from messages where enrollment_id = %s and status in ('sending', 'sent', 'send_unknown'))", e["id"])
+    if first:
+        db.run(cur, "update enrollments set state = 'pending', started_at = null, next_at = app_now() where id = %s", e["id"])
+        ap = db.one(cur, "select id, state from account_plays where id = %s for update", e["account_play_id"])
+        # Only a play that has not reached anyone goes back: no other enrollment is going, and nothing of the play was sent.
+        if ap["state"] == "active" and not db.val(
+                cur, """select exists (select 1 from enrollments x where x.account_play_id = %s and x.id <> %s
+                        and (x.state in ('active', 'done', 'paused')
+                             or exists (select 1 from messages y where y.enrollment_id = x.id and y.status in ('sending', 'sent', 'send_unknown'))))""",
+                ap["id"], e["id"]):
+            # plays.ALLOWED has no active -> approving: this is the one reverse move, written on purpose and audited.
+            db.run(cur, "update account_plays set state = 'approving' where id = %s", ap["id"])
+            audit.log(cur, "person", "play_approving", "account_play", ap["id"],
+                      {"from": "active", "reason": "approval taken back"}, actor_id=user_id)
+    audit.log(cur, "person", "approval_taken_back", "message", message_id,
+              {"was": m["status"], "batch": m.get("approval_batch_id")}, actor_id=user_id)
+    return db.one(cur, "select * from messages where id = %s", message_id)
 
 
 def reject(cur, message_id: int, *, user_id: int, reason: str, skip_person: bool = False) -> None:

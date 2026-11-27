@@ -411,6 +411,12 @@ def today(u: dict = Depends(current_user)) -> dict:
         return views.today(cur, u)
 
 
+@app.get("/api/approvals")
+def approvals(u: dict = Depends(current_user)) -> dict:
+    with db.tx() as cur:
+        return views.approvals_page(cur, u)
+
+
 @app.get("/api/in-flight")
 def in_flight(mine: bool | None = None, u: dict = Depends(current_user)) -> dict:
     """What is moving: every open play and each person's sequence. SDRs see their own by default."""
@@ -806,6 +812,36 @@ def approve(message_id: int, body: Approve, u: dict = Depends(writer)) -> dict:
             raise bad_request(exc) from exc
         except psycopg.errors.RaiseException as exc:
             raise HTTPException(422, str(exc).split("\n")[0]) from exc
+        return views.message(cur, message_id)
+
+
+class BatchApprove(BaseModel):
+    message_ids: list[int] = Field(min_length=1, max_length=outreach.BATCH_MAX)
+
+
+@app.post("/api/approvals/batch")
+def approve_batch(body: BatchApprove, u: dict = Depends(writer)) -> dict:
+    """BL-170: a person approves ticked drafts of one play and one email together. Each is its own approval; the answer says
+    which went through and why any did not."""
+    with db.tx() as cur:
+        try:
+            out = outreach.approve_batch(cur, body.message_ids, user_id=u["id"], role=u["role"])
+        except outreach.BatchRefused as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+    return {"ok": True, **out}
+
+
+@app.post("/api/messages/{message_id}/take-back")
+def take_back(message_id: int, u: dict = Depends(writer)) -> dict:
+    """BL-170: take an approval back while the email has not gone out."""
+    with db.tx() as cur:
+        _own_message(cur, message_id, u)
+        try:
+            outreach.take_back(cur, message_id, user_id=u["id"], role=u["role"])
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
         return views.message(cur, message_id)
 
 
