@@ -15,6 +15,17 @@ const OLD_REPLY_DAYS = 14;
 
 // ---------------------------------------------------------------- Today
 
+/** BL-172: an SDR's weekly proposal limit, or what a manager should do when someone is at theirs. */
+function BudgetLine({ budget }: { budget: any }) {
+  if (!budget) return null;
+  const m = budget.mine;
+  if (m) {
+    if (m.cap === null) return null;
+    return <p className="old-note budget-line">Your weekly limit is {m.cap} proposed accounts. {m.used} used, {m.left} left until {day(`${m.resets_on}T12:00:00`)}.{m.waiting ? ` ${m.waiting} more ${m.waiting === 1 ? "account is" : "accounts are"} waiting, highest priority first.` : ""}</p>;
+  }
+  return budget.message ? <p className="capacity-note" role="status">{budget.message} <a href="/settings" onClick={(e) => { e.preventDefault(); navigate("/settings"); }}>Weekly proposal limit</a></p> : null;
+}
+
 export function Today() {
   const { data, error, reload } = useData<any>("/api/today");
   const me = useData<any>("/api/me").data;
@@ -86,6 +97,7 @@ export function Today() {
 
       <Section icon={Lightbulb} title={me?.user.role === "sdr" ? "Plays proposed to you" : "Plays proposed to the team"}>
         <Hint>A play is a ready-made outreach plan for one account, started by one signal (something the desk saw, such as a hiring post or a pricing visit). Accept starts it: the desk researches the account and drafts emails for you to approve. Skip needs a reason. Priority is how strongly the account looks right now, out of 100.</Hint>
+        <BudgetLine budget={data.budget} />
         {data.proposals.length ? (
           <div className="ledger">
             {data.proposals.map((p: any, i: number) => (

@@ -6,7 +6,7 @@ import hashlib
 import logging
 from datetime import timedelta
 
-from . import audit, db, gate, jobs, timeutil
+from . import audit, budget, db, gate, jobs, timeutil
 from .db import J
 
 log = logging.getLogger("outbound.plays")
@@ -93,8 +93,9 @@ def _play_allows(cur, play: dict, acc: dict, score: dict) -> str | None:
     return None
 
 
-def match(cur, account_id: int) -> int | None:
-    """Propose the best live play for this account, if any matches and the account gate allows it."""
+def _best(cur, account_id: int):
+    """The best live play for this account and its trigger signal, with the score, or None when none matches or the account
+    gate refuses. Pure reading: nothing is written."""
     if gate.account_reasons(cur, account_id):
         return None
     score = db.one(cur, "select priority, fit, inputs from account_scores where account_id = %s", account_id)
@@ -116,22 +117,34 @@ def match(cur, account_id: int) -> int | None:
         rank = (play["urgent"], float(sig["weight"]) * float(sig["strength"]))
         if best is None or rank > best[0]:
             best = (rank, play, sig)
+    return None if best is None else (best[1], best[2], score)
+
+
+def match(cur, account_id: int, *, owner_id: int | None = None, released: bool = False) -> int | None:
+    """Propose the best live play for this account, if any matches and the account gate allows it. With a weekly cap on the
+    owner the match waits for the release job instead (budget.py); `released` is that job proposing it, the cap already
+    checked. A waiting account that no longer matches leaves the queue."""
+    best = _best(cur, account_id)
     if best is None:
+        budget.drop(cur, account_id, "no longer matches any play")
         return None
-    _, play, sig = best
-    return propose(cur, account_id, play, sig, score)
+    play, sig, score = best
+    return propose(cur, account_id, play, sig, score, owner_id=owner_id, released=released)
 
 
 def _pick_owner(cur, account_owner: int | None) -> int:
+    """The account's own SDR, else an active SDR who still has room this week (no cap counts as room) with the fewest open plays."""
     if account_owner and db.val(cur, "select active and role = 'sdr' from users where id = %s", account_owner):
         return account_owner
-    return db.val(cur, """select u.id from users u where u.role = 'sdr' and u.active
-                          order by (select count(*) from account_plays ap where ap.owner_id = u.id
+    return db.val(cur, f"""select u.id from users u where u.role = 'sdr' and u.active
+                          order by (u.weekly_proposal_cap is not null and {budget.USED} >= u.weekly_proposal_cap),
+                                   (select count(*) from account_plays ap where ap.owner_id = u.id
                                     and ap.state in ('proposed','accepted','researching','approving','active','engaged'))
                           , u.id limit 1""")
 
 
-def propose(cur, account_id: int, play: dict, sig: dict, score: dict) -> int:
+def propose(cur, account_id: int, play: dict, sig: dict, score: dict, *, owner_id: int | None = None,
+            released: bool = False) -> int | None:
     contribs = score["inputs"]["signals"] if score.get("inputs") else []
     labels = {r["key"]: r["label"] for r in db.all(cur, "select key, label from signal_types")}
     top = []
@@ -141,7 +154,12 @@ def propose(cur, account_id: int, play: dict, sig: dict, score: dict) -> int:
            "summary": sig["evidence"].get("summary"), "url": sig["evidence"].get("url"),
            "quote": sig["evidence"].get("quote"), "observed_at": sig["observed_at"].isoformat(),
            "priority": score["priority"], "top": top}
-    owner = _pick_owner(cur, db.val(cur, "select owner_id from accounts where id = %s", account_id))
+    owner = owner_id or _pick_owner(cur, db.val(cur, "select owner_id from accounts where id = %s", account_id))
+    if not released and budget.capped(cur, owner):
+        # A capped SDR is never handed a match on the spot: it waits so the batch is ranked, highest priority first. The
+        # comparison-group draw comes after the wait, so both groups are drawn from the same top-priority accounts.
+        budget.queue(cur, account_id, owner, play, sig)
+        return None
     held = holdout_draw(play["key"], account_id, play["holdout_pct"])
     if held:
         ap = db.val(cur, """insert into account_plays (account_id, play_id, trigger_signal_id, arm, state, why_now, owner_id,

@@ -29,6 +29,7 @@ from pydantic import AwareDatetime, BaseModel, Field
 from .. import (  # noqa: F401
     alerts,
     audit,
+    budget,
     clock,
     db,
     gate,
@@ -679,7 +680,10 @@ def put_product_facts(body: ProductFacts, u: dict = Depends(writer)) -> dict:
 @app.get("/api/settings")
 def settings_page(u: dict = Depends(current_user)) -> dict:
     with db.tx() as cur:
-        return views.settings(cur)
+        out = views.settings(cur)
+    if u["role"] == "sdr":
+        out.pop("proposal_budget", None)   # the team's limits are for people who manage the team
+    return out
 
 
 # ---------------------------------------------------------------- writes
@@ -1583,6 +1587,26 @@ def autonomous_stage(body: AutonomousStage, u: dict = Depends(writer)) -> dict:
         audit.log(cur, "person", "autonomous_stage_on" if body.on else "autonomous_stage_off", "settings", None,
                   {"reason": body.reason}, actor_id=u["id"])
     return {"ok": True}
+
+
+class ProposalCap(BaseModel):
+    cap: int | None = Field(None, ge=1, le=500)
+    reason: str = Field(min_length=3, max_length=300)
+
+
+@app.put("/api/proposal-budget/{user_id}")
+def set_proposal_cap(user_id: int, body: ProposalCap, u: dict = Depends(writer)) -> dict:
+    """BL-172: a manager or GTM sets or clears how many accounts the desk may propose to one SDR in a week."""
+    not_in_public_demo()
+    need(u, "manager", "gtm")
+    if "cap" not in body.model_fields_set:
+        raise HTTPException(422, "Say the limit, or send null for no limit.")
+    with db.tx() as cur:
+        try:
+            out = budget.set_cap(cur, user_id, body.cap, body.reason, by=u["id"])
+        except ValueError as exc:
+            raise bad_request(exc) from exc
+    return {"ok": True, "usage": out}
 
 
 class RegionRuleChange(BaseModel):

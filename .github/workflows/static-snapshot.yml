@@ -10,6 +10,9 @@ on:
     branches: [main]
     paths:
       - "web/**"
+      - "src/**"
+      - "migrations/**"
+      - "world/**"
       - "scripts/build_static_snapshot.py"
       - "scripts/static_snapshot/**"
       - ".github/workflows/static-snapshot.yml"

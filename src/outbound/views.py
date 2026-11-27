@@ -2,7 +2,7 @@
 (managers and GTM); a rep's read never carries it."""
 from __future__ import annotations
 
-from . import adapters, alerts, db, monitors, outreach, region_rules, sending, spend, stats, suggestions
+from . import adapters, alerts, budget, db, monitors, outreach, region_rules, sending, spend, stats, suggestions
 from . import plays as plays_mod
 from .jobs import request_progress
 
@@ -94,7 +94,16 @@ def today(cur, user: dict) -> dict:
                   and m.status in ('awaiting_approval', 'failed_gate') and {mine}))
         order by r.received_at limit 40""", uid, *args, uid, *args)
     return {"proposals": proposals, "expired": expired, "approvals": approvals, "replies": hot, "tasks": tasks,
-            "read_first": read_first, "meetings": meetings, "now": db.val(cur, "select app_now()")}
+            "budget": proposal_budget(cur, user), "read_first": read_first, "meetings": meetings, "now": db.val(cur, "select app_now()")}
+
+
+def proposal_budget(cur, user: dict) -> dict:
+    """BL-172: an SDR sees their own weekly limit; a manager or GTM sees every SDR's and the capacity message."""
+    if user["role"] == "sdr":
+        mine = budget.usage(cur, user["id"])
+        return {"mine": mine, "team": None, "message": None}
+    rows = budget.team(cur)
+    return {"mine": None, "team": rows, "message": budget.capacity_message(rows)}
 
 
 def _ttl(key: str, default: int) -> str:
@@ -867,6 +876,8 @@ def settings(cur) -> dict:
             "icp": db.one(cur, "select * from icp_versions order by published_at desc limit 1"),
             "personas": db.all(cur, "select * from personas"),
             "suggestion_rule": suggestions.RULE,
+            "proposal_budget": {"team": (team := budget.team(cur)), "message": budget.capacity_message(team),
+                                "changes": budget.changes(cur), "cap_max": budget.CAP_MAX},
             **{("regions" if k == "regions" else "region_changes"): v for k, v in region_rules.listing(cur).items()},
             "suppressions": db.all(cur, "select id, kind, value, reason, source, created_at, expires_at from suppressions where expires_at is null or expires_at > app_now() "
                                         "order by created_at desc limit 100")}

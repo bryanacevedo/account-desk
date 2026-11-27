@@ -407,11 +407,14 @@ export function Ops() {
       <Section title="Checks">
         <div className="ledger">
           {[...data.monitors].sort((a: any, b: any) => Number(a.ok) - Number(b.ok)).map((m: any) => (
-            <div key={m.monitor} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 120px 100px" }}>
-              <Status kind={m.error ? "wait" : m.ok ? "ok" : "stop"}>{m.title}</Status>
-              <span className="num">{m.error ? "Did not run" : m.monitor === "monitors_ran" ? (m.ok ? "All ran" : `${m.found} failed`) : m.ok ? "None found" : `${m.found} found`}</span>
-              <span className="num mute small">{ago(m.at)}</span>
-            </div>
+            <Fragment key={m.monitor}>
+              <div className="row" style={{ gridTemplateColumns: "minmax(0,1fr) 120px 100px" }}>
+                <Status kind={m.error ? "wait" : m.ok ? "ok" : "stop"}>{m.title}</Status>
+                <span className="num">{m.error ? "Did not run" : m.monitor === "monitors_ran" ? (m.ok ? "All ran" : `${m.found} failed`) : m.ok ? "None found" : `${m.found} found`}</span>
+                <span className="num mute small">{ago(m.at)}</span>
+              </div>
+              {!m.ok && !m.error && m.advice ? <p className="old-note" style={{ padding: "2px 12px 10px" }}>{m.advice}</p> : null}
+            </Fragment>
           ))}
         </div>
       </Section>
@@ -476,6 +479,54 @@ function LiftButton({ id, onDone }: { id: number; onDone: () => void }) {
 const ROLE: Record<string, string> = { sdr: "SDR", manager: "Manager", gtm: "GTM engineering" };
 
 /** The team: who is on the desk and in what role. Someone who leaves hands their accounts and work to a successor. */
+/** BL-172: how many accounts the desk may propose to each SDR in a week. A manager or GTM sets it, with a reason; no limit is
+ *  the default. Waiting accounts are proposed highest priority first when the week turns or the limit is raised. */
+function ProposalBudget({ data, canEdit, onDone }: { data: any; canEdit: boolean; onDone: () => void }) {
+  const [busy, run] = useBusy();
+  const [edit, setEdit] = useState<number | null>(null);
+  const [capText, setCapText] = useState("");
+  const [reason, setReason] = useState("");
+  const save = (id: number, value: number | null) => run(async () => {
+    await api(`/api/proposal-budget/${id}`, { method: "PUT", body: { cap: value, reason } });
+    setEdit(null); setReason(""); onDone();
+  }, value === null ? "The limit is off." : "Saved. Accounts that were waiting are proposed now if there is room.");
+  return (
+    <Section title="Weekly proposal limit">
+      <p className="old-note" style={{ paddingTop: 0 }}>How many accounts the desk may propose to each SDR in a week, counted from Monday in the SDR's own time. At the limit, accounts wait and the highest priority goes first when the week turns or the limit is raised. No limit is the default.</p>
+      {data.message ? <p className="capacity-note" role="status">{data.message}</p> : null}
+      <div className="ledger">
+        {data.team.map((u: any) => (
+          <div key={u.user_id} className="row budget-row" style={{ gridTemplateColumns: "minmax(0,1.3fr) minmax(0,1fr) auto", minHeight: 44, height: edit === u.user_id ? "auto" : undefined }}>
+            <div className="cell-main"><span className="t">{u.name}</span>
+              <span className="s">{u.cap === null ? "No limit" : `${u.used} of ${u.cap} used, ${u.left} left until ${day(`${u.resets_on}T12:00:00`)}`}{u.waiting ? `, ${u.waiting} waiting` : ""}{u.dropped_7d ? `, ${u.dropped_7d} left the queue this week without a proposal` : ""}</span></div>
+            <span className="mute small hide-sm clip">{u.top_waiting?.length ? `Next: ${u.top_waiting.map((w: any) => `${w.name} (${w.priority})`).slice(0, 2).join(", ")}` : ""}</span>
+            {edit === u.user_id ? (
+              <span className="actions" style={{ flexWrap: "wrap", gridColumn: "1 / -1", paddingBottom: 8 }}>
+                <input className="input" style={{ width: 80 }} inputMode="numeric" placeholder="Per week" value={capText} onChange={(e) => setCapText(e.target.value.replace(/\D/g, ""))} aria-label={`Weekly limit for ${u.name}`} />
+                <input className="input" style={{ width: 190 }} placeholder="Why" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Reason" />
+                <button className="btn sm" disabled={busy || !capText || Number(capText) < 1 || Number(capText) > data.cap_max || reason.trim().length < 3} onClick={() => save(u.user_id, Number(capText))}>Save</button>
+                {u.cap !== null ? <button className="btn line sm" disabled={busy || reason.trim().length < 3} onClick={() => save(u.user_id, null)}>No limit</button> : null}
+                <button className="btn quiet sm" onClick={() => setEdit(null)}>Cancel</button>
+              </span>
+            ) : canEdit ? <span className="actions" style={{ justifyContent: "flex-end" }}><button className="btn quiet sm" onClick={() => { setEdit(u.user_id); setCapText(u.cap === null ? "" : String(u.cap)); setReason(""); }} aria-label={`Change the limit for ${u.name}`}>Change</button></span> : <span />}
+          </div>
+        ))}
+      </div>
+      {data.changes.length ? (
+        <details className="budget-history"><summary>Changes</summary>
+          <div className="ledger">
+            {data.changes.slice(0, 8).map((c: any) => (
+              <div key={c.id} className="row" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1.6fr) 70px", minHeight: 36 }}>
+                <span className="clip">{c.sdr}: {c.old_cap ?? "no limit"} to {c.new_cap ?? "no limit"}</span><span className="mute clip">{c.reason}, {c.changed_by}</span><span className="num mute small">{day(c.at)}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </Section>
+  );
+}
+
 function Team() {
   const { data, reload } = useData<any>("/api/admin");
   const [busy, run] = useBusy();
@@ -676,6 +727,7 @@ export function Settings() {
           </dl>
         </Section>
       </div>
+      {data.proposal_budget ? <ProposalBudget data={data.proposal_budget} canEdit={(me?.user.role === "manager" || me?.user.role === "gtm") && !me?.public_demo} onDone={reload} /> : null}
       <CountriesSection regions={data.regions} changes={data.region_changes} canEdit={(me?.user.role === "manager" || me?.user.role === "gtm") && !me?.public_demo} onDone={reload} />
       {me?.user.role === "manager" ? <Team /> : null}
       {data.kept ? <KeptInMarketDesk kept={data.kept} links={data.integration?.links ?? {}} /> : <IcpSection icp={data.icp} canEdit={canEdit} onDone={reload} />}

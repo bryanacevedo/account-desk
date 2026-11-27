@@ -108,6 +108,9 @@ def main(argv: list[str]) -> int:
             # real ones: clear the invented rows so the hosted demo's "move time forward" cannot read them beside the replayed deals.
             with db.tx() as cur:
                 db.run(cur, "delete from sim_crm_deals")
+        from .sim import demo_budget
+        with db.tx() as cur:
+            totals["weekly_limits"] = demo_budget.seed(cur)     # after the history, so it changes none of it (BL-172)
         print(json.dumps({"world": info, "world_mode": mode, "totals": totals, "seconds": round(time.time() - t0, 1)},
                          default=str))
         db.close()
