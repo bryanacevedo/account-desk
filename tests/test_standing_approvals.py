@@ -224,7 +224,7 @@ def test_signing_again_relinks_what_the_new_policy_covers_and_returns_the_rest(c
     mgr = _setup(cur, scene)
     old = standing.sign(cur, scene["play"], owner_id=mgr, reason="Carried over from the history", signed_by_person=False, regions="carried_over",
                         ends_on=db.val(cur, "select app_now()::date + 30"))
-    ok, gb = _draft_not_sampled(cur, scene), None
+    ok = _draft_not_sampled(cur, scene)
     outreach.maybe_auto_approve(cur, ok)
     db.run(cur, "update messages set status = 'scheduled', scheduled_for = app_now() + interval '1 day' where id = %s", ok)
     new = standing.sign(cur, scene["play"], owner_id=mgr, reason="Signed again under the real rule", tiers=["A", "B"],

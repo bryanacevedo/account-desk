@@ -2,7 +2,20 @@
 (managers and GTM); a rep's read never carries it."""
 from __future__ import annotations
 
-from . import adapters, alerts, budget, db, monitors, outreach, region_rules, sending, spend, standing, stats, suggestions
+from . import (
+    adapters,
+    alerts,
+    budget,
+    db,
+    monitors,
+    outreach,
+    region_rules,
+    sending,
+    spend,
+    standing,
+    stats,
+    suggestions,
+)
 from . import plays as plays_mod
 from .jobs import request_progress
 

@@ -1,6 +1,7 @@
 """BL-172: a weekly cap on the accounts proposed to one SDR, highest priority first, nothing changed when no cap is set."""
 from __future__ import annotations
 
+import itertools
 import time
 
 import pytest
@@ -14,9 +15,12 @@ def _sdr(cur, name="Budget SDR", tz="America/New_York"):
                   name, f"{name.replace(' ', '').lower()}{id(cur)}{time.monotonic_ns()}@x.example", tz)
 
 
-def _manager(cur, n=[0]):
-    n[0] += 1
-    return db.val(cur, "insert into users (name, email, role) values ('Budget Mgr', %s, 'manager') returning id", f"m{n[0]}{id(cur)}@x.example")
+_COUNT = itertools.count(1)
+
+
+def _manager(cur):
+    n = next(_COUNT)
+    return db.val(cur, "insert into users (name, email, role) values ('Budget Mgr', %s, 'manager') returning id", f"m{n}{id(cur)}@x.example")
 
 
 def _play(cur, *, urgent=False, holdout=0, key=None, pause=True):
@@ -33,8 +37,8 @@ def _play(cur, *, urgent=False, holdout=0, key=None, pause=True):
                   key, J({"any_of": ["bud_sig"], "min_strength": 0, "within_days": 30}), urgent, holdout, who)
 
 
-def _account(cur, owner, priority, n=[0]):
-    n[0] += 1
+def _account(cur, owner, priority):
+    n = [next(_COUNT)]
     a = db.val(cur, "insert into accounts (name, primary_domain, fit_tier, owner_id) values (%s, %s, 'A', %s) returning id",
                f"Bud Co {n[0]}", f"bud{n[0]}-{id(cur)}.example", owner)
     db.run(cur, "insert into account_scores (account_id, computed_at, fit, intent, engagement, priority, inputs, breakdown) values (%s,app_now(),50,50,0,%s,'{}','{}')",
@@ -269,6 +273,7 @@ def client(world):
     import os
     os.environ.setdefault("NO_WORKER", "1")
     from fastapi.testclient import TestClient
+
     from outbound.api.app import app
     return TestClient(app)
 
@@ -299,6 +304,7 @@ def test_only_a_manager_or_gtm_sets_a_cap_and_the_settings_page_shows_it(client)
 
 def test_the_public_demo_refuses_to_change_a_cap(client, monkeypatch):
     import dataclasses
+
     from outbound.api import app as app_mod
     monkeypatch.setattr(app_mod, "CONFIG", dataclasses.replace(app_mod.CONFIG, public_demo=True))
     sdr, mgr = _first("sdr"), _first("manager")
